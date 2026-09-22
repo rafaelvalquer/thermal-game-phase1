@@ -1,5 +1,28 @@
+import { VisualSettings } from './VisualSettings.js';
+import { StreamlineCache } from './air/StreamlineCache.js';
+import { StreamlineRenderer } from './air/StreamlineRenderer.js';
+import { AirflowParticleRenderer } from './air/AirflowParticleRenderer.js';
+
 export class AirflowRenderer {
+  constructor(){
+    this.submode=VisualSettings.airflowMode||'streamlines';
+    this.cache=new StreamlineCache();
+    this.streamlines=new StreamlineRenderer();
+    this.particles=new AirflowParticleRenderer();
+  }
+
+  setSubmode(mode){
+    if(['vectors','streamlines','particles'].includes(mode))this.submode=mode;
+  }
+
   draw(ctx,world,tile,time=0){
+    if(this.submode==='vectors')return this.drawVectors(ctx,world,tile,time);
+    if(this.submode==='particles')return this.particles.draw(ctx,world,tile,time);
+    const lines=this.cache.get(world,VisualSettings.streamlineDensity,time*1000);
+    this.streamlines.draw(ctx,lines,tile,time);
+  }
+
+  drawVectors(ctx,world,tile,time=0){
     ctx.save();
     ctx.lineCap='round';
     for(let y=1;y<world.height;y+=2)for(let x=1;x<world.width;x+=2){
@@ -21,4 +44,6 @@ export class AirflowRenderer {
     }
     ctx.restore();
   }
+
+  diagnostics(time=0){return this.cache.diagnostics(time*1000);}
 }
