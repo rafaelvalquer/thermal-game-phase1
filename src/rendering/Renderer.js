@@ -44,14 +44,31 @@ export class Renderer {
 
   drawFluidNetwork(ctx,world,time){
     const fluid=world.entities.filter(e=>FLUID_TYPES.has(e.type));
-    ctx.save();ctx.lineCap='round';
+    ctx.save();ctx.lineCap='round';ctx.lineJoin='round';
+
     for(const a of fluid)for(const b of fluid){
       if(a.id>=b.id||Math.abs(a.x-b.x)+Math.abs(a.y-b.y)!==1)continue;
+      const ax=(a.x+.5)*this.tile,ay=(a.y+.5)*this.tile,bx=(b.x+.5)*this.tile,by=(b.y+.5)*this.tile;
+      const valid=a.circuitClosed&&b.circuitClosed&&a.networkId===b.networkId;
       const t=((a.waterTemperature||25)+(b.waterTemperature||25))/2;
-      const flow=Math.max(a.flowRate||0,b.flowRate||0);
-      ctx.strokeStyle='rgba(15,23,42,.85)';ctx.lineWidth=this.tile*.45;ctx.beginPath();ctx.moveTo((a.x+.5)*this.tile,(a.y+.5)*this.tile);ctx.lineTo((b.x+.5)*this.tile,(b.y+.5)*this.tile);ctx.stroke();
-      ctx.strokeStyle=waterCss(t,.9);ctx.lineWidth=this.tile*.22;ctx.stroke();
-      if(flow>.02){ctx.strokeStyle='rgba(240,249,255,.9)';ctx.lineWidth=Math.max(1,this.tile*.05);ctx.setLineDash([this.tile*.15,this.tile*.22]);ctx.lineDashOffset=-time*this.tile*(1+flow*.3);ctx.stroke();ctx.setLineDash([]);}
+
+      ctx.strokeStyle=valid?'rgba(15,23,42,.9)':'rgba(69,26,3,.88)';
+      ctx.lineWidth=this.tile*.45;ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();
+      ctx.strokeStyle=valid?waterCss(t,.95):'rgba(245,158,11,.65)';
+      ctx.lineWidth=this.tile*.22;ctx.stroke();
+
+      let from=null,to=null;
+      if(a.downstreamId===b.id){from=a;to=b;}
+      else if(b.downstreamId===a.id){from=b;to=a;}
+
+      if(valid&&from&&from.flowRate>.02){
+        const phase=(time*(.72+from.flowRate*.2)+from.id*.137)%1;
+        const fx=(from.x+.5)*this.tile,fy=(from.y+.5)*this.tile,tx=(to.x+.5)*this.tile,ty=(to.y+.5)*this.tile;
+        const px=fx+(tx-fx)*phase,py=fy+(ty-fy)*phase;
+        const angle=Math.atan2(ty-fy,tx-fx),size=Math.max(2,this.tile*.12);
+        ctx.fillStyle='rgba(240,249,255,.96)';
+        ctx.save();ctx.translate(px,py);ctx.rotate(angle);ctx.beginPath();ctx.moveTo(size,0);ctx.lineTo(-size*.7,-size*.55);ctx.lineTo(-size*.7,size*.55);ctx.closePath();ctx.fill();ctx.restore();
+      }
     }
     ctx.restore();
   }
@@ -70,10 +87,12 @@ export class Renderer {
     ctx.save();ctx.fillStyle=selected?(valid?'rgba(34,197,94,.09)':'rgba(239,68,68,.12)'):'rgba(248,250,252,.025)';
     ctx.fillRect(x*this.tile,y*this.tile,this.tile,this.tile);
     ctx.strokeStyle=selected?(valid?'#4ade80':'#f87171'):'#f8fafc';ctx.globalAlpha=.72+pulse*.25;ctx.lineWidth=Math.max(1,2/this.camera.zoom);ctx.strokeRect(x*this.tile+1,y*this.tile+1,this.tile-2,this.tile-2);ctx.globalAlpha=1;
-    if(selected&&['fan','exhaust'].includes(selected)){
+    if(selected&&['fan','exhaust','pump'].includes(selected)){
       const d=this.buildSystem.direction(),cx=(x+.5)*this.tile,cy=(y+.5)*this.tile;
-      ctx.fillStyle='rgba(14,165,233,.07)';ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+d.x*this.tile*4-d.y*this.tile*.9,cy+d.y*this.tile*4+d.x*this.tile*.9);ctx.lineTo(cx+d.x*this.tile*4+d.y*this.tile*.9,cy+d.y*this.tile*4-d.x*this.tile*.9);ctx.closePath();ctx.fill();
-      ctx.strokeStyle='#7dd3fc';ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+d.x*this.tile*3.4,cy+d.y*this.tile*3.4);ctx.stroke();
+      const distance=selected==='pump'?this.tile*1.4:this.tile*4;
+      const spread=selected==='pump'?this.tile*.28:this.tile*.9;
+      ctx.fillStyle='rgba(14,165,233,.07)';ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+d.x*distance-d.y*spread,cy+d.y*distance+d.x*spread);ctx.lineTo(cx+d.x*distance+d.y*spread,cy+d.y*distance-d.x*spread);ctx.closePath();ctx.fill();
+      ctx.strokeStyle='#7dd3fc';ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+d.x*(distance*.85),cy+d.y*(distance*.85));ctx.stroke();
     }
     ctx.restore();
   }
