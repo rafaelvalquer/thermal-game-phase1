@@ -20,7 +20,7 @@ export class AirPressureSolver {
 
   solve(dt){
     const g=this.grid,rhsScale=AIR.density*g.dx*g.dx/Math.max(dt,1e-6);
-    g.pressure.fill(0);g.pressureNext.fill(0);
+    g.pressureNext.set(g.pressure);
 
     for(let iter=0;iter<this.iterations;iter++){
       for(let y=0;y<g.height;y++)for(let x=0;x<g.width;x++){

@@ -37,6 +37,7 @@ export class AirGrid {
     const version=this.world.airTopologyVersion??0;
     if(!force&&version===this.topologyVersion)return false;
     this.topologyVersion=version;
+    this.pressure.fill(0);this.pressureNext.fill(0);this.u.fill(0);this.v.fill(0);
     for(let y=0;y<this.height;y++)for(let x=0;x<this.width;x++){
       const i=this.cellIndex(x,y);
       this.solid[i]=this.world.registry.fromIndex(this.world.material[i]).solid?1:0;
