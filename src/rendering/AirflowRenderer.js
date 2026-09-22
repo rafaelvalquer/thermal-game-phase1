@@ -1,0 +1,3 @@
+export class AirflowRenderer {
+  draw(ctx,world,tile){ctx.save();ctx.strokeStyle='rgba(125,211,252,.75)';ctx.fillStyle='rgba(125,211,252,.8)';ctx.lineWidth=1.4;for(let y=1;y<world.height;y+=3)for(let x=1;x<world.width;x+=3){if(!world.isAir(x,y))continue;const i=world.index(x,y),vx=world.airX[i],vy=world.airY[i],s=Math.hypot(vx,vy);if(s<.15)continue;const cx=(x+.5)*tile,cy=(y+.5)*tile,len=Math.min(tile*1.2,3+s*2),nx=vx/s,ny=vy/s;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+nx*len,cy+ny*len);ctx.stroke();ctx.beginPath();ctx.arc(cx+nx*len,cy+ny*len,1.5,0,Math.PI*2);ctx.fill();}ctx.restore();}
+}

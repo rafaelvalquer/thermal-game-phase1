@@ -1,0 +1,17 @@
+export const TILE_SIZE_METERS = 0.5;
+export const TILE_AREA = TILE_SIZE_METERS * 1; // face area approximation, m²
+export const TILE_VOLUME = TILE_SIZE_METERS * TILE_SIZE_METERS * 2.5; // 2.5 m room height
+export const FIXED_DT = 1 / 20;
+export const OUTDOOR_TEMP = 25;
+export const ROOM_SAFE_TEMP = 40;
+export const MACHINE_FAIL_TEMP = 80;
+export const POWER_LIMIT_W = 10_000;
+export const DEFAULT_BUDGET = 50_000;
+export const MAP_WIDTH = 64;
+export const MAP_HEIGHT = 64;
+export const MACHINE_START_DELAY = 10;
+export const WIN_HOLD_SECONDS = 300;
+export const FAIL_HOLD_SECONDS = 30;
+export const WATER_CP = 4186;
+export const WATER_DENSITY = 997;
+export const EPSILON = 1e-9;
