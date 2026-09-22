@@ -24,7 +24,7 @@ export class Simulation {
     if(this.paused||this.mission.state!=='running')return;
     dt*=this.speed;this.elapsed+=dt;this.mission.preUpdate(this.elapsed);
 
-    this.airflow.buildVelocityField();
+    this.airflow.updateVelocity(dt);
     this.thermal.update(dt,this.elapsed);
     this.fluid.update(dt);
     this.airflow.advectHeat(dt);
