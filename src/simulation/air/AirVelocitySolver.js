@@ -30,20 +30,36 @@ export class AirVelocitySolver {
     this.diffuseAndDamp(dt);
   }
 
+  faceWallFactorU(x,y){
+    const g=this.grid;
+    const left=g.cellIndex(x-1,y),right=g.cellIndex(x,y);
+    const near=(g.wallProximity[left]+g.wallProximity[right])*.5;
+    return 1/(1+near*AIR.wallTurbulenceSuppression);
+  }
+
+  faceWallFactorV(x,y){
+    const g=this.grid;
+    const top=g.cellIndex(x,y-1),bottom=g.cellIndex(x,y);
+    const near=(g.wallProximity[top]+g.wallProximity[bottom])*.5;
+    return 1/(1+near*AIR.wallTurbulenceSuppression);
+  }
+
   diffuseAndDamp(dt){
-    const g=this.grid,nu=AIR.eddyViscosity,scale=nu*dt/(g.dx*g.dx),damp=Math.max(0,1-AIR.velocityDamping*dt);
+    const g=this.grid,baseScale=AIR.eddyViscosity*dt/(g.dx*g.dx),damp=Math.max(0,1-AIR.velocityDamping*dt);
     g.uNext.set(g.u);g.vNext.set(g.v);
 
     for(let y=1;y<g.height-1;y++)for(let x=1;x<g.width;x++){
       const i=g.uIndex(x,y);if(g.blockedU(x,y)){g.uNext[i]=0;continue;}
       const lap=g.u[g.uIndex(x-1,y)]+g.u[g.uIndex(x+1,y)]+g.u[g.uIndex(x,y-1)]+g.u[g.uIndex(x,y+1)]-4*g.u[i];
-      g.uNext[i]=clamp((g.u[i]+scale*lap)*damp,-AIR.maxVelocity,AIR.maxVelocity);
+      const localScale=baseScale*this.faceWallFactorU(x,y);
+      g.uNext[i]=clamp((g.u[i]+localScale*lap)*damp,-AIR.maxVelocity,AIR.maxVelocity);
     }
 
     for(let y=1;y<g.height;y++)for(let x=1;x<g.width-1;x++){
       const i=g.vIndex(x,y);if(g.blockedV(x,y)){g.vNext[i]=0;continue;}
       const lap=g.v[g.vIndex(x-1,y)]+g.v[g.vIndex(x+1,y)]+g.v[g.vIndex(x,y-1)]+g.v[g.vIndex(x,y+1)]-4*g.v[i];
-      g.vNext[i]=clamp((g.v[i]+scale*lap)*damp,-AIR.maxVelocity,AIR.maxVelocity);
+      const localScale=baseScale*this.faceWallFactorV(x,y);
+      g.vNext[i]=clamp((g.v[i]+localScale*lap)*damp,-AIR.maxVelocity,AIR.maxVelocity);
     }
 
     [g.u,g.uNext]=[g.uNext,g.u];
