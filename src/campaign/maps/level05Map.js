@@ -1,0 +1,23 @@
+export const level05Map={
+  width:88,height:62,initialTemperature:27,
+  rooms:[
+    {x:3,y:4,w:82,h:54,material:'concrete'},
+    {x:6,y:7,w:22,h:22,material:'insulation'},
+    {x:8,y:40,w:21,h:13,material:'concrete'},
+    {x:56,y:38,w:22,h:15,material:'concrete'},
+  ],
+  lines:[
+    {x1:4,y1:34,x2:83,y2:34,material:'concrete'},
+  ],
+  openings:[
+    {x:16,y:28,w:4,h:1},
+    {x:18,y:40,w:3,h:1},
+    {x:63,y:38,w:4,h:1},
+    {x:42,y:34,w:5,h:1},
+    {x:84,y:29,w:1,h:6},
+    {x:3,y:29,w:1,h:6},
+  ],
+  materials:[
+    {x:27,y:7,w:1,h:22,material:'copper'},
+  ],
+};

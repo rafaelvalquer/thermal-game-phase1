@@ -59,3 +59,17 @@ npm run build
 ## Observação sobre o modelo físico
 
 A Fase 1 usa aproximações discretas estáveis voltadas a gameplay. Não é CFD de engenharia. Transferências internas são feitas de forma conservativa; saídas/entradas externas são contabilizadas separadamente no Energy Balance.
+
+
+## Campanha — Fases 1 a 6
+
+O projeto agora possui campanha data-driven com progressão persistida em localStorage:
+
+1. Hot Room — fundamentos térmicos
+2. Ventilation Corridor — airflow e corredores
+3. Office Complex — múltiplas salas e limites por zona
+4. Server Vault — hot/cold aisle, racks e pico de carga
+5. Thermal Factory — forno, isolamento e redes industriais
+6. Critical Facility — infraestrutura bloqueada e eventos operacionais
+
+As fases ficam em src/campaign/levels/ e os layouts em src/campaign/maps/. Objetivos, falhas e eventos são configurados por dados; o motor físico continua responsável pelas temperaturas.

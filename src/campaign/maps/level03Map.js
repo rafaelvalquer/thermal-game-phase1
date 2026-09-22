@@ -1,0 +1,25 @@
+export const level03Map={
+  width:72,height:56,initialTemperature:25,
+  rooms:[
+    {x:3,y:4,w:66,h:48,material:'concrete'},
+    {x:7,y:8,w:14,h:15,material:'concrete'},
+    {x:24,y:8,w:12,h:15,material:'concrete'},
+    {x:39,y:8,w:24,h:19,material:'concrete'},
+    {x:8,y:35,w:20,h:12,material:'concrete'},
+  ],
+  lines:[
+    {x1:4,y1:30,x2:67,y2:30,material:'concrete'},
+  ],
+  openings:[
+    {x:12,y:22,w:3,h:1},
+    {x:28,y:22,w:3,h:1},
+    {x:48,y:26,w:4,h:1},
+    {x:16,y:35,w:3,h:1},
+    {x:32,y:30,w:4,h:1},
+    {x:68,y:27,w:1,h:4},
+    {x:3,y:27,w:1,h:4},
+  ],
+  materials:[
+    {x:37,y:8,w:1,h:19,material:'insulation'},
+  ],
+};

@@ -11,7 +11,7 @@ export class EffectsRenderer {
   thermalEffects(ctx,world,tile,time){
     ctx.save();ctx.lineCap='round';
     for(const e of world.entities){
-      const temp=e.type==='machine'?e.temperature:(FLUID_TYPES.has(e.type)?e.waterTemperature:null);
+      const temp=e.isHeatMachine?e.temperature:(FLUID_TYPES.has(e.type)?e.waterTemperature:null);
       if(temp==null||temp<42)continue;
       const state=thermalState(temp),cx=(e.x+.5)*tile,cy=(e.y+.3)*tile;
       const strength=Math.min(1,(temp-40)/45);
@@ -26,7 +26,7 @@ export class EffectsRenderer {
         }
         ctx.stroke();
       }
-      if(e.type==='machine'&&temp>=60){
+      if(e.isHeatMachine&&e.type!=='furnace'&&temp>=60){
         const pulse=.55+.45*Math.sin(time*5+e.id);
         ctx.fillStyle=state.color;ctx.globalAlpha=.55+.35*pulse;
         ctx.beginPath();ctx.arc(cx,cy-tile*.72,tile*.17*(1+pulse*.12),0,Math.PI*2);ctx.fill();
