@@ -14,6 +14,7 @@ export class World {
     this.airPressure=new Float32Array(this.size);
     this.airDivergence=new Float32Array(this.size);
     this.airWallProximity=new Uint8Array(this.size);
+    this.airWallConfinement=new Uint8Array(this.size);
     this.airDiagnostics={maxVelocity:0,averageVelocity:0,maxPressure:0,minPressure:0,maxDivergence:0};
     this.airTopologyVersion=0;
     this.heatFlux=new Float32Array(this.size);

@@ -19,11 +19,13 @@ export class AirGrid {
     this.divergence=new Float32Array(this.size);
     this.solid=new Uint8Array(this.size);
     this.wallProximity=new Uint8Array(this.size);
+    this.wallConfinement=new Uint8Array(this.size);
     this.topologyVersion=-1;
 
     world.airPressure=this.pressure;
     world.airDivergence=this.divergence;
     world.airWallProximity=this.wallProximity;
+    world.airWallConfinement=this.wallConfinement;
   }
 
   cellIndex(x,y){return y*this.width+x;}
@@ -38,13 +40,20 @@ export class AirGrid {
     if(!force&&version===this.topologyVersion)return false;
     this.topologyVersion=version;
     this.pressure.fill(0);this.pressureNext.fill(0);this.u.fill(0);this.v.fill(0);
+
     for(let y=0;y<this.height;y++)for(let x=0;x<this.width;x++){
       const i=this.cellIndex(x,y);
       this.solid[i]=this.world.registry.fromIndex(this.world.material[i]).solid?1:0;
     }
+
     for(let y=0;y<this.height;y++)for(let x=0;x<this.width;x++){
       const i=this.cellIndex(x,y);
-      if(this.solid[i]){this.wallProximity[i]=4;continue;}
+      if(this.solid[i]){
+        this.wallProximity[i]=4;
+        this.wallConfinement[i]=3;
+        continue;
+      }
+
       let near=0;
       for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
         if(!dx&&!dy)continue;
@@ -52,6 +61,16 @@ export class AirGrid {
         if(this.inCell(nx,ny)&&this.solid[this.cellIndex(nx,ny)])near++;
       }
       this.wallProximity[i]=near;
+
+      let nearest=4;
+      for(let dy=-3;dy<=3;dy++)for(let dx=-3;dx<=3;dx++){
+        if(!dx&&!dy)continue;
+        const distance=Math.max(Math.abs(dx),Math.abs(dy));
+        if(distance>=nearest)continue;
+        const nx=x+dx,ny=y+dy;
+        if(this.inCell(nx,ny)&&this.solid[this.cellIndex(nx,ny)])nearest=distance;
+      }
+      this.wallConfinement[i]=nearest<4?4-nearest:0;
     }
     return true;
   }
