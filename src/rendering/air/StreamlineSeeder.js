@@ -15,8 +15,8 @@ export class StreamlineSeeder {
     return Math.max(12,Math.round(base*density));
   }
 
-  farEnough(seeds,candidate){
-    const d2=this.minimumSeedDistance*this.minimumSeedDistance;
+  farEnough(seeds,candidate,minimumDistance=this.minimumSeedDistance){
+    const d2=minimumDistance*minimumDistance;
     return !seeds.some(s=>{
       const dx=s.x-candidate.x,dy=s.y-candidate.y;
       return dx*dx+dy*dy<d2;
@@ -29,12 +29,12 @@ export class StreamlineSeeder {
     return Math.hypot(world.airX[i],world.airY[i]);
   }
 
-  addSeed(seeds,world,candidate,max){
+  addSeed(seeds,world,candidate,max,minimumDistance=this.minimumSeedDistance){
     if(seeds.length>=max)return;
     const x=Math.floor(candidate.x),y=Math.floor(candidate.y);
     if(!world.inBounds(x,y)||!world.isAir(x,y))return;
     if(this.speedAt(world,x,y)<this.minSpeed)return;
-    if(this.farEnough(seeds,candidate))seeds.push(candidate);
+    if(this.farEnough(seeds,candidate,minimumDistance))seeds.push(candidate);
   }
 
   fromEquipment(world,seeds,max){
@@ -48,7 +48,7 @@ export class StreamlineSeeder {
           x:e.x+.5+d.x*.62+px*lateral,
           y:e.y+.5+d.y*.62+py*lateral,
           priority:2,
-        },max);
+        },max,.46);
       }
     }
   }
