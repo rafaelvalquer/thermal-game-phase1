@@ -9,7 +9,7 @@ const MODE_HELP={
   normal:'Operação · zonas, equipamentos e efeitos físicos',
   thermal:'Térmico · cores representam temperatura',
   airflow:'Airflow · vetores mostram direção e intensidade',
-  fluid:'Fluido · cor da água e pulsos mostram calor e vazão',
+  fluid:'Fluido · temperatura, sentido e status de cada circuito',
 };
 
 export class UIManager {
@@ -50,7 +50,7 @@ export class UIManager {
     document.querySelector('#missionText').textContent=s.mission.message;
     document.querySelector('#pauseBtn').textContent=s.paused?'▶ Continuar':'Ⅱ Pausar';
     document.querySelector('#speedLabel').textContent=s.speed+'×';
-    document.querySelector('#rotateHint').textContent=g.build.selected&&['fan','exhaust'].includes(g.build.selected)?'Direção: '+['→','↓','←','↑'][g.build.rotation]+' · R gira':'';
+    document.querySelector('#rotateHint').textContent=g.build.selected&&['fan','exhaust','pump'].includes(g.build.selected)?'Direção: '+['→','↓','←','↑'][g.build.rotation]+' · R gira':'';
     this.updateAlerts();this.drawGraph();
     if(s.mission.state!=='running')this.debriefing.show();
   }
@@ -61,8 +61,12 @@ export class UIManager {
     if(m.maxTemp>=80)alerts.push(['critical','OVERHEAT','Equipamento em faixa crítica']);
     else if(m.maxTemp>50)alerts.push(['warn','HOTSPOT','Temperatura elevada detectada']);
     if(m.powerDraw>limit)alerts.push(['critical','POWER LIMIT','Limite de '+(limit/1000).toFixed(1)+' kW excedido']);
-    const fluids=this.game.world.entities.filter(e=>['pipe','pump','tank','radiator','exchanger'].includes(e.type));
-    if(fluids.length&&fluids.some(e=>e.type==='pump')&&fluids.every(e=>(e.flowRate||0)<.02))alerts.push(['warn','LOW FLOW','Rede hidráulica sem circulação']);
+
+    const networks=s.fluid.networks||[];
+    const badNetwork=networks.find(n=>n.entities.some(e=>e.type==='pump')&&!n.closed);
+    if(badNetwork)alerts.push(['warn','FLUID '+badNetwork.status,badNetwork.id+' sem circulação válida']);
+    else if(networks.some(n=>n.closed&&n.flowRate<.05))alerts.push(['warn','LOW FLOW','Circuito hidráulico com vazão insuficiente']);
+
     if(s.mission.lastEventMessage)alerts.push(['warn','MISSION EVENT',s.mission.lastEventMessage]);
     root.innerHTML=alerts.length?alerts.slice(0,3).map(a=>'<div class="alert '+a[0]+'"><b>'+a[1]+'</b><span>'+a[2]+'</span></div>').join(''):'<div class="alert ok"><b>SYSTEM NOMINAL</b><span>Nenhum alerta operacional</span></div>';
   }

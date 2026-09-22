@@ -73,3 +73,8 @@ O projeto agora possui campanha data-driven com progressão persistida em localS
 6. Critical Facility — infraestrutura bloqueada e eventos operacionais
 
 As fases ficam em src/campaign/levels/ e os layouts em src/campaign/maps/. Objetivos, falhas e eventos são configurados por dados; o motor físico continua responsável pelas temperaturas.
+
+
+## Circuito hidráulico
+
+O sistema de fluidos usa loops simples e orientados. Para gerar vazão, a rede precisa formar um circuito fechado, possuir exatamente uma bomba ativa e a seta da bomba deve apontar para o primeiro componente downstream. Ramificações em T não são permitidas nesta versão. O trocador só remove calor da máquina quando existe vazão válida; o radiador rejeita calor para uma área 3x3 e seu desempenho aumenta com airflow.

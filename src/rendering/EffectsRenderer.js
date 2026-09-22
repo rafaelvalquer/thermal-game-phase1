@@ -5,6 +5,7 @@ export class EffectsRenderer {
     this.thermalEffects(ctx,world,tile,time);
     if(mode==='normal')this.ambientAir(ctx,world,tile,time);
     this.exhaustEffects(ctx,world,tile,time);
+    this.radiatorHeat(ctx,world,tile,time);
     this.exchangerLinks(ctx,world,tile,time);
   }
 
@@ -12,7 +13,8 @@ export class EffectsRenderer {
     ctx.save();ctx.lineCap='round';
     for(const e of world.entities){
       const temp=e.isHeatMachine?e.temperature:(FLUID_TYPES.has(e.type)?e.waterTemperature:null);
-      if(temp==null||temp<42)continue;
+      const threshold=e.type==='radiator'?30:42;
+      if(temp==null||temp<threshold)continue;
       const state=thermalState(temp),cx=(e.x+.5)*tile,cy=(e.y+.3)*tile;
       const strength=Math.min(1,(temp-40)/45);
       ctx.strokeStyle=heatCss(temp,.18+.28*strength);ctx.lineWidth=Math.max(.8,tile*.045);
@@ -68,17 +70,36 @@ export class EffectsRenderer {
     ctx.restore();
   }
 
+  radiatorHeat(ctx,world,tile,time){
+    ctx.save();ctx.lineCap='round';
+    for(const r of world.entities){
+      if(r.type!=='radiator'||Math.abs(r.thermalPower||0)<100||r.waterTemperature<=r.airInTemperature)continue;
+      const strength=Math.min(1,Math.abs(r.thermalPower)/25000),cx=(r.x+.5)*tile,cy=(r.y+.5)*tile;
+      ctx.strokeStyle='rgba(251,146,60,'+(.18+strength*.35)+')';
+      ctx.lineWidth=Math.max(.8,tile*.045);
+      for(let k=0;k<4;k++){
+        const phase=time*1.5+k*.9+r.id*.13;
+        const angle=(Math.PI*2*k/4)+Math.sin(phase)*.15;
+        const len=tile*(.55+strength*.8);
+        const sx=cx+Math.cos(angle)*tile*.2,sy=cy+Math.sin(angle)*tile*.2;
+        const ex=sx+Math.cos(angle)*len,ey=sy+Math.sin(angle)*len;
+        ctx.beginPath();ctx.moveTo(sx,sy);ctx.quadraticCurveTo((sx+ex)/2+Math.sin(phase)*tile*.12,(sy+ey)/2+Math.cos(phase)*tile*.12,ex,ey);ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
   exchangerLinks(ctx,world,tile,time){
     ctx.save();
     for(const e of world.entities){
       if(e.type!=='exchanger')continue;
       let machine=null,best=Infinity;
       for(const m of world.entities){
-        if(m.type!=='machine')continue;
+        if(!m.isHeatMachine)continue;
         const dist=Math.abs(m.x-e.x)+Math.abs(m.y-e.y);
         if(dist<best&&dist<=1){best=dist;machine=m;}
       }
-      if(!machine)continue;
+      if(!machine||!e.circuitClosed||Math.abs(e.thermalPower||0)<50)continue;
       const delta=machine.temperature-e.waterTemperature;
       if(Math.abs(delta)<2)continue;
       ctx.strokeStyle=delta>0?'rgba(251,146,60,.72)':'rgba(56,189,248,.7)';

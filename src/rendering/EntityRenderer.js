@@ -118,10 +118,6 @@ export class EntityRenderer {
     for(const [dx,dy] of links){
       ctx.strokeStyle='#334155';ctx.lineWidth=tile*.34;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+dx*tile*.55,cy+dy*tile*.55);ctx.stroke();
       ctx.strokeStyle=waterCss(e.waterTemperature,mode==='fluid'?1:.82);ctx.lineWidth=tile*.16;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+dx*tile*.55,cy+dy*tile*.55);ctx.stroke();
-      if(e.flowRate>.02){
-        ctx.strokeStyle='rgba(224,242,254,.9)';ctx.lineWidth=Math.max(1,tile*.045);ctx.setLineDash([tile*.12,tile*.2]);ctx.lineDashOffset=-time*tile*(.9+e.flowRate*.25);
-        ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+dx*tile*.55,cy+dy*tile*.55);ctx.stroke();ctx.setLineDash([]);
-      }
     }
     ctx.fillStyle=waterCss(e.waterTemperature,1);ctx.beginPath();ctx.arc(cx,cy,tile*.13,0,Math.PI*2);ctx.fill();
   }
@@ -133,13 +129,22 @@ export class EntityRenderer {
   pump(ctx,world,e,x,y,tile,mode,time){
     this.equipmentPorts(ctx,world,e,x,y,tile,mode,time);
     const cx=x+tile/2,cy=y+tile/2,pulse=.5+.5*Math.sin(time*6);
-    ctx.fillStyle='#172033';ctx.strokeStyle='#38bdf8';ctx.lineWidth=Math.max(1,tile*.06);
+    const ok=e.circuitClosed&&e.flowRate>.02;
+    ctx.fillStyle='#172033';ctx.strokeStyle=ok?'#38bdf8':'#f59e0b';ctx.lineWidth=Math.max(1,tile*.06);
     ctx.beginPath();ctx.arc(cx,cy,tile*.33,0,Math.PI*2);ctx.fill();ctx.stroke();
-    ctx.save();ctx.translate(cx,cy);ctx.rotate(time*5);
-    ctx.strokeStyle='rgba(186,230,253,'+(.55+pulse*.4)+')';ctx.lineWidth=Math.max(1,tile*.08);
+    ctx.save();ctx.translate(cx,cy);ctx.rotate(time*(ok?5:1.4));
+    ctx.strokeStyle=ok?'rgba(186,230,253,'+(.55+pulse*.4)+')':'rgba(245,158,11,.6)';
+    ctx.lineWidth=Math.max(1,tile*.08);
     for(let i=0;i<3;i++){ctx.rotate(Math.PI*2/3);ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(tile*.22,0);ctx.stroke();}
     ctx.restore();
     ctx.fillStyle='#e0f2fe';ctx.beginPath();ctx.arc(cx,cy,tile*.07,0,Math.PI*2);ctx.fill();
+
+    const d=e.direction||{x:1,y:0};
+    const ex=cx+d.x*tile*.48,ey=cy+d.y*tile*.48,side=tile*.1;
+    ctx.strokeStyle=ok?'#7dd3fc':'#fbbf24';ctx.lineWidth=Math.max(1,tile*.055);
+    ctx.beginPath();ctx.moveTo(cx+d.x*tile*.15,cy+d.y*tile*.15);ctx.lineTo(ex,ey);ctx.stroke();
+    ctx.fillStyle=ok?'#7dd3fc':'#fbbf24';
+    ctx.beginPath();ctx.moveTo(ex,ey);ctx.lineTo(ex-d.x*tile*.16-d.y*side,ey-d.y*tile*.16+d.x*side);ctx.lineTo(ex-d.x*tile*.16+d.y*side,ey-d.y*tile*.16-d.x*side);ctx.closePath();ctx.fill();
   }
 
   tank(ctx,world,e,x,y,tile,mode,time){
@@ -154,17 +159,27 @@ export class EntityRenderer {
 
   radiator(ctx,world,e,x,y,tile,mode,time){
     this.equipmentPorts(ctx,world,e,x,y,tile,mode,time);
-    const hot=Math.max(0,Math.min(1,(e.waterTemperature-30)/40));
+    const hot=Math.max(0,Math.min(1,(e.waterTemperature-28)/35));
+    if((e.thermalPower||0)>100){
+      ctx.shadowColor=heatCss(e.waterTemperature,.8);
+      ctx.shadowBlur=tile*(.18+hot*.45);
+    }
     ctx.fillStyle='#1f2937';ctx.strokeStyle=waterCss(e.waterTemperature,1);ctx.lineWidth=Math.max(1,tile*.06);
     ctx.fillRect(x+tile*.13,y+tile*.15,tile*.74,tile*.7);ctx.strokeRect(x+tile*.13,y+tile*.15,tile*.74,tile*.7);
-    for(let i=0;i<5;i++){const fx=x+tile*(.22+i*.14);ctx.strokeStyle=heatCss(e.waterTemperature,.45+hot*.5);ctx.lineWidth=Math.max(1,tile*.055);ctx.beginPath();ctx.moveTo(fx,y+tile*.23);ctx.lineTo(fx,y+tile*.77);ctx.stroke();}
+    ctx.shadowBlur=0;
+    for(let i=0;i<5;i++){
+      const fx=x+tile*(.22+i*.14);
+      ctx.strokeStyle=heatCss(e.waterTemperature,.38+hot*.58);ctx.lineWidth=Math.max(1,tile*.055);
+      ctx.beginPath();ctx.moveTo(fx,y+tile*.23);ctx.lineTo(fx,y+tile*.77);ctx.stroke();
+    }
   }
 
   exchanger(ctx,world,e,x,y,tile,mode,time){
     this.equipmentPorts(ctx,world,e,x,y,tile,mode,time);
-    ctx.fillStyle='#202938';ctx.strokeStyle=waterCss(e.waterTemperature,1);ctx.lineWidth=Math.max(1,tile*.06);
+    const active=e.circuitClosed&&Math.abs(e.thermalPower||0)>50;
+    ctx.fillStyle='#202938';ctx.strokeStyle=active?'#f59e0b':waterCss(e.waterTemperature,1);ctx.lineWidth=Math.max(1,tile*.06);
     ctx.fillRect(x+tile*.14,y+tile*.16,tile*.72,tile*.68);ctx.strokeRect(x+tile*.14,y+tile*.16,tile*.72,tile*.68);
-    ctx.strokeStyle='#f59e0b';ctx.lineWidth=Math.max(1,tile*.055);
+    ctx.strokeStyle=active?'#fb923c':'#64748b';ctx.lineWidth=Math.max(1,tile*.055);
     for(let i=0;i<3;i++){ctx.beginPath();ctx.moveTo(x+tile*.25,y+tile*(.28+i*.18));ctx.lineTo(x+tile*.75,y+tile*(.28+i*.18));ctx.stroke();}
     ctx.fillStyle='#e2e8f0';ctx.font='800 '+Math.max(7,tile*.36)+'px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('HX',x+tile/2,y+tile/2);
   }

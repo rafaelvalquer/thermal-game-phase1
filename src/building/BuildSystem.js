@@ -9,20 +9,17 @@ export class BuildSystem {
   constructor(world,simulation,{budget=DEFAULT_BUDGET,inventory=null}={}){
     this.world=world;this.simulation=simulation;this.validator=new PlacementValidator(world);this.selected=null;this.rotation=0;this.budget=budget;
     const defaults=Object.fromEntries(Object.entries(BUILD_CATALOG).map(([k,v])=>[k,v.inventory]));
-    if(inventory){
-      this.inventory=Object.fromEntries(Object.keys(defaults).map(k=>[k,k==='demolish'?Infinity:0]));
-      Object.assign(this.inventory,inventory);
-    }else this.inventory=defaults;
+    if(inventory){this.inventory=Object.fromEntries(Object.keys(defaults).map(k=>[k,k==='demolish'?Infinity:0]));Object.assign(this.inventory,inventory);}
+    else this.inventory=defaults;
     this.onChange=()=>{};
   }
-
   select(tool){this.selected=tool;this.onChange();}
   rotate(){this.rotation=(this.rotation+1)%4;this.onChange();}
   direction(){return DIRS[this.rotation];}
   canAfford(tool){const c=BUILD_CATALOG[tool];return c&&this.budget>=c.cost&&(this.inventory[tool]??0)>0;}
 
   place(x,y){
-    const tool=this.selected;if(!tool||!this.validator.canPlace(tool,x,y))return {ok:false,reason:'Posição inválida'};
+    const tool=this.selected;if(!tool||!this.validator.canPlace(tool,x,y))return {ok:false,reason:'Posição inválida ou criaria uma ramificação hidráulica'};
     if(tool==='demolish')return this.demolish(x,y);
     if(!this.canAfford(tool))return {ok:false,reason:'Sem orçamento, estoque ou ferramenta bloqueada'};
     const before=this.simulation.totalInternalEnergy(),c=BUILD_CATALOG[tool];let entity=null;
@@ -32,7 +29,7 @@ export class BuildSystem {
       if(tool==='fan')entity=new Fan(x,y,{...dir});
       if(tool==='exhaust')entity=new ExhaustFan(x,y,{...dir});
       if(tool==='pipe')entity=new Pipe(x,y);
-      if(tool==='pump')entity=new Pump(x,y);
+      if(tool==='pump')entity=new Pump(x,y,{...dir});
       if(tool==='tank')entity=new WaterTank(x,y);
       if(tool==='radiator')entity=new Radiator(x,y);
       if(tool==='exchanger')entity=new HeatExchanger(x,y);
