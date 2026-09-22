@@ -1,18 +1,27 @@
 import { Toolbar } from './Toolbar.js';
 import { Inspector } from './Inspector.js';
 import { MetricsPanel } from './MetricsPanel.js';
+import { ObjectivePanel } from './ObjectivePanel.js';
+import { Minimap } from './Minimap.js';
+import { MissionDebriefing } from './MissionDebriefing.js';
 
 const MODE_HELP={
-  normal:'Operação · efeitos físicos em tempo real',
+  normal:'Operação · zonas, equipamentos e efeitos físicos',
   thermal:'Térmico · cores representam temperatura',
-  airflow:'Airflow · setas mostram direção e intensidade',
+  airflow:'Airflow · vetores mostram direção e intensidade',
   fluid:'Fluido · cor da água e pulsos mostram calor e vazão',
 };
 
 export class UIManager {
-  constructor(game){
-    this.game=game;this.toolbar=new Toolbar(document.querySelector('#tools'),game.build);this.inspector=new Inspector(document.querySelector('#inspector'));
-    this.metrics=new MetricsPanel(document.querySelector('#metrics'));this.graph=document.querySelector('#history');this.graphCtx=this.graph.getContext('2d');
+  constructor(game,campaign){
+    this.game=game;this.campaign=campaign;
+    this.toolbar=new Toolbar(document.querySelector('#tools'),game.build);
+    this.inspector=new Inspector(document.querySelector('#inspector'));
+    this.metrics=new MetricsPanel(document.querySelector('#metrics'));
+    this.objectives=new ObjectivePanel(document.querySelector('#objectives'));
+    this.minimap=new Minimap(document.querySelector('#minimap'),game);
+    this.debriefing=new MissionDebriefing(game,campaign);
+    this.graph=document.querySelector('#history');this.graphCtx=this.graph.getContext('2d');
     this.bind();game.build.onChange=()=>{this.toolbar.render();if(game.build.selected)game.renderer.selectedEntity=null;};
   }
 
@@ -25,6 +34,7 @@ export class UIManager {
     document.querySelector('#pauseBtn').onclick=()=>this.game.sim.togglePause();
     document.querySelectorAll('[data-speed]').forEach(b=>b.onclick=()=>this.game.setSpeed(Number(b.dataset.speed)));
     document.querySelector('#resetBtn').onclick=()=>location.reload();
+    document.querySelector('#exitBtn').onclick=()=>location.reload();
   }
 
   inspectAt(x,y){
@@ -33,29 +43,38 @@ export class UIManager {
     this.game.renderer.selectedEntity=e||null;
   }
 
-  update(){
-    const g=this.game,s=g.sim;this.metrics.update(s,g.build);this.inspector.update(g.world);
+  update(dt=0){
+    const g=this.game,s=g.sim;
+    this.metrics.update(s,g.build,g.level);this.objectives.update(s);this.inspector.update(g.world);this.minimap.update(dt);
     document.querySelector('#clock').textContent=this.formatTime(s.elapsed);
     document.querySelector('#missionText').textContent=s.mission.message;
     document.querySelector('#pauseBtn').textContent=s.paused?'▶ Continuar':'Ⅱ Pausar';
     document.querySelector('#speedLabel').textContent=s.speed+'×';
     document.querySelector('#rotateHint').textContent=g.build.selected&&['fan','exhaust'].includes(g.build.selected)?'Direção: '+['→','↓','←','↑'][g.build.rotation]+' · R gira':'';
-    this.updateAlerts();this.drawGraph();this.updateEndState();
+    this.updateAlerts();this.drawGraph();
+    if(s.mission.state!=='running')this.debriefing.show();
   }
 
   updateAlerts(){
     const root=document.querySelector('#alerts');if(!root)return;
-    const s=this.game.sim,m=s.metrics,alerts=[];
-    if(m.maxTemp>=80)alerts.push(['critical','OVERHEAT','Máquina em faixa crítica']);
-    else if(m.maxTemp>40)alerts.push(['warn','HOTSPOT','Temperatura acima da meta']);
-    if(m.powerDraw>10000)alerts.push(['critical','POWER LIMIT','Limite elétrico excedido']);
+    const s=this.game.sim,m=s.metrics,alerts=[],limit=this.game.level.powerLimit;
+    if(m.maxTemp>=80)alerts.push(['critical','OVERHEAT','Equipamento em faixa crítica']);
+    else if(m.maxTemp>50)alerts.push(['warn','HOTSPOT','Temperatura elevada detectada']);
+    if(m.powerDraw>limit)alerts.push(['critical','POWER LIMIT','Limite de '+(limit/1000).toFixed(1)+' kW excedido']);
     const fluids=this.game.world.entities.filter(e=>['pipe','pump','tank','radiator','exchanger'].includes(e.type));
-    if(fluids.length&&fluids.every(e=>(e.flowRate||0)<.02))alerts.push(['warn','LOW FLOW','Rede hidráulica sem circulação']);
-    root.innerHTML=alerts.length?alerts.map(a=>'<div class="alert '+a[0]+'"><b>'+a[1]+'</b><span>'+a[2]+'</span></div>').join(''):'<div class="alert ok"><b>SYSTEM NOMINAL</b><span>Nenhum alerta operacional</span></div>';
+    if(fluids.length&&fluids.some(e=>e.type==='pump')&&fluids.every(e=>(e.flowRate||0)<.02))alerts.push(['warn','LOW FLOW','Rede hidráulica sem circulação']);
+    if(s.mission.lastEventMessage)alerts.push(['warn','MISSION EVENT',s.mission.lastEventMessage]);
+    root.innerHTML=alerts.length?alerts.slice(0,3).map(a=>'<div class="alert '+a[0]+'"><b>'+a[1]+'</b><span>'+a[2]+'</span></div>').join(''):'<div class="alert ok"><b>SYSTEM NOMINAL</b><span>Nenhum alerta operacional</span></div>';
   }
 
   setSpeedButtons(v){document.querySelectorAll('[data-speed]').forEach(b=>b.classList.toggle('active',Number(b.dataset.speed)===v));}
   formatTime(s){const m=Math.floor(s/60),sec=Math.floor(s%60);return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0');}
+
+  safeLine(){
+    const objectives=this.game.level.objectives||[];
+    const temp=objectives.find(o=>['machineTemperature','zoneTemperature','maxAirTemperature'].includes(o.type));
+    return temp?.max??40;
+  }
 
   drawGraph(){
     const c=this.graph,ctx=this.graphCtx,r=c.getBoundingClientRect(),dpr=Math.min(2,devicePixelRatio||1),w=Math.max(10,Math.floor(r.width*dpr)),h=Math.max(10,Math.floor(r.height*dpr));
@@ -63,16 +82,9 @@ export class UIManager {
     ctx.clearRect(0,0,W,H);ctx.strokeStyle='rgba(148,163,184,.12)';ctx.lineWidth=1;
     for(let i=1;i<4;i++){ctx.beginPath();ctx.moveTo(0,H*i/4);ctx.lineTo(W,H*i/4);ctx.stroke();}
     const data=this.game.sim.history;if(data.length<2)return;
-    const min=20,max=Math.max(85,...data.map(d=>d.max));
-    const draw=(key,stroke,width)=>{ctx.strokeStyle=stroke;ctx.lineWidth=width;ctx.beginPath();data.forEach((d,i)=>{const x=i/(data.length-1)*W,y=H-(d[key]-min)/(max-min)*H;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();};
+    const min=20,max=Math.max(85,...data.map(d=>Math.min(d.max,120)));
+    const draw=(key,stroke,width)=>{ctx.strokeStyle=stroke;ctx.lineWidth=width;ctx.beginPath();data.forEach((d,i)=>{const value=Math.min(d[key],max),x=i/(data.length-1)*W,y=H-(value-min)/(max-min)*H;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();};
     draw('max','#fb7185',2);draw('avg','#67e8f9',1.5);
-    const safeY=H-(40-min)/(max-min)*H;ctx.strokeStyle='rgba(250,204,21,.35)';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(0,safeY);ctx.lineTo(W,safeY);ctx.stroke();ctx.setLineDash([]);
-  }
-
-  updateEndState(){
-    const s=this.game.sim;if(s.mission.state==='running')return;
-    const modal=document.querySelector('#endModal');modal.classList.add('show');
-    document.querySelector('#endTitle').textContent=s.mission.state==='won'?'MISSÃO CONCLUÍDA':'FALHA TÉRMICA';
-    document.querySelector('#endText').textContent=s.mission.state==='won'?'Você estabilizou o sistema abaixo de 40°C dentro do limite elétrico.':s.mission.failReason;
+    const safe=this.safeLine(),safeY=H-(safe-min)/(max-min)*H;ctx.strokeStyle='rgba(250,204,21,.35)';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(0,safeY);ctx.lineTo(W,safeY);ctx.stroke();ctx.setLineDash([]);
   }
 }

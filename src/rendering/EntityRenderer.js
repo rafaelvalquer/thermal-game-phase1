@@ -7,6 +7,9 @@ export class EntityRenderer {
       ctx.save();
       this.shadow(ctx,x,y,tile,e.type);
       if(e.type==='machine')this.machine(ctx,e,x,y,tile,time);
+      else if(e.type==='serverRack')this.serverRack(ctx,e,x,y,tile,time);
+      else if(e.type==='furnace')this.furnace(ctx,e,x,y,tile,time);
+      else if(e.type==='passiveHeat')this.passiveHeat(ctx,e,x,y,tile,time);
       else if(e.type==='fan'||e.type==='exhaust')this.fan(ctx,e,cx,cy,tile,time);
       else if(FLUID_TYPES.has(e.type))this.fluid(ctx,world,e,x,y,tile,mode,time);
       else if(e.type==='sensor')this.sensor(ctx,e,cx,cy,tile,time);
@@ -40,6 +43,40 @@ export class EntityRenderer {
     if(e.temperature>=60){
       ctx.fillStyle=state.color;ctx.font='900 '+Math.max(8,tile*.42)+'px system-ui';ctx.fillText('!',x+tile*.18,y+tile*.15);
     }
+  }
+
+
+  serverRack(ctx,e,x,y,tile,time){
+    const state=thermalState(e.temperature),pulse=.5+.5*Math.sin(time*4+e.id);
+    ctx.fillStyle='#111827';ctx.strokeStyle=state.color;ctx.lineWidth=Math.max(1,tile*.055);
+    ctx.fillRect(x+tile*.08,y+tile*.06,tile*.84,tile*.88);ctx.strokeRect(x+tile*.08,y+tile*.06,tile*.84,tile*.88);
+    for(let i=0;i<5;i++){
+      const ry=y+tile*(.16+i*.14);ctx.fillStyle=i%2?'#263244':'#1e293b';ctx.fillRect(x+tile*.16,ry,tile*.68,tile*.09);
+      ctx.fillStyle=i<3?'#34d399':'#60a5fa';ctx.globalAlpha=.45+.45*pulse;ctx.fillRect(x+tile*.73,ry+tile*.02,tile*.05,tile*.035);ctx.globalAlpha=1;
+    }
+    const arrow=(d,color)=>{
+      const cx=x+tile/2,cy=y+tile/2,ex=cx+d.x*tile*.48,ey=cy+d.y*tile*.48;
+      ctx.strokeStyle=color;ctx.lineWidth=Math.max(1,tile*.06);ctx.beginPath();ctx.moveTo(cx-d.x*tile*.18,cy-d.y*tile*.18);ctx.lineTo(ex,ey);ctx.stroke();
+      ctx.fillStyle=color;ctx.beginPath();ctx.arc(ex,ey,Math.max(1.2,tile*.055),0,Math.PI*2);ctx.fill();
+    };
+    arrow(e.airIntakeDirection,'#38bdf8');arrow(e.airExhaustDirection,'#fb923c');
+  }
+
+  furnace(ctx,e,x,y,tile,time){
+    const pulse=.5+.5*Math.sin(time*2.2+e.id),g=ctx.createLinearGradient(x,y,x+tile,y+tile);
+    g.addColorStop(0,'#4b1d12');g.addColorStop(.45,'#7c2d12');g.addColorStop(1,'#1f2937');
+    ctx.fillStyle=g;ctx.strokeStyle='#f97316';ctx.lineWidth=Math.max(1,tile*.07);
+    ctx.fillRect(x+tile*.04,y+tile*.04,tile*.92,tile*.92);ctx.strokeRect(x+tile*.04,y+tile*.04,tile*.92,tile*.92);
+    ctx.fillStyle='rgba(251,146,60,'+(.38+pulse*.38)+')';ctx.fillRect(x+tile*.2,y+tile*.27,tile*.6,tile*.42);
+    ctx.strokeStyle='#fed7aa';ctx.beginPath();ctx.arc(x+tile*.5,y+tile*.49,tile*.17,0,Math.PI*2);ctx.stroke();
+    ctx.fillStyle='#fff7ed';ctx.font='900 '+Math.max(7,tile*.3)+'px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('F',x+tile/2,y+tile/2);
+  }
+
+  passiveHeat(ctx,e,x,y,tile,time){
+    const cx=x+tile/2,cy=y+tile/2,pulse=.5+.5*Math.sin(time*3+e.id);
+    ctx.fillStyle='rgba(245,158,11,'+(.28+pulse*.22)+')';ctx.beginPath();ctx.arc(cx,cy,tile*.24,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#fbbf24';ctx.lineWidth=Math.max(1,tile*.045);ctx.beginPath();ctx.arc(cx,cy,tile*.31,0,Math.PI*2);ctx.stroke();
+    ctx.fillStyle='#fde68a';ctx.font='800 '+Math.max(6,tile*.22)+'px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(e.icon==='computer'?'PC':'Q',cx,cy);
   }
 
   fan(ctx,e,cx,cy,tile,time){

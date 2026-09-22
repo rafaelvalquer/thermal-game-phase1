@@ -1,5 +1,8 @@
 export { Entity } from './Entity.js';
 export { Machine } from './Machine.js';
+export { ServerRack } from './ServerRack.js';
+export { Furnace } from './Furnace.js';
+export { PassiveHeatSource } from './PassiveHeatSource.js';
 export { Fan } from './Fan.js';
 export { ExhaustFan } from './ExhaustFan.js';
 export { Pipe } from './Pipe.js';
