@@ -41,14 +41,17 @@ export class EffectsRenderer {
   ambientAir(ctx,world,tile,time){
     ctx.save();ctx.lineCap='round';
     for(const e of world.entities){
-      if(e.type!=='fan')continue;
+      if(e.type!=='fan'||(e.currentVelocity||0)<.08)continue;
       const d=e.direction,cx=(e.x+.5)*tile,cy=(e.y+.5)*tile;
-      for(let k=0;k<4;k++){
-        const phase=(time*(1.2+k*.09)+k*.23)%1;
-        const along=tile*(.65+phase*3.2),side=(k-1.5)*tile*.18;
+      const speed=e.currentVelocity||0;
+      for(let k=0;k<3;k++){
+        const phase=(time*(.7+speed*.18)+k*.29)%1;
+        const along=tile*(.55+phase*(.8+Math.min(2.2,speed*.65)));
+        const side=(k-1)*tile*.13*(.5+phase);
         const px=cx+d.x*along-d.y*side,py=cy+d.y*along+d.x*side;
-        ctx.strokeStyle='rgba(125,211,252,'+(0.11+(1-phase)*.18)+')';
-        ctx.lineWidth=Math.max(.7,tile*.04);ctx.beginPath();ctx.moveTo(px-d.x*tile*.36,py-d.y*tile*.36);ctx.lineTo(px+d.x*tile*.15,py+d.y*tile*.15);ctx.stroke();
+        ctx.strokeStyle='rgba(125,211,252,'+(.08+Math.min(.26,speed*.055)) +')';
+        ctx.lineWidth=Math.max(.7,tile*.035);ctx.beginPath();
+        ctx.moveTo(px-d.x*tile*.22,py-d.y*tile*.22);ctx.lineTo(px+d.x*tile*.1,py+d.y*tile*.1);ctx.stroke();
       }
     }
     ctx.restore();
@@ -57,14 +60,14 @@ export class EffectsRenderer {
   exhaustEffects(ctx,world,tile,time){
     ctx.save();ctx.lineCap='round';
     for(const e of world.entities){
-      if(e.type!=='exhaust')continue;
-      const d=e.direction,cx=(e.x+.5)*tile,cy=(e.y+.5)*tile;
-      for(let k=0;k<5;k++){
-        const phase=(time*(.9+k*.04)+k*.17)%1;
-        const distance=tile*(.45+(1-phase)*2.2),side=(k-2)*tile*.18*(.35+phase);
+      if(e.type!=='exhaust'||(e.currentFlow||0)<.02)continue;
+      const d=e.direction,cx=(e.x+.5)*tile,cy=(e.y+.5)*tile,speed=e.currentVelocity||0;
+      for(let k=0;k<4;k++){
+        const phase=(time*(.6+speed*.14)+k*.19)%1;
+        const distance=tile*(.4+(1-phase)*(1+Math.min(1.5,speed*.4))),side=(k-1.5)*tile*.14*(.35+phase);
         const px=cx-d.x*distance-d.y*side,py=cy-d.y*distance+d.x*side;
-        ctx.fillStyle='rgba(251,113,133,'+(.08+phase*.3)+')';
-        ctx.beginPath();ctx.arc(px,py,Math.max(1,tile*.045*(.7+phase)),0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='rgba(251,113,133,'+(.08+phase*Math.min(.28,.08+speed*.04))+')';
+        ctx.beginPath();ctx.arc(px,py,Math.max(1,tile*.04*(.7+phase)),0,Math.PI*2);ctx.fill();
       }
     }
     ctx.restore();
