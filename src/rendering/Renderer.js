@@ -1,10 +1,95 @@
-import { TileRenderer } from './TileRenderer.js';import { HeatmapRenderer } from './HeatmapRenderer.js';import { AirflowRenderer } from './AirflowRenderer.js';import { EntityRenderer } from './EntityRenderer.js';
+import { TileRenderer } from './TileRenderer.js';
+import { HeatmapRenderer } from './HeatmapRenderer.js';
+import { AirflowRenderer } from './AirflowRenderer.js';
+import { EntityRenderer } from './EntityRenderer.js';
+import { EffectsRenderer } from './EffectsRenderer.js';
+import { FLUID_TYPES, waterCss } from './VisualTheme.js';
+
 export class Renderer {
-  constructor(canvas,camera,{tilePixels=14}={}){this.canvas=canvas;this.ctx=canvas.getContext('2d');this.camera=camera;this.tile=tilePixels;this.mode='normal';this.debug=false;this.hover=null;this.buildSystem=null;this.tileRenderer=new TileRenderer();this.heatmap=new HeatmapRenderer();this.airflow=new AirflowRenderer();this.entities=new EntityRenderer();}
-  resize(){const dpr=Math.min(2,devicePixelRatio||1),r=this.canvas.getBoundingClientRect(),w=Math.max(1,Math.floor(r.width*dpr)),h=Math.max(1,Math.floor(r.height*dpr));if(this.canvas.width!==w||this.canvas.height!==h){this.canvas.width=w;this.canvas.height=h;}this.dpr=dpr;}
-  draw(world,simulation){this.resize();const ctx=this.ctx;ctx.setTransform(this.dpr,0,0,this.dpr,0,0);ctx.clearRect(0,0,this.canvas.width/this.dpr,this.canvas.height/this.dpr);ctx.fillStyle='#07111f';ctx.fillRect(0,0,this.canvas.width/this.dpr,this.canvas.height/this.dpr);ctx.save();ctx.scale(this.camera.zoom,this.camera.zoom);ctx.translate(-this.camera.x,-this.camera.y);this.tileRenderer.draw(ctx,world,this.tile);if(this.mode==='thermal')this.heatmap.draw(ctx,world,this.tile);if(this.mode==='airflow')this.airflow.draw(ctx,world,this.tile);this.entities.draw(ctx,world,this.tile,this.mode);if(this.mode==='fluid')this.drawFluidConnections(ctx,world);this.drawHover(ctx,world);if(this.debug)this.drawDebug(ctx,world);ctx.restore();this.drawLegend(ctx,simulation);}
-  drawFluidConnections(ctx,world){const fluid=world.entities.filter(e=>['pipe','pump','tank','radiator','exchanger'].includes(e.type));ctx.strokeStyle='rgba(96,165,250,.55)';ctx.lineWidth=3;for(const a of fluid)for(const b of fluid){if(a.id>=b.id)continue;if(Math.abs(a.x-b.x)+Math.abs(a.y-b.y)!==1)continue;ctx.beginPath();ctx.moveTo((a.x+.5)*this.tile,(a.y+.5)*this.tile);ctx.lineTo((b.x+.5)*this.tile,(b.y+.5)*this.tile);ctx.stroke();}}
-  drawHover(ctx,world){if(!this.hover||!world.inBounds(this.hover.x,this.hover.y))return;const {x,y}=this.hover;const valid=this.buildSystem?.selected?this.buildSystem.validator.canPlace(this.buildSystem.selected,x,y):true;ctx.strokeStyle=this.buildSystem?.selected?(valid?'#4ade80':'#f87171'):'#f8fafc';ctx.lineWidth=2/this.camera.zoom;ctx.strokeRect(x*this.tile+1,y*this.tile+1,this.tile-2,this.tile-2);if(this.buildSystem?.selected&&['fan','exhaust'].includes(this.buildSystem.selected)){const d=this.buildSystem.direction(),cx=(x+.5)*this.tile,cy=(y+.5)*this.tile;ctx.strokeStyle='#7dd3fc';ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+d.x*this.tile*3,cy+d.y*this.tile*3);ctx.stroke();}}
-  drawDebug(ctx,world){if(!this.hover||!world.inBounds(this.hover.x,this.hover.y))return;const t=world.tileMap.get(this.hover.x,this.hover.y),txt=[`(${t.x},${t.y})`,t.material.name,`${t.temperature.toFixed(2)}°C`,`E ${(t.thermalEnergy/1000).toFixed(1)} kJ`,`air ${t.airflowX.toFixed(2)}, ${t.airflowY.toFixed(2)}`];ctx.font='10px monospace';const x=t.x*this.tile+this.tile+4,y=t.y*this.tile;ctx.fillStyle='rgba(2,6,23,.9)';ctx.fillRect(x,y,132,txt.length*13+8);ctx.fillStyle='#e2e8f0';txt.forEach((s,i)=>ctx.fillText(s,x+5,y+14+i*13));}
-  drawLegend(ctx,sim){if(this.mode!=='thermal')return;const x=18,y=18,w=150,h=10,g=ctx.createLinearGradient(x,y,x+w,y);g.addColorStop(0,'rgb(20,80,220)');g.addColorStop(.5,'rgb(40,200,90)');g.addColorStop(.75,'rgb(245,180,40)');g.addColorStop(1,'rgb(230,35,35)');ctx.fillStyle='rgba(2,6,23,.8)';ctx.fillRect(x-8,y-9,w+16,38);ctx.fillStyle=g;ctx.fillRect(x,y,w,h);ctx.fillStyle='#e2e8f0';ctx.font='11px system-ui';ctx.fillText('10°C',x,y+25);ctx.fillText('80°C+',x+w-34,y+25);}
+  constructor(canvas,camera,{tilePixels=14}={}){
+    this.canvas=canvas;this.ctx=canvas.getContext('2d');this.camera=camera;this.tile=tilePixels;
+    this.mode='normal';this.debug=false;this.hover=null;this.buildSystem=null;this.selectedEntity=null;
+    this.tileRenderer=new TileRenderer();this.heatmap=new HeatmapRenderer();this.airflow=new AirflowRenderer();
+    this.entities=new EntityRenderer();this.effects=new EffectsRenderer();
+  }
+
+  resize(){
+    const dpr=Math.min(2,devicePixelRatio||1),r=this.canvas.getBoundingClientRect(),w=Math.max(1,Math.floor(r.width*dpr)),h=Math.max(1,Math.floor(r.height*dpr));
+    if(this.canvas.width!==w||this.canvas.height!==h){this.canvas.width=w;this.canvas.height=h;}this.dpr=dpr;
+  }
+
+  draw(world,simulation){
+    this.resize();const ctx=this.ctx,time=performance.now()/1000;
+    ctx.setTransform(this.dpr,0,0,this.dpr,0,0);ctx.clearRect(0,0,this.canvas.width/this.dpr,this.canvas.height/this.dpr);
+    const bg=ctx.createLinearGradient(0,0,0,this.canvas.height/this.dpr);bg.addColorStop(0,'#07111f');bg.addColorStop(1,'#020617');ctx.fillStyle=bg;ctx.fillRect(0,0,this.canvas.width/this.dpr,this.canvas.height/this.dpr);
+    ctx.save();ctx.scale(this.camera.zoom,this.camera.zoom);ctx.translate(-this.camera.x,-this.camera.y);
+    this.tileRenderer.draw(ctx,world,this.tile);
+    if(this.mode==='thermal')this.heatmap.draw(ctx,world,this.tile);
+    if(this.mode==='fluid')this.drawFluidNetwork(ctx,world,time);
+    this.entities.draw(ctx,world,this.tile,this.mode,time);
+    this.effects.draw(ctx,world,this.tile,this.mode,time);
+    if(this.mode==='airflow')this.airflow.draw(ctx,world,this.tile,time);
+    this.drawSelection(ctx);this.drawHover(ctx,world,time);
+    if(this.debug)this.drawDebug(ctx,world);
+    ctx.restore();this.drawLegend(ctx,simulation);
+  }
+
+  drawFluidNetwork(ctx,world,time){
+    const fluid=world.entities.filter(e=>FLUID_TYPES.has(e.type));
+    ctx.save();ctx.lineCap='round';
+    for(const a of fluid)for(const b of fluid){
+      if(a.id>=b.id||Math.abs(a.x-b.x)+Math.abs(a.y-b.y)!==1)continue;
+      const t=((a.waterTemperature||25)+(b.waterTemperature||25))/2;
+      const flow=Math.max(a.flowRate||0,b.flowRate||0);
+      ctx.strokeStyle='rgba(15,23,42,.85)';ctx.lineWidth=this.tile*.45;ctx.beginPath();ctx.moveTo((a.x+.5)*this.tile,(a.y+.5)*this.tile);ctx.lineTo((b.x+.5)*this.tile,(b.y+.5)*this.tile);ctx.stroke();
+      ctx.strokeStyle=waterCss(t,.9);ctx.lineWidth=this.tile*.22;ctx.stroke();
+      if(flow>.02){ctx.strokeStyle='rgba(240,249,255,.9)';ctx.lineWidth=Math.max(1,this.tile*.05);ctx.setLineDash([this.tile*.15,this.tile*.22]);ctx.lineDashOffset=-time*this.tile*(1+flow*.3);ctx.stroke();ctx.setLineDash([]);}
+    }
+    ctx.restore();
+  }
+
+  drawSelection(ctx){
+    const e=this.selectedEntity;if(!e)return;
+    const x=e.x*this.tile,y=e.y*this.tile,pulse=.5+.5*Math.sin(performance.now()/180);
+    ctx.save();ctx.strokeStyle='rgba(250,204,21,'+(.55+pulse*.35)+')';ctx.lineWidth=Math.max(1.2,2/this.camera.zoom);
+    ctx.setLineDash([this.tile*.18,this.tile*.12]);ctx.strokeRect(x-this.tile*.12,y-this.tile*.12,this.tile*1.24,this.tile*1.24);ctx.setLineDash([]);ctx.restore();
+  }
+
+  drawHover(ctx,world,time){
+    if(!this.hover||!world.inBounds(this.hover.x,this.hover.y))return;
+    const x=this.hover.x,y=this.hover.y,selected=this.buildSystem?.selected;
+    const valid=selected?this.buildSystem.validator.canPlace(selected,x,y):true,pulse=.5+.5*Math.sin(time*5);
+    ctx.save();ctx.fillStyle=selected?(valid?'rgba(34,197,94,.09)':'rgba(239,68,68,.12)'):'rgba(248,250,252,.025)';
+    ctx.fillRect(x*this.tile,y*this.tile,this.tile,this.tile);
+    ctx.strokeStyle=selected?(valid?'#4ade80':'#f87171'):'#f8fafc';ctx.globalAlpha=.72+pulse*.25;ctx.lineWidth=Math.max(1,2/this.camera.zoom);ctx.strokeRect(x*this.tile+1,y*this.tile+1,this.tile-2,this.tile-2);ctx.globalAlpha=1;
+    if(selected&&['fan','exhaust'].includes(selected)){
+      const d=this.buildSystem.direction(),cx=(x+.5)*this.tile,cy=(y+.5)*this.tile;
+      ctx.fillStyle='rgba(14,165,233,.07)';ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+d.x*this.tile*4-d.y*this.tile*.9,cy+d.y*this.tile*4+d.x*this.tile*.9);ctx.lineTo(cx+d.x*this.tile*4+d.y*this.tile*.9,cy+d.y*this.tile*4-d.x*this.tile*.9);ctx.closePath();ctx.fill();
+      ctx.strokeStyle='#7dd3fc';ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+d.x*this.tile*3.4,cy+d.y*this.tile*3.4);ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  drawDebug(ctx,world){
+    if(!this.hover||!world.inBounds(this.hover.x,this.hover.y))return;
+    const t=world.tileMap.get(this.hover.x,this.hover.y),txt=['('+t.x+','+t.y+')',t.material.name,t.temperature.toFixed(2)+'°C','E '+(t.thermalEnergy/1000).toFixed(1)+' kJ','air '+t.airflowX.toFixed(2)+', '+t.airflowY.toFixed(2)];
+    ctx.font='10px ui-monospace,monospace';const x=t.x*this.tile+this.tile+4,y=t.y*this.tile;
+    ctx.fillStyle='rgba(2,6,23,.94)';ctx.fillRect(x,y,138,txt.length*13+8);ctx.strokeStyle='#334155';ctx.strokeRect(x+.5,y+.5,137,txt.length*13+7);
+    ctx.fillStyle='#e2e8f0';txt.forEach((s,i)=>ctx.fillText(s,x+5,y+14+i*13));
+  }
+
+  drawLegend(ctx){
+    const configs={
+      thermal:{title:'TEMPERATURA',left:'10°C',right:'80°C+',colors:['#1450dc','#22d3ee','#28c85a','#facc15','#f97316','#e62323']},
+      airflow:{title:'FLUXO DE AR',left:'baixo',right:'alto',colors:['#0f2742','#0ea5e9','#bae6fd']},
+      fluid:{title:'ÁGUA / REDE',left:'fria',right:'quente',colors:['#2563eb','#22d3ee','#2dd4bf','#facc15','#f97316']},
+    };
+    const c=configs[this.mode];if(!c)return;
+    const x=18,y=18,w=168,h=10,g=ctx.createLinearGradient(x,y,x+w,y);
+    c.colors.forEach((color,i)=>g.addColorStop(i/(c.colors.length-1),color));
+    ctx.fillStyle='rgba(2,6,23,.88)';ctx.fillRect(x-9,y-11,w+18,50);ctx.strokeStyle='rgba(100,116,139,.55)';ctx.strokeRect(x-8.5,y-10.5,w+17,49);
+    ctx.fillStyle='#94a3b8';ctx.font='800 9px system-ui';ctx.fillText(c.title,x,y-2);
+    ctx.fillStyle=g;ctx.fillRect(x,y+5,w,h);
+    ctx.fillStyle='#cbd5e1';ctx.font='10px system-ui';ctx.fillText(c.left,x,y+31);ctx.fillText(c.right,x+w-ctx.measureText(c.right).width,y+31);
+  }
 }
