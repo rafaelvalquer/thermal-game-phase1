@@ -20,7 +20,7 @@ const gameShell=(level)=>[
     '</aside>',
     '<main class="viewport-wrap">',
       '<canvas id="game"></canvas>',
-      '<div class="view-switcher"><button class="active" data-mode="normal">◫ Normal</button><button data-mode="thermal">△ Térmico</button><button data-mode="airflow">〰 Airflow</button><button data-mode="fluid">≈ Fluido</button></div>',
+      '<div class="view-switcher"><button class="active" data-mode="normal">◫ Normal</button><button data-mode="thermal">△ Térmico</button><button data-mode="airflow">〰 Airflow</button><button data-mode="pressure">◌ Pressão</button><button data-mode="fluid">≈ Fluido</button></div>',
       '<div id="modeHelp" class="mode-help">Operação · zonas, equipamentos e efeitos físicos</div><div id="toast" class="toast"></div>',
     '</main>',
     '<aside class="right-panel panel">',

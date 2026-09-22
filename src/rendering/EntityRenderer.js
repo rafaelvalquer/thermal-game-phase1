@@ -85,7 +85,8 @@ export class EntityRenderer {
     ctx.fillStyle='#1f2937';ctx.strokeStyle='#64748b';ctx.lineWidth=Math.max(1,tile*.055);
     ctx.fillRect(-tile*.42,-tile*.42,tile*.84,tile*.84);ctx.strokeRect(-tile*.42,-tile*.42,tile*.84,tile*.84);
     ctx.strokeStyle=accent;ctx.strokeRect(-tile*.34,-tile*.34,tile*.68,tile*.68);
-    ctx.save();ctx.rotate(time*(exhaust?-5.5:7.5));
+    const rotorSpeed=.6+Math.max(0,e.currentVelocity||0)*2.2;
+    ctx.save();ctx.rotate(time*(exhaust?-rotorSpeed:rotorSpeed));
     ctx.fillStyle=exhaust?'#be123c':'#0891b2';
     for(let i=0;i<4;i++){ctx.rotate(Math.PI/2);ctx.beginPath();ctx.moveTo(0,0);ctx.quadraticCurveTo(tile*.3,-tile*.08,tile*.28,tile*.24);ctx.quadraticCurveTo(tile*.1,tile*.2,0,0);ctx.fill();}
     ctx.restore();

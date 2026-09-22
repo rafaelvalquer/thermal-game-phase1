@@ -8,7 +8,8 @@ import { MissionDebriefing } from './MissionDebriefing.js';
 const MODE_HELP={
   normal:'Operação · zonas, equipamentos e efeitos físicos',
   thermal:'Térmico · cores representam temperatura',
-  airflow:'Airflow · vetores mostram direção e intensidade',
+  airflow:'Airflow · vetores mostram velocidade calculada pelo campo de pressão',
+  pressure:'Pressão · azul negativa, vermelho positiva, cinza próximo de 0 Pa',
   fluid:'Fluido · temperatura, sentido e status de cada circuito',
 };
 
@@ -61,6 +62,8 @@ export class UIManager {
     if(m.maxTemp>=80)alerts.push(['critical','OVERHEAT','Equipamento em faixa crítica']);
     else if(m.maxTemp>50)alerts.push(['warn','HOTSPOT','Temperatura elevada detectada']);
     if(m.powerDraw>limit)alerts.push(['critical','POWER LIMIT','Limite de '+(limit/1000).toFixed(1)+' kW excedido']);
+    const air=s.world.airDiagnostics;
+    if(air?.maxDivergence>1.5)alerts.push(['warn','AIR SOLVER','Divergência elevada: '+air.maxDivergence.toFixed(2)]);
 
     const networks=s.fluid.networks||[];
     const badNetwork=networks.find(n=>n.entities.some(e=>e.type==='pump')&&!n.closed);

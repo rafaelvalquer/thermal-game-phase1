@@ -1,6 +1,7 @@
 import { TileRenderer } from './TileRenderer.js';
 import { HeatmapRenderer } from './HeatmapRenderer.js';
 import { AirflowRenderer } from './AirflowRenderer.js';
+import { PressureRenderer } from './PressureRenderer.js';
 import { EntityRenderer } from './EntityRenderer.js';
 import { EffectsRenderer } from './EffectsRenderer.js';
 import { FLUID_TYPES, waterCss } from './VisualTheme.js';
@@ -9,7 +10,7 @@ export class Renderer {
   constructor(canvas,camera,{tilePixels=14}={}){
     this.canvas=canvas;this.ctx=canvas.getContext('2d');this.camera=camera;this.tile=tilePixels;
     this.mode='normal';this.debug=false;this.hover=null;this.buildSystem=null;this.selectedEntity=null;
-    this.tileRenderer=new TileRenderer();this.heatmap=new HeatmapRenderer();this.airflow=new AirflowRenderer();
+    this.tileRenderer=new TileRenderer();this.heatmap=new HeatmapRenderer();this.airflow=new AirflowRenderer();this.pressure=new PressureRenderer();
     this.entities=new EntityRenderer();this.effects=new EffectsRenderer();
   }
 
@@ -26,6 +27,7 @@ export class Renderer {
     this.tileRenderer.draw(ctx,world,this.tile);
     this.drawZones(ctx);
     if(this.mode==='thermal')this.heatmap.draw(ctx,world,this.tile);
+    if(this.mode==='pressure')this.pressure.draw(ctx,world,this.tile);
     if(this.mode==='fluid')this.drawFluidNetwork(ctx,world,time);
     this.entities.draw(ctx,world,this.tile,this.mode,time);
     this.effects.draw(ctx,world,this.tile,this.mode,time);
@@ -99,7 +101,7 @@ export class Renderer {
 
   drawDebug(ctx,world){
     if(!this.hover||!world.inBounds(this.hover.x,this.hover.y))return;
-    const t=world.tileMap.get(this.hover.x,this.hover.y),txt=['('+t.x+','+t.y+')',t.material.name,t.temperature.toFixed(2)+'°C','E '+(t.thermalEnergy/1000).toFixed(1)+' kJ','air '+t.airflowX.toFixed(2)+', '+t.airflowY.toFixed(2)];
+    const t=world.tileMap.get(this.hover.x,this.hover.y),i=world.index(t.x,t.y),p=world.airPressure?.[i]||0,div=world.airDivergence?.[i]||0,txt=['('+t.x+','+t.y+')',t.material.name,t.temperature.toFixed(2)+'°C','E '+(t.thermalEnergy/1000).toFixed(1)+' kJ','air '+t.airflowX.toFixed(2)+', '+t.airflowY.toFixed(2),'p '+p.toFixed(2)+' Pa','div '+div.toFixed(4)];
     ctx.font='10px ui-monospace,monospace';const x=t.x*this.tile+this.tile+4,y=t.y*this.tile;
     ctx.fillStyle='rgba(2,6,23,.94)';ctx.fillRect(x,y,138,txt.length*13+8);ctx.strokeStyle='#334155';ctx.strokeRect(x+.5,y+.5,137,txt.length*13+7);
     ctx.fillStyle='#e2e8f0';txt.forEach((s,i)=>ctx.fillText(s,x+5,y+14+i*13));
@@ -109,6 +111,7 @@ export class Renderer {
     const configs={
       thermal:{title:'TEMPERATURA',left:'10°C',right:'80°C+',colors:['#1450dc','#22d3ee','#28c85a','#facc15','#f97316','#e62323']},
       airflow:{title:'FLUXO DE AR',left:'baixo',right:'alto',colors:['#0f2742','#0ea5e9','#bae6fd']},
+      pressure:{title:'PRESSÃO RELATIVA',left:'negativa',right:'positiva',colors:['#2563eb','#64748b','#ef4444']},
       fluid:{title:'ÁGUA / REDE',left:'fria',right:'quente',colors:['#2563eb','#22d3ee','#2dd4bf','#facc15','#f97316']},
     };
     const c=configs[this.mode];if(!c)return;

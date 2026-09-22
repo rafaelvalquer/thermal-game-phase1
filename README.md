@@ -78,3 +78,8 @@ As fases ficam em src/campaign/levels/ e os layouts em src/campaign/maps/. Objet
 ## Circuito hidráulico
 
 O sistema de fluidos usa loops simples e orientados. Para gerar vazão, a rede precisa formar um circuito fechado, possuir exatamente uma bomba ativa e a seta da bomba deve apontar para o primeiro componente downstream. Ramificações em T não são permitidas nesta versão. O trocador só remove calor da máquina quando existe vazão válida; o radiador rejeita calor para uma área 3x3 e seu desempenho aumenta com airflow.
+
+
+## Airflow Physics
+
+O airflow usa agora um solver 2D incompressível em MAC grid com pressão, conservação de massa, wall drag, curva pressão-vazão das fans e advecção térmica conservativa. Corredores alteram o escoamento pela própria geometria: podem concentrar o jato, mas comprimento, estreitamento, curvas, obstáculos e dead-ends adicionam resistência. O jogo possui também um modo visual de Pressão e telemetria de operating point das fans.
