@@ -1,0 +1,57 @@
+import { level06Map } from '../maps/level06Map.js';
+
+export const level06={
+  id:'critical-facility',number:6,name:'Critical Facility',difficulty:6,
+  tagline:'Gerenciamento térmico integrado',
+  description:'Uma instalação crítica parcialmente pronta precisa sobreviver a picos de carga, novos processos e uma onda de calor.',
+  briefing:'Você herdou infraestrutura incompleta e não pode remover os componentes bloqueados. Diagnostique o projeto existente, corrija gargalos e mantenha margem para três eventos operacionais.',
+  map:level06Map,environment:{outdoorTemperature:25},budget:25000,powerLimit:20000,missionDuration:600,
+  inventory:{wall:70,insulation:80,copper:30,fan:12,exhaust:6,pipe:120,pump:3,tank:3,radiator:8,exchanger:12,sensor:16,demolish:Infinity},
+  zones:[
+    {id:'server-a',name:'Server Room A',x:7,y:8,width:22,height:15,target:36},
+    {id:'server-b',name:'Server Room B',x:35,y:8,width:22,height:15,target:36},
+    {id:'electrical',name:'Sala Elétrica',x:64,y:8,width:22,height:15,target:45},
+    {id:'pump-room',name:'Sala de Bombas',x:8,y:32,width:20,height:10,target:45},
+    {id:'process-a-zone',name:'Processo A',x:35,y:32,width:20,height:10,target:50},
+    {id:'process-b-zone',name:'Processo B',x:63,y:32,width:23,height:10,target:50},
+    {id:'control-room',name:'Sala de Controle',x:8,y:49,width:20,height:7,target:32},
+    {id:'technical-corridor',name:'Corredor Técnico',x:3,y:24,width:90,height:8,target:45},
+  ],
+  entities:[
+    {type:'serverRack',id:'srv-a1',name:'Server A1',x:12,y:14,heatOutput:7000,zoneId:'server-a',category:'serverRack',airIntakeDirection:{x:0,y:-1},airExhaustDirection:{x:0,y:1}},
+    {type:'serverRack',id:'srv-a2',name:'Server A2',x:22,y:16,heatOutput:8000,zoneId:'server-a',category:'serverRack',airIntakeDirection:{x:0,y:-1},airExhaustDirection:{x:0,y:1}},
+    {type:'serverRack',id:'srv-b1',name:'Server B1',x:40,y:14,heatOutput:7500,zoneId:'server-b',category:'serverRack',airIntakeDirection:{x:0,y:-1},airExhaustDirection:{x:0,y:1}},
+    {type:'serverRack',id:'srv-b2',name:'Server B2',x:50,y:16,heatOutput:8500,zoneId:'server-b',category:'serverRack',airIntakeDirection:{x:0,y:-1},airExhaustDirection:{x:0,y:1}},
+    {type:'machine',id:'transformer-a',name:'Transformador A',x:72,y:15,heatOutput:14000,zoneId:'electrical',category:'electrical',failureTemperature:90},
+    {type:'machine',id:'process-a-main',name:'Processo A',x:44,y:36,heatOutput:18000,zoneId:'process-a-zone',category:'process',failureTemperature:85},
+    {type:'machine',id:'process-b-main',name:'Processo B',x:72,y:36,heatOutput:22000,zoneId:'process-b-zone',category:'process',failureTemperature:85,enabled:false,startAt:99999},
+    {type:'passiveHeat',id:'control-load',name:'Estações de controle',x:18,y:52,heatOutput:1500,zoneId:'control-room',category:'computer'},
+    {type:'pump',id:'legacy-pump',x:12,y:36,locked:true},
+    {type:'pipe',id:'legacy-pipe-1',x:13,y:36,locked:true},
+    {type:'pipe',id:'legacy-pipe-2',x:14,y:36,locked:true},
+    {type:'pipe',id:'legacy-pipe-3',x:15,y:36,locked:true},
+    {type:'pipe',id:'legacy-pipe-4',x:16,y:36,locked:true},
+    {type:'radiator',id:'legacy-rad',x:17,y:36,locked:true},
+    {type:'exhaust',id:'legacy-exhaust-a',x:89,y:28,direction:{x:1,y:0},locked:true},
+    {type:'exhaust',id:'legacy-exhaust-b',x:89,y:31,direction:{x:1,y:0},locked:true},
+  ],
+  objectives:[
+    {type:'zoneTemperature',zoneId:'server-a',max:36,label:'Server A < 36°C'},
+    {type:'zoneTemperature',zoneId:'server-b',max:36,label:'Server B < 36°C'},
+    {type:'zoneTemperature',zoneId:'electrical',max:45,label:'Sala elétrica < 45°C'},
+    {type:'zoneTemperature',zoneId:'control-room',max:32,label:'Controle < 32°C'},
+    {type:'machineTemperature',max:65,filter:{category:'process'},label:'Processos < 65°C'},
+    {type:'powerBelow',max:20000,label:'Cooling < 20 kW'},
+  ],
+  failures:[
+    {type:'entityLimits',hold:30},
+    {type:'zoneOverheat',zoneId:'control-room',temperature:40,hold:30,message:'A sala de controle tornou-se inoperável.'},
+  ],
+  events:[
+    {time:180,type:'machineLoad',filter:{zoneId:'server-b'},multiplier:1.3,message:'EVENTO 1: Server Room B entrou em pico de carga.'},
+    {time:300,type:'activateMachine',filter:{missionId:'process-b-main'},message:'EVENTO 2: Processo B iniciou operação.'},
+    {time:420,type:'outdoorTemperature',value:35,message:'EVENTO 3: onda de calor — exterior agora em 35°C.'},
+  ],
+  tips:['Componentes bloqueados fazem parte do problema, não do inventário.','Deixe folga de potência para os eventos futuros.','Sensores em corredores ajudam a localizar o gargalo antes do colapso.'],
+};
+

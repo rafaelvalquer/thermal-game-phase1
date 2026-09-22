@@ -24,6 +24,7 @@ export class Renderer {
     const bg=ctx.createLinearGradient(0,0,0,this.canvas.height/this.dpr);bg.addColorStop(0,'#07111f');bg.addColorStop(1,'#020617');ctx.fillStyle=bg;ctx.fillRect(0,0,this.canvas.width/this.dpr,this.canvas.height/this.dpr);
     ctx.save();ctx.scale(this.camera.zoom,this.camera.zoom);ctx.translate(-this.camera.x,-this.camera.y);
     this.tileRenderer.draw(ctx,world,this.tile);
+    this.drawZones(ctx);
     if(this.mode==='thermal')this.heatmap.draw(ctx,world,this.tile);
     if(this.mode==='fluid')this.drawFluidNetwork(ctx,world,time);
     this.entities.draw(ctx,world,this.tile,this.mode,time);
@@ -32,6 +33,13 @@ export class Renderer {
     this.drawSelection(ctx);this.drawHover(ctx,world,time);
     if(this.debug)this.drawDebug(ctx,world);
     ctx.restore();this.drawLegend(ctx,simulation);
+  }
+
+  drawZones(ctx){
+    if(!this.zones?.length)return;
+    ctx.save();ctx.font='700 '+Math.max(7,this.tile*.34)+'px system-ui';ctx.textBaseline='top';
+    for(const z of this.zones){const x=z.x*this.tile,y=z.y*this.tile,w=z.width*this.tile,h=z.height*this.tile;ctx.strokeStyle='rgba(56,189,248,.16)';ctx.lineWidth=Math.max(.7,1/this.camera.zoom);ctx.setLineDash([this.tile*.24,this.tile*.18]);ctx.strokeRect(x+.5,y+.5,w-1,h-1);ctx.setLineDash([]);ctx.fillStyle='rgba(2,6,23,.68)';const label=(z.name||z.id)+(z.target?' · < '+z.target+'°C':'');const mw=ctx.measureText(label).width+8;ctx.fillRect(x+3,y+3,mw,Math.max(12,this.tile*.58));ctx.fillStyle='#7dd3fc';ctx.fillText(label,x+7,y+5);}
+    ctx.restore();
   }
 
   drawFluidNetwork(ctx,world,time){

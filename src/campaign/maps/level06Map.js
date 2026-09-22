@@ -1,0 +1,25 @@
+export const level06Map={
+  width:96,height:64,initialTemperature:28,
+  rooms:[
+    {x:2,y:3,w:92,h:58,material:'concrete'},
+    {x:6,y:7,w:24,h:17,material:'concrete'},
+    {x:34,y:7,w:24,h:17,material:'concrete'},
+    {x:63,y:7,w:24,h:17,material:'concrete'},
+    {x:7,y:31,w:22,h:12,material:'concrete'},
+    {x:34,y:31,w:22,h:12,material:'concrete'},
+    {x:62,y:31,w:25,h:12,material:'concrete'},
+    {x:7,y:48,w:22,h:9,material:'concrete'},
+    {x:34,y:48,w:25,h:9,material:'insulation'},
+  ],
+  lines:[
+    {x1:3,y1:27,x2:92,y2:27,material:'concrete'},
+    {x1:3,y1:45,x2:92,y2:45,material:'concrete'},
+  ],
+  openings:[
+    {x:16,y:23,w:4,h:1},{x:44,y:23,w:4,h:1},{x:73,y:23,w:4,h:1},
+    {x:16,y:31,w:4,h:1},{x:43,y:31,w:4,h:1},{x:72,y:31,w:4,h:1},
+    {x:15,y:43,w:4,h:1},{x:42,y:43,w:4,h:1},{x:71,y:43,w:4,h:1},
+    {x:16,y:48,w:4,h:1},{x:44,y:48,w:4,h:1},
+    {x:93,y:27,w:1,h:6},{x:2,y:27,w:1,h:6},
+  ],
+};
