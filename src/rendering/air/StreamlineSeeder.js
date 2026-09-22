@@ -43,12 +43,12 @@ export class StreamlineSeeder {
       if(e.type==='radiator'&&(e.waterTemperature||25)<35)continue;
       const d=e.direction||{x:1,y:0};
       const px=-d.y,py=d.x;
-      for(const lateral of [-.34,0,.34]){
+      for(const lateral of [-.5,0,.5]){
         this.addSeed(seeds,world,{
           x:e.x+.5+d.x*.62+px*lateral,
           y:e.y+.5+d.y*.62+py*lateral,
           priority:2,
-        },max,.46);
+        },max,.42);
       }
     }
   }
