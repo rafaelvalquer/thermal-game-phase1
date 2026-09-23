@@ -10,8 +10,11 @@ import { VisualSettings } from './VisualSettings.js';
 import { FLUID_TYPES, waterCss } from './VisualTheme.js';
 import { BUILD_CATALOG } from '../building/BuildCatalog.js';
 import { clamp, rgbHeat } from '../utils/MathUtils.js';
-import { DUCT_TOOLS } from '../building/PlacementValidator.js';
+import { DUCT_TOOLS, HVAC_PATH_TOOLS } from '../building/PlacementValidator.js';
 import { DuctRenderer } from './hvac/DuctRenderer.js';
+import { RefrigerantLineRenderer } from './hvac/RefrigerantLineRenderer.js';
+import { HVACPortRenderer } from './hvac/HVACPortRenderer.js';
+import { HVACPortResolver } from '../simulation/hvac/ports/HVACPortResolver.js';
 import { HVACFlowRenderer } from './hvac/HVACFlowRenderer.js';
 import { HVACOverlayRenderer } from './hvac/HVACOverlayRenderer.js';
 
@@ -21,7 +24,7 @@ export class Renderer {
     this.mode='normal';this.debug=false;this.hover=null;this.buildSystem=null;this.selectedEntity=null;this.thermalScaleMode='fixed';this.level=null;
     this.tileRenderer=new TileRenderer();this.heatmap=new HeatmapRenderer();this.airflow=new AirflowRenderer();this.pressure=new PressureRenderer();
     this.entities=new EntityRenderer();this.effects=new EffectsRenderer();
-    this.ducts=new DuctRenderer();this.hvacFlow=new HVACFlowRenderer();this.hvacOverlay=new HVACOverlayRenderer();
+    this.ducts=new DuctRenderer();this.refrigerantLines=new RefrigerantLineRenderer();this.hvacPorts=new HVACPortRenderer();this.hvacPortResolver=new HVACPortResolver();this.hvacFlow=new HVACFlowRenderer();this.hvacOverlay=new HVACOverlayRenderer();
     this.distortionBuffer=new ThermalDistortionBuffer();this.heatHaze=new HeatHazeRenderer({quality:VisualSettings.heatHazeQuality,maxRegions:VisualSettings.maxHazeRegions});
   }
 
@@ -48,8 +51,9 @@ export class Renderer {
       scene.translate(-this.camera.x,-this.camera.y);
       this.tileRenderer.draw(scene,world,this.tile,this.zones||[],this.mode);
       if(this.mode==='thermal')this.heatmap.draw(scene,world,this.tile,this.thermalScale(world));
-      this.entities.draw(scene,world,this.tile,this.mode,time);
+      this.entities.draw(scene,world,this.tile,this.mode,time,{selectedEntity:this.selectedEntity});
       this.ducts.draw(scene,world,this.tile,this.mode,this.camera.zoom);
+      this.refrigerantLines.draw(scene,world,this.tile,this.mode,time,this.camera.zoom);
       this.effects.draw(scene,world,this.tile,this.mode,time);
       if(this.buildSystem?.selected)this.drawBuildPreview(scene,world,time);
       this.drawRecentPlacement(scene,time);
@@ -68,6 +72,7 @@ export class Renderer {
     if(this.mode==='hvac'){
       this.hvacFlow.draw(ctx,world,this.tile,time,this.camera.zoom);
       this.hvacOverlay.draw(ctx,world,this.tile,time,this.camera.zoom);
+      this.hvacPorts.draw(ctx,world,this.tile,this.camera.zoom);
     }
     if(this.mode==='airflow'){
       this.airflow.draw(ctx,world,this.tile,time,this.camera.zoom);
@@ -87,8 +92,10 @@ export class Renderer {
     this.drawSelectionCard(ctx,simulation,width,height);
     this.drawEventBanner(ctx,simulation,width);
     this.drawLegend(ctx,simulation,width);
-    if(this.debug)this.drawVisualPhysicsDebug(ctx,time);
+    if(this.debug)this.drawVisualPhysicsDebug(ctx,time,world,simulation.metrics);
   }
+
+  preloadSprites(){return this.entities.preloadSprites();}
 
   thermalScale(world){
     if(this.thermalScaleMode==='auto'){
@@ -104,12 +111,16 @@ export class Renderer {
   }
 
   drawBuildPreview(ctx,world,time){
-    const p=this.hover,tool=this.buildSystem.selected;if(!p||(!world.inBounds(p.x,p.y)&&tool!=='pipe'&&!DUCT_TOOLS.has(tool)))return;
+    const p=this.hover,tool=this.buildSystem.selected;if(!p||(!world.inBounds(p.x,p.y)&&tool!=='pipe'&&!HVAC_PATH_TOOLS.has(tool)))return;
     const pipePath=tool==='pipe'?this.pipePreview?.():null;
-    const ductPath=DUCT_TOOLS.has(tool)?this.pipePreview?.():null;
-    if(ductPath?.length&&DUCT_TOOLS.has(tool)){
-      const plan=this.buildSystem.ductPlacement.planPath(tool,ductPath,{inventory:this.buildSystem.inventory[tool]??0,budget:this.buildSystem.budget,cost:BUILD_CATALOG[tool].cost});
-      for(const point of plan.entries)this.ducts.preview(ctx,point.x,point.y,this.tile,tool,point.valid,this.camera.zoom);
+    const utilityPath=HVAC_PATH_TOOLS.has(tool)?this.pipePreview?.():null;
+    if(utilityPath?.length&&HVAC_PATH_TOOLS.has(tool)){
+      const plan=this.buildSystem.utilityPlacement.planPath(tool,utilityPath,{inventory:this.buildSystem.inventory[tool]??0,budget:this.buildSystem.budget,cost:BUILD_CATALOG[tool].cost});
+      for(const point of plan.entries){
+        const port=this.previewPortCompatibility(world,tool,point.x,point.y),valid=point.valid&&!port.incompatible;
+        if(tool==='refrigerantLine')this.refrigerantLines.preview(ctx,point.x,point.y,this.tile,valid,this.camera.zoom,{embedded:point.embedded,blockedPort:port.incompatible});
+        else this.ducts.preview(ctx,point.x,point.y,this.tile,tool,valid,this.camera.zoom,{embedded:point.embedded,role:port.role,color:port.incompatible?'#ef4444':null});
+      }
       return;
     }
     if(pipePath?.length){
@@ -130,7 +141,11 @@ export class Renderer {
       ctx.save();ctx.globalAlpha=valid?.48:.24;
       this.tileRenderer.material(ctx,world.registry.get(c.material),p.x,p.y,p.x*this.tile,p.y*this.tile,this.tile);
       ctx.restore();
-    }else if(DUCT_TOOLS.has(tool))this.ducts.preview(ctx,p.x,p.y,this.tile,tool,valid,this.camera.zoom);
+    }else if(DUCT_TOOLS.has(tool)){
+      const port=this.previewPortCompatibility(world,tool,p.x,p.y);this.ducts.preview(ctx,p.x,p.y,this.tile,tool,valid&&!port.incompatible,this.camera.zoom,{embedded:!world.isAir(p.x,p.y),role:port.role,color:port.incompatible?'#ef4444':null});
+    }else if(tool==='refrigerantLine'){
+      const port=this.previewPortCompatibility(world,tool,p.x,p.y);this.refrigerantLines.preview(ctx,p.x,p.y,this.tile,valid&&!port.incompatible,this.camera.zoom,{embedded:!world.isAir(p.x,p.y),blockedPort:port.incompatible});
+    }
     else this.entities.drawPreview(ctx,world,tool,p.x,p.y,this.buildSystem.direction(),this.tile,this.mode,time,valid);
 
     if(tool==='exchanger'){
@@ -139,6 +154,32 @@ export class Renderer {
     }
     ctx.save();ctx.fillStyle=valid?'rgba(34,197,94,.1)':'rgba(239,68,68,.14)';ctx.strokeStyle=valid?'#4ade80':'#f87171';
     ctx.lineWidth=Math.max(1,1.6/this.camera.zoom);ctx.fillRect(p.x*this.tile,p.y*this.tile,this.tile,this.tile);ctx.strokeRect(p.x*this.tile+1,p.y*this.tile+1,this.tile-2,this.tile-2);ctx.restore();
+  }
+
+  previewPortCompatibility(world,tool,x,y){
+    const result={role:null,incompatible:false};
+    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const entity=world.entityAt(x+dx,y+dy);if(!entity)continue;
+      if(tool==='refrigerantLine'){
+        if(['supplyVent','returnVent'].includes(entity.type))result.incompatible=true;
+        if(entity.type==='airHandler'&&!this.hvacPortResolver.portForCell(entity,x,y,'refrigerant'))result.incompatible=true;
+        if(entity.type==='condenser'&&!this.hvacPortResolver.portForCell(entity,x,y,'refrigerant'))result.incompatible=true;
+      }else if(DUCT_TOOLS.has(tool)){
+        if(entity.type==='condenser')result.incompatible=true;
+        if(entity.type==='airHandler'){
+          const port=this.hvacPortResolver.airHandler(entity).find(item=>['supply','return'].includes(item.type)&&item.cell.x===x&&item.cell.y===y);
+          if(port)result.role=port.type;else result.incompatible=true;
+        }
+        if(entity.type==='supplyVent')result.role='supply';
+        if(entity.type==='returnVent')result.role='return';
+      }
+    }
+    if(DUCT_TOOLS.has(tool)&&!result.role){
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const adjacent=world.utilitiesAt(x+dx,y+dy).find(item=>DUCT_TOOLS.has(item.type));if(adjacent?.networkRole){result.role=adjacent.networkRole;break;}
+      }
+    }
+    return result;
   }
 
   drawRecentPlacement(ctx,time){
@@ -302,11 +343,24 @@ export class Renderer {
     ctx.fillStyle='#e2e8f0';txt.forEach((s,i)=>ctx.fillText(s,x+5,y+14+i*13));
   }
 
-  drawVisualPhysicsDebug(ctx,time){
+  drawVisualPhysicsDebug(ctx,time,world,metrics){
     const stream=this.airflow.diagnostics(time);
     const haze=this.heatHaze.diagnostics();
+    const sprites=this.entities.sprites.manager.stats,entityStats=this.entities.stats||{};
+    const hvac=world.hvac,handlers=world.entitiesByType('airHandler'),condensers=world.entitiesByType('condenser');
+    const supplyFlow=hvac?.networks.filter(network=>network.role==='supply').reduce((sum,network)=>sum+network.flowRate,0)||0;
+    const returnFlow=hvac?.networks.filter(network=>network.role==='return').reduce((sum,network)=>sum+network.flowRate,0)||0;
+    const hvacBalance=metrics?.hvacEnergyBalance;
     const lines=[
       'VISUAL PHYSICS',
+      `Sprites      ${sprites.loaded}/${sprites.available}`,
+      `Animated     ${entityStats.animated||0}   Fallback ${entityStats.fallbacks||0}`,
+      `HVAC networks ${hvac?.networks.length||0}   REF ${hvac?.refrigerantCircuits.length||0}`,
+      `Supply/return ${supplyFlow.toFixed(2)} / ${returnFlow.toFixed(2)} m³/s`,
+      `Cooling/room  ${(metrics?.hvacCooling/1000||0).toFixed(1)} / ${(handlers.reduce((sum,e)=>sum+(e.actualRoomCooling||0),0)/1000).toFixed(1)} kW`,
+      `Compressor/AH ${(handlers.reduce((sum,e)=>sum+(e.compressorPower||0),0)/1000).toFixed(1)} / ${(handlers.reduce((sum,e)=>sum+(e.power||0),0)/1000).toFixed(1)} kW`,
+      `Rejected heat ${(condensers.reduce((sum,e)=>sum+(e.heatRejected||0),0)/1000).toFixed(1)} kW`,
+      `Energy error  ${(hvacBalance?.errorPercent||0).toFixed(2)}%`,
       'Streamlines  '+String(stream.active).padStart(4),
       'Points       '+String(stream.points).padStart(4),
       'Stream gen   '+stream.generationMs.toFixed(2)+' ms',
@@ -314,7 +368,7 @@ export class Renderer {
       'Haze regions '+String(haze.regions).padStart(4),
       'Haze render  '+haze.renderMs.toFixed(2)+' ms',
     ];
-    const x=18,y=this.canvas.height/this.dpr-112,w=154,h=96;
+    const x=18,y=this.canvas.height/this.dpr-222,w=238,h=206;
     ctx.save();
     ctx.fillStyle='rgba(2,6,23,.9)';ctx.fillRect(x,y,w,h);
     ctx.strokeStyle='rgba(71,85,105,.7)';ctx.strokeRect(x+.5,y+.5,w-1,h-1);

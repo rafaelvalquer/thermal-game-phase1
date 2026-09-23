@@ -2,8 +2,7 @@ import { HVAC } from './HVACConstants.js';
 import { clamp } from '../../utils/MathUtils.js';
 
 export class HVACAirExchange {
-  constructor(world,airflow){this.world=world;this.airflow=airflow;this.roomReferenceTemperature=world.environment.temperature;}
-  setRoomReferenceTemperature(value){if(Number.isFinite(value))this.roomReferenceTemperature=value;}
+  constructor(world,airflow){this.world=world;this.airflow=airflow;}
 
   returnTemperature(vent){
     const w=this.world,cells=[];
@@ -14,26 +13,18 @@ export class HVACAirExchange {
     return total?cells.reduce((sum,cell)=>sum+w.temperatureAt(cell.x,cell.y)*cell.weight,0)/total:w.environment.temperature;
   }
 
-  fallbackReturnTemperature(handler){
-    const cells=[];for(let dy=-3;dy<=3;dy++)for(let dx=-3;dx<=3;dx++){
-      const x=handler.x+dx,y=handler.y+dy;if(this.world.inBounds(x,y)&&this.world.isAir(x,y))cells.push({x,y,d:Math.hypot(dx,dy)});
-    }
-    if(!cells.length)return this.world.environment.temperature;
-    return cells.reduce((sum,cell)=>sum+this.world.temperatureAt(cell.x,cell.y)/(1+cell.d),0)/cells.reduce((sum,cell)=>sum+1/(1+cell.d),0);
-  }
-
-  transferMassEnergy(vent,dt,direction){
+  transferMassEnergy(vent,dt){
     if(!vent.flowRate||!this.world.inBounds(vent.x,vent.y)||!this.world.isAir(vent.x,vent.y))return 0;
     const i=this.world.index(vent.x,vent.y),roomT=this.world.temperatureAtIndex(i),capacity=this.world.capacityAtIndex(i);
     const mass=this.world.massAt(vent.x,vent.y),fraction=clamp((vent.flowRate*HVAC.airDensity*dt)/Math.max(mass,1e-6),0,.35);
-    const incomingTemperature=direction==='supply'?vent.airTemperature:this.roomReferenceTemperature;
+    const incomingTemperature=vent.airTemperature;
     const energyDelta=capacity*fraction*(incomingTemperature-roomT);
     this.world.energy[i]+=energyDelta;
     return energyDelta/dt;
   }
 
-  applySupply(vent,dt){return this.transferMassEnergy(vent,dt,'supply');}
-  applyReturn(vent,dt){return this.transferMassEnergy(vent,dt,'return');}
+  applySupply(vent,dt){return this.transferMassEnergy(vent,dt);}
+  applyReturn(){return 0;}
 
   applyMomentum(sources,dt){
     const grid=this.airflow?.grid;if(!grid)return;

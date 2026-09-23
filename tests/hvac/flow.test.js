@@ -11,7 +11,7 @@ import { DuctDamper } from '../../src/entities/DuctDamper.js';
 import { HVACSystem } from '../../src/simulation/hvac/HVACSystem.js';
 
 test('straight duct delivers positive flow from air handler to vent',()=>{
-  const world=new World(8,5),handler=new AirHandler(0,2),vent=new SupplyVent(5,2);
+  const world=new World(8,5),handler=new AirHandler(0,2,{rotation:2}),vent=new SupplyVent(5,2);
   world.addEntity(handler);world.addEntity(vent);for(let x=1;x<5;x++)world.addUtility(new AirDuct(x,2));
   const network=new DuctNetworkBuilder(world).build().find(item=>item.role==='supply');
   new DuctFlowSolver(world).solve(network);
@@ -20,7 +20,7 @@ test('straight duct delivers positive flow from air handler to vent',()=>{
 });
 
 test('disconnecting a network clears stale duct and vent flow',()=>{
-  const world=new World(8,5),handler=new AirHandler(0,2),vent=new SupplyVent(5,2);
+  const world=new World(8,5),handler=new AirHandler(0,2,{rotation:2}),vent=new SupplyVent(5,2);
   world.addEntity(handler);world.addEntity(vent);for(let x=1;x<5;x++)world.addUtility(new AirDuct(x,2));
   const builder=new DuctNetworkBuilder(world),solver=new DuctFlowSolver(world),ducts=world.allUtilities();
   solver.solve(builder.build().find(item=>item.role==='supply'));
@@ -32,7 +32,7 @@ test('disconnecting a network clears stale duct and vent flow',()=>{
 });
 
 test('parallel branches divide flow by resistance and conserve total flow',()=>{
-  const world=new World(10,7),handler=new AirHandler(1,3,{maxAirFlow:2});world.addEntity(handler);
+    const world=new World(10,7),handler=new AirHandler(1,3,{maxAirFlow:2,rotation:2});world.addEntity(handler);
   const junction=[new AirDuct(2,3)];junction.forEach(item=>world.addUtility(item));
   for(const [y,size,ventX] of [[2,'largeDuct',6],[4,'smallDuct',6]]){
     world.addUtility(new AirDuct(3,3));world.addUtility(new AirDuct(3,y,{size}));world.addUtility(new AirDuct(4,y,{size}));world.addUtility(new AirDuct(5,y,{size}));world.addEntity(new SupplyVent(ventX,y));
@@ -45,7 +45,7 @@ test('parallel branches divide flow by resistance and conserve total flow',()=>{
 
 test('closing a branch damper reduces its vent flow',()=>{
   const makeFlows=opening=>{
-    const world=new World(9,7),handler=new AirHandler(1,3,{maxAirFlow:3});world.addEntity(handler);
+    const world=new World(9,7),handler=new AirHandler(1,3,{maxAirFlow:3,rotation:2});world.addEntity(handler);
     world.addUtility(new AirDuct(2,3));
     for(const y of [2,4]){
       world.addUtility(new AirDuct(3,3));world.addUtility(new AirDuct(3,y));world.addUtility(new AirDuct(4,y));

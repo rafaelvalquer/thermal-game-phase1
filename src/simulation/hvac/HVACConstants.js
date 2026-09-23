@@ -6,7 +6,7 @@ export const HVAC={
   airDensity:1.225,
   airCp:1005,
   referencePressure:250,
-  maxCondenserDistance:40,
+  maxRefrigerantLength:40,
   embeddedUA:.42,
   exposedUA:1.1,
 };

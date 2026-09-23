@@ -18,7 +18,7 @@ export class HVACOverlayRenderer {
       ctx.beginPath();ctx.arc(x,y,tile*.2,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='#fff1f2';ctx.font='900 '+Math.max(7,tile*.22)+'px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('!',x,y);ctx.restore();
     }
     for(const handler of world.entitiesByType('airHandler')){
-      if(['READY','DIRECT ROOM RETURN'].includes(handler.status))continue;
+      if(handler.status==='READY')continue;
       const x=(handler.x+.5)*tile,y=(handler.y-0.25)*tile,label=handler.status;
       ctx.save();ctx.font='700 '+Math.max(7,tile*.28)+'px system-ui';const width=ctx.measureText(label).width+tile*.24;
       ctx.fillStyle='rgba(69,10,10,.92)';ctx.fillRect(x-width/2,y-tile*.36,width,tile*.42);ctx.strokeStyle='#fb7185';ctx.lineWidth=Math.max(1,1/zoom);ctx.strokeRect(x-width/2,y-tile*.36,width,tile*.42);

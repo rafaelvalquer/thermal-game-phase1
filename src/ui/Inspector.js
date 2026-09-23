@@ -1,7 +1,9 @@
 import { formatEnergy, formatPower } from '../utils/MathUtils.js';
 import { entityLabel, thermalState } from '../rendering/VisualTheme.js';
+import { SPRITES } from '../rendering/sprites/SpriteManifest.js';
 
 const fluidTypes=['pipe','pump','tank','radiator','exchanger'];
+const airDuctTypes=['smallDuct','mediumDuct','largeDuct'];
 const dirGlyph=d=>d?.x>0?'→':d?.x<0?'←':d?.y>0?'↓':d?.y<0?'↑':'—';
 
 export class Inspector {
@@ -76,28 +78,46 @@ export class Inspector {
       );
     }
 
-    if(['smallDuct','mediumDuct','largeDuct'].includes(e.type))rows.push(
-      ['Rede HVAC',e.networkId||'—'],['Lado',e.role==='return'?'Retorno':'Insuflação'],['Estado',e.networkStatus||'DISCONNECTED'],
+    if(airDuctTypes.includes(e.type))rows.push(
+      ['Rede HVAC',e.networkId||'—'],['Tipo',e.networkRole==='return'?'Retorno':e.networkRole==='supply'?'Insuflação':e.networkRole==='invalid'?'Inválido':'Não classificado'],['Estado',e.networkStatus||'DISCONNECTED'],
       ['Seção',e.crossSectionArea.toFixed(2)+' m²'],['Temperatura',e.airTemperature.toFixed(2)+' °C'],
       ['Pressão',e.pressure.toFixed(1)+' Pa'],['Perda de carga',e.pressureLoss.toFixed(2)+' Pa'],
       ['Vazão',e.flowRate.toFixed(2)+' m³/s'],['Velocidade',e.velocity.toFixed(2)+' m/s'],
       ['Instalação',e.embedded?'Embutido':'Exposto'],['Isolamento',e.insulated?'Isolado':'Padrão'],
     );
-    if(e.type==='airHandler')rows.push(
-      ['Estado',e.status],['Retorno',e.returnTemperature.toFixed(1)+' °C'],['Insuflação',e.supplyTemperature.toFixed(1)+' °C'],
+    if(e.type==='airHandler'){
+      const circuit=world.hvac?.refrigerantCircuitById(e.refrigerantCircuitId);
+      rows.push(
+      ['Estado',e.status],['Rede insuflação',e.supplyNetworkId||'—'],['Rede retorno',e.returnNetworkId||'—'],
+      ['Circuito frigorífico',e.refrigerantCircuitId||e.refrigerantStatus||'—'],['Condensadora',e.condenserId||'—'],
+      ['Retorno',e.returnTemperature.toFixed(1)+' °C'],['Insuflação',e.supplyTemperature.toFixed(1)+' °C'],
       ['Alvo',e.targetSupplyTemperature.toFixed(1)+' °C'],['Vazão',e.currentFlow.toFixed(2)+' m³/s'],
       ['Vazão real ins. / ret.',e.supplyFlow.toFixed(2)+' / '+e.returnFlow.toFixed(2)+' m³/s'],
       ['Capacidade rede ins. / ret.',e.supplyAvailableFlow.toFixed(2)+' / '+e.returnAvailableFlow.toFixed(2)+' m³/s'],
       ['Pressão insuflação / retorno',e.supplyPressure.toFixed(1)+' / '+e.returnPressure.toFixed(1)+' Pa'],
       ['Demanda de frio',formatPower(e.coolingDemand)],['Frio entregue',formatPower(e.coolingPower)],
       ['Frio retirado da sala',formatPower(e.actualRoomCooling)],
-      ['Capacidade',formatPower(e.coolingCapacity)],['COP',e.cop.toFixed(2)],['Potência elétrica',formatPower(e.power+e.compressorPower)],
-    );
-    if(e.type==='condenser')rows.push(
-      ['Estado',e.status],['Exterior',e.outdoorTemperature.toFixed(1)+' °C'],['Calor rejeitado',formatPower(e.heatRejected)],
+      ['Capacidade',formatPower(e.coolingCapacity)],['Fator da linha',((circuit?.capacityFactor??0)*100).toFixed(0)+'%'],
+      ['COP',e.cop.toFixed(2)],['Ventilador AH',formatPower(e.power)],['Compressor',formatPower(e.compressorPower)],
+      ['Potência elétrica total',formatPower(e.power+e.compressorPower)],
+      );
+    }
+    if(e.type==='condenser'){
+      const circuit=world.hvac?.refrigerantCircuitById(e.refrigerantCircuitId);
+      rows.push(
+      ['Estado',e.status],['Circuito',e.refrigerantCircuitId||e.circuitStatus||'—'],['Comprimento da linha',(circuit?.length??0).toFixed(1)+' m'],
+      ['Exterior',e.outdoorTemperature.toFixed(1)+' °C'],['Carga do evaporador',formatPower(e.coolingLoad)],['Calor rejeitado',formatPower(e.heatRejected)],
       ['Carga',e.availableCapacity?((e.heatRejected/e.availableCapacity)*100).toFixed(0)+'%':'0%'],
-      ['Capacidade',formatPower(e.coolingCapacity)],['Potência elétrica',formatPower(e.electricalPower)],['Local',e.indoor?'Interno':'Externo'],
-    );
+      ['Capacidade',formatPower(e.coolingCapacity)],['Compressor',formatPower(e.compressorPower)],
+      ['Ventilador',formatPower(e.condenserFanPower)],['Potência elétrica',formatPower(e.electricalPower)],['Local',e.indoor?'Interno':'Externo'],
+      );
+    }
+    if(e.type==='refrigerantLine'){
+      const circuit=world.hvac?.refrigerantCircuitById(e.circuitId);
+      rows.push(['Circuito',e.circuitId||'—'],['Estado',e.circuitStatus||'OPEN CIRCUIT'],
+        ['Comprimento do circuito',(circuit?.length??e.length??0).toFixed(1)+' m'],
+        ['Capacidade',(Number(e.capacityFactor||0)*100).toFixed(0)+'%'],['Embutida',e.embedded?'Sim':'Não'],['Isolamento',e.insulated?'Isolada':'Padrão']);
+    }
     if(e.type==='supplyVent'||e.type==='returnVent')rows.push(
       ['Rede HVAC',e.networkId||'—'],['Estado',e.networkStatus],['Vazão',e.flowRate.toFixed(2)+' m³/s'],
       ['Temperatura',e.airTemperature.toFixed(2)+' °C'],['Pressão',e.pressure.toFixed(1)+' Pa'],
@@ -108,11 +128,14 @@ export class Inspector {
     if(e.power)rows.push(['Consumo',formatPower(e.power)]);
 
     let state;
-    if(fluidTypes.includes(e.type)&&e.networkStatus&&e.networkStatus!=='CLOSED')state={id:'warm',label:e.networkStatus,color:'#f59e0b'};
+    if((fluidTypes.includes(e.type)||airDuctTypes.includes(e.type)||e.type==='refrigerantLine'||e.type==='ductDamper')&&e.networkStatus&&e.networkStatus!=='CLOSED'){
+      const ready=e.networkStatus==='READY';state={id:ready?'stable':'warm',label:e.networkStatus,color:ready?'#34d399':'#f59e0b'};
+    }
     else if(e.type==='furnace')state={id:'hot',label:'ZONA QUENTE',color:'#f97316'};
     else state=temperature!=null?thermalState(temperature):{id:'stable',label:e.enabled?'OPERACIONAL':'DESLIGADO',color:'#34d399'};
 
-    this.root.innerHTML='<div class="inspector-title"><div class="entity-symbol">'+this.symbol(e.type)+'</div><div><small>'+entityLabel(e.type)+'</small><h3>'+(e.name||entityLabel(e.type))+'</h3></div></div><div class="status-badge status-'+state.id+'"><i style="background:'+state.color+'"></i>'+state.label+'</div>'+rows.map(r=>'<div class="kv"><span>'+r[0]+'</span><strong>'+r[1]+'</strong></div>').join('');
+    const sprite=SPRITES[e.type];
+    this.root.innerHTML='<div class="inspector-title"><div class="entity-symbol '+(sprite?'entity-sprite':'')+'" '+(sprite?'style="--entity-sprite:url('+sprite.path+')"':'')+'>'+(sprite?'':this.symbol(e.type))+'</div><div><small>'+entityLabel(e.type)+'</small><h3>'+(e.name||entityLabel(e.type))+'</h3></div></div><div class="status-badge status-'+state.id+'"><i style="background:'+state.color+'"></i>'+state.label+'</div>'+rows.map(r=>'<div class="kv"><span>'+r[0]+'</span><strong>'+r[1]+'</strong></div>').join('');
   }
 
   tile(world,x,y){

@@ -12,6 +12,8 @@ export { Radiator } from './Radiator.js';
 export { HeatExchanger } from './HeatExchanger.js';
 export { TemperatureSensor } from './TemperatureSensor.js';
 export { AirDuct } from './AirDuct.js';
+export { RefrigerantLine } from './RefrigerantLine.js';
+export { utilityCanShareTile, UTILITY_COMPATIBILITY } from './UtilityCompatibility.js';
 export { AirHandler } from './AirHandler.js';
 export { Condenser } from './Condenser.js';
 export { SupplyVent } from './SupplyVent.js';

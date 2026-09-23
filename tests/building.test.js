@@ -76,7 +76,7 @@ test('pipe click and drag can pass under walls without replacing the wall',()=>{
   assert.equal(world.materialAt(2,1).id,'concrete');
 });
 
-test('duct path preview and final placement share validation and infer return service',()=>{
+test('duct preview and placement do not persist a supply or return role',()=>{
   const world=new World(7,4);world.setMaterial(1,1,'concrete');world.addEntity(new ReturnVent(0,1));
   world.addEntity({id:'machine-blocker',type:'machine',x:3,y:1});
   const simulation={totalInternalEnergy:()=>0,registerConstruction:()=>{}};
@@ -84,9 +84,9 @@ test('duct path preview and final placement share validation and infer return se
   const path=[{x:1,y:1},{x:2,y:1},{x:3,y:1},{x:4,y:1}];
   const preview=build.ductPlacement.planPath('mediumDuct',path,{inventory:build.inventory.mediumDuct,budget:build.budget,cost:140});
   assert.deepEqual(preview.entries.map(point=>point.valid),[true,true,false,true]);
-  assert.ok(preview.entries.every(point=>point.role==='return'));
+  assert.ok(preview.entries.every(point=>point.role===undefined));
   assert.equal(world.allUtilities().length,0);assert.equal(build.inventory.mediumDuct,3);assert.equal(build.budget,420);
   assert.deepEqual(build.placeDuctPath(path),{placed:3,failed:1});
-  assert.equal(world.allUtilities().filter(item=>item.role==='return').length,3);
+  assert.equal(world.allUtilities().filter(item=>item.role!==undefined).length,0);
   assert.equal(world.materialAt(1,1).id,'concrete');assert.equal(build.inventory.mediumDuct,0);assert.equal(build.budget,0);
 });

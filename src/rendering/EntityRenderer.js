@@ -2,12 +2,15 @@ import { FLUID_TYPES, dirAngle, heatCss, thermalState, waterCss } from './Visual
 import { EquipmentSpriteRenderer } from './sprites/EquipmentSpriteRenderer.js';
 
 export class EntityRenderer {
-  constructor(){this.sprites=new EquipmentSpriteRenderer();}
+  constructor(){this.sprites=new EquipmentSpriteRenderer();this.sprites.fallback=this;}
+  preloadSprites(){return this.sprites.preload();}
 
-  draw(ctx,world,tile,mode,time=0){
+  draw(ctx,world,tile,mode,time=0,{selectedEntity=null}={}){
+    this.stats={spriteDraws:0,fallbacks:0,animated:0};
     const ordered=[...world.entities].map((entity,index)=>({entity,index})).sort((a,b)=>(a.entity.y+this.sprites.visualFootY(a.entity))*tile-(b.entity.y+this.sprites.visualFootY(b.entity))*tile||a.index-b.index);
     for(const {entity:e} of ordered){
-      if(this.sprites.draw(ctx,world,e,tile,mode,time))continue;
+      if(this.sprites.draw(ctx,world,e,tile,mode,time,{selected:e===selectedEntity})){this.stats.spriteDraws++;if(this.sprites.isAnimated(e))this.stats.animated++;continue;}
+      this.stats.fallbacks++;
       const x=e.x*tile,y=e.y*tile,cx=x+tile/2,cy=y+tile/2;
       ctx.save();
       this.shadow(ctx,x,y,tile,e.type);

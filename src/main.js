@@ -20,6 +20,7 @@ const gameShell=(level)=>[
     '</aside>',
     '<main class="viewport-wrap">',
       '<canvas id="game"></canvas>',
+      '<div class="sprite-loading" role="status">CARREGANDO EQUIPAMENTOS<span><i></i></span></div>',
       '<div class="view-switcher"><button class="active" data-mode="normal">◫ Normal</button><button data-mode="thermal">△ Térmico</button><button id="thermalScaleBtn" class="thermal-scale-switch hidden" data-thermal-scale>Escala fixa</button><button data-mode="airflow">〰 Airflow</button><button data-mode="pressure">◌ Pressão</button><button data-mode="hvac">▤ HVAC</button><button data-mode="fluid">≈ Fluido</button></div>',
       '<div id="airflowModes" class="airflow-submodes hidden"><button data-airflow-mode="vectors">Vetores</button><button class="active" data-airflow-mode="streamlines">Streamlines</button><button data-airflow-mode="particles">Partículas</button></div>',
       '<div id="modeHelp" class="mode-help">Operação · zonas, equipamentos e efeitos físicos</div><div id="toast" class="toast"></div>',
@@ -40,7 +41,7 @@ const gameShell=(level)=>[
 function startLevel(level){
   window.__thermalLab?.loop.stop();
   app.innerHTML=gameShell(level);
-  const game=new Game(document.querySelector('#game'),level,campaign);game.start();window.__thermalLab=game;
+  const game=new Game(document.querySelector('#game'),level,campaign);game.start().then(()=>{if(window.__thermalLab===game)document.querySelector('.sprite-loading')?.classList.add('loaded');});window.__thermalLab=game;
 }
 
 const screen=new CampaignScreen(app,campaign,startLevel);

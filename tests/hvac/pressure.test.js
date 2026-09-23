@@ -26,7 +26,7 @@ test('closed dampers block a branch and partial opening increases resistance',()
 
 test('longer ducts reduce flow and larger ducts carry more air',()=>{
   const makeFlow=(size,length)=>{
-    const world=new World(30,5),handler=new AirHandler(0,2,{maxAirFlow:10}),vent=new SupplyVent(length+1,2);
+    const world=new World(30,5),handler=new AirHandler(0,2,{maxAirFlow:10,rotation:2}),vent=new SupplyVent(length+1,2);
     world.addEntity(handler);world.addEntity(vent);
     for(let x=1;x<=length;x++)world.addUtility(new AirDuct(x,2,{size}));
     const network=new DuctNetworkBuilder(world).build().find(item=>item.role==='supply');

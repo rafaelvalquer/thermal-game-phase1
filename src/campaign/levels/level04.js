@@ -11,7 +11,7 @@ export const level04={
   description:'Racks direcionais transformam o data center em um problema de hotspots, recirculação e refrigeração líquida.',
   briefing:'Os racks aspiram ar pelo lado indicado e descarregam calor no lado oposto. Organize corredores frios e quentes e prepare margem para o pico de carga.',
   map:level04Map,environment:{outdoorTemperature:24},budget:60000,powerLimit:12000,missionDuration:360,
-  inventory:{wall:35,insulation:45,copper:20,fan:10,exhaust:4,pipe:90,pump:2,tank:2,radiator:4,exchanger:12,sensor:12,airHandler:1,condenser:1,smallDuct:50,mediumDuct:80,largeDuct:40,supplyVent:4,returnVent:4,damper:10,demolish:Infinity},
+  inventory:{wall:35,insulation:45,copper:20,fan:10,exhaust:4,pipe:90,pump:2,tank:2,radiator:4,exchanger:12,sensor:12,airHandler:1,condenser:1,refrigerantLine:60,smallDuct:50,mediumDuct:80,largeDuct:40,supplyVent:4,returnVent:4,damper:10,demolish:Infinity},
   zones:[
     {id:'cold-a',name:'Cold Aisle A',x:7,y:9,width:20,height:8,target:30,visualStyle:'server'},
     {id:'cold-b',name:'Cold Aisle B',x:33,y:9,width:20,height:8,target:30,visualStyle:'server'},

@@ -8,19 +8,19 @@ import { AirDuct } from '../../src/entities/AirDuct.js';
 import { DuctNetworkBuilder } from '../../src/simulation/hvac/DuctNetworkBuilder.js';
 
 test('duct graph connects handler to supply and return endpoints independently',()=>{
-  const world=new World(9,7),handler=new AirHandler(2,3);
-  world.addEntity(handler);world.addEntity(new SupplyVent(5,3));world.addEntity(new ReturnVent(2,6));
+  const world=new World(9,7),handler=new AirHandler(2,3,{rotation:2});
+  world.addEntity(handler);world.addEntity(new SupplyVent(5,3));world.addEntity(new ReturnVent(1,6));
   world.addUtility(new AirDuct(3,3));world.addUtility(new AirDuct(4,3));
-  world.addUtility(new AirDuct(2,4,{role:'return'}));world.addUtility(new AirDuct(2,5,{role:'return'}));
+  world.addUtility(new AirDuct(1,3));world.addUtility(new AirDuct(1,4));world.addUtility(new AirDuct(1,5));
   const networks=new DuctNetworkBuilder(world).build();
   const supply=networks.find(network=>network.role==='supply');
   const returns=networks.find(network=>network.role==='return');
   assert.equal(supply.status,'READY');assert.equal(supply.vents.length,1);assert.equal(supply.ducts.length,2);
-  assert.equal(returns.status,'READY');assert.equal(returns.vents.length,1);assert.equal(returns.ducts.length,2);
+  assert.equal(returns.status,'READY');assert.equal(returns.vents.length,1);assert.equal(returns.ducts.length,3);
 });
 
 test('network graph reports an unserved duct dead end',()=>{
-  const world=new World(9,7),handler=new AirHandler(1,3),vent=new SupplyVent(5,3);
+  const world=new World(9,7),handler=new AirHandler(1,3,{rotation:2}),vent=new SupplyVent(5,3);
   world.addEntity(handler);world.addEntity(vent);
   for(const [x,y] of [[2,3],[3,3],[4,3],[3,4]])world.addUtility(new AirDuct(x,y));
   const network=new DuctNetworkBuilder(world).build().find(item=>item.role==='supply');

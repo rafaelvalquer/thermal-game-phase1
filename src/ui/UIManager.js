@@ -96,7 +96,7 @@ export class UIManager {
     else if(networks.some(n=>n.closed&&n.flowRate<.05))alerts.push(['warn','LOW FLOW','Circuito hidráulico com vazão insuficiente']);
 
     const hvac=s.hvac;
-    const hvacIssue=hvac?.handlers.find(handler=>!['READY','DIRECT ROOM RETURN','OFF'].includes(handler.status));
+    const hvacIssue=hvac?.handlers.find(handler=>!['READY','OFF'].includes(handler.status));
     if(hvacIssue)alerts.push(['warn','HVAC '+hvacIssue.status,hvacIssue.name+' sem operação HVAC nominal']);
     if(hvac?.networks.some(network=>network.status==='READY'&&network.flowRate<.05))alerts.push(['warn','LOW HVAC FLOW','Rede HVAC conectada sem vazão suficiente']);
     if(hvac?.networks.some(network=>network.deadEnds?.length))alerts.push(['warn','DUCT DEAD END','Há trechos de duto sem saída conectada']);

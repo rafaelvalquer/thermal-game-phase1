@@ -6,7 +6,7 @@ export const level05={
   description:'Forno, motores e processo produtivo exigem isolamento, airflow e água trabalhando juntos.',
   briefing:'Nem tudo precisa estar frio. O forno opera quente por definição; sua tarefa é impedir que essa energia destrua os corredores, motores e área humana.',
   map:level05Map,environment:{outdoorTemperature:27},budget:60000,powerLimit:15000,missionDuration:420,
-  inventory:{wall:50,insulation:70,copper:30,fan:10,exhaust:5,pipe:110,pump:3,tank:2,radiator:6,exchanger:8,sensor:14,airHandler:1,condenser:1,smallDuct:50,mediumDuct:80,largeDuct:40,supplyVent:4,returnVent:4,damper:10,demolish:Infinity},
+  inventory:{wall:50,insulation:70,copper:30,fan:10,exhaust:5,pipe:110,pump:3,tank:2,radiator:6,exchanger:8,sensor:14,airHandler:1,condenser:1,refrigerantLine:60,smallDuct:50,mediumDuct:80,largeDuct:40,supplyVent:4,returnVent:4,damper:10,demolish:Infinity},
   zones:[
     {id:'furnace-zone',name:'Zona do Forno',x:7,y:8,width:20,height:20,target:900,visualStyle:'industrial'},
     {id:'service-corridor',name:'Corredor de Serviço',x:4,y:29,width:80,height:10,target:45,visualStyle:'corridor'},

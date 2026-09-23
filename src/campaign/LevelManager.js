@@ -1,6 +1,6 @@
 import { World } from '../world/World.js';
 import { MapBuilder } from './MapBuilder.js';
-import { Machine, ServerRack, Furnace, PassiveHeatSource, Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, TemperatureSensor, AirDuct, AirHandler, Condenser, SupplyVent, ReturnVent, DuctDamper } from '../entities/index.js';
+import { Machine, ServerRack, Furnace, PassiveHeatSource, Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, TemperatureSensor, AirDuct, RefrigerantLine, AirHandler, Condenser, SupplyVent, ReturnVent, DuctDamper } from '../entities/index.js';
 
 const constructors={
   machine:(d)=>new Machine(d.x,d.y,d),
@@ -23,6 +23,7 @@ const constructors={
   smallDuct:(d)=>new AirDuct(d.x,d.y,{...d,size:'smallDuct'}),
   mediumDuct:(d)=>new AirDuct(d.x,d.y,{...d,size:'mediumDuct'}),
   largeDuct:(d)=>new AirDuct(d.x,d.y,{...d,size:'largeDuct'}),
+  refrigerantLine:(d)=>new RefrigerantLine(d.x,d.y,d),
 };
 
 export class LevelManager {
@@ -44,7 +45,7 @@ export class LevelManager {
       if(def.failureTemperature!=null)entity.failureTemperature=def.failureTemperature;
       if(def.loadMultiplier!=null)entity.loadMultiplier=def.loadMultiplier;
       if(def.waterTemperature!=null&&typeof entity.waterMass==='number')entity.energy=entity.waterMass*4186*def.waterTemperature;
-      if(['smallDuct','mediumDuct','largeDuct','ductDamper'].includes(entity.type))world.addUtility(entity);
+      if(['smallDuct','mediumDuct','largeDuct','ductDamper','refrigerantLine'].includes(entity.type))world.addUtility(entity);
       else world.addEntity(entity);
     }
     this.world=world;return world;

@@ -1,6 +1,7 @@
 import { MaterialRegistry } from './MaterialRegistry.js';
 import { TileMap } from './TileMap.js';
 import { TILE_VOLUME, OUTDOOR_TEMP } from '../utils/Constants.js';
+import { utilityCanShareTile } from '../entities/UtilityCompatibility.js';
 
 export class World {
   constructor(width,height){
@@ -17,6 +18,7 @@ export class World {
     this.airWallConfinement=new Uint8Array(this.size);
     this.airDiagnostics={maxVelocity:0,averageVelocity:0,maxPressure:0,minPressure:0,maxDivergence:0};
     this.airTopologyVersion=0;
+    this.utilityTopologyVersion=0;
     this.heatFlux=new Float32Array(this.size);
     this.tileMap=new TileMap(this);
     this.entities=[];
@@ -65,20 +67,22 @@ export class World {
 
   isAir(x,y){return this.inBounds(x,y)&&this.materialAt(x,y).id==='air';}
   addEnergyAt(x,y,joules){if(this.inBounds(x,y))this.energy[this.index(x,y)]+=joules;}
-  addEntity(entity){this.entities.push(entity);return entity;}
-  removeEntity(entity){this.entities=this.entities.filter(e=>e!==entity);}
+  bumpUtilityTopology(){this.utilityTopologyVersion++;}
+  addEntity(entity){this.entities.push(entity);entity.world=this;if(['airHandler','condenser','supplyVent','returnVent'].includes(entity.type))this.bumpUtilityTopology();return entity;}
+  removeEntity(entity){this.entities=this.entities.filter(e=>e!==entity);if(['airHandler','condenser','supplyVent','returnVent'].includes(entity.type))this.bumpUtilityTopology();}
   utilitiesAt(x,y){return this.utilityLayer.get(this.index(x,y))||[];}
   utilityAt(x,y,type=null){return this.utilitiesAt(x,y).find(item=>!type||item.type===type)||null;}
   addUtility(utility){
     if(!this.inBounds(utility.x,utility.y))return null;
     const index=this.index(utility.x,utility.y),items=this.utilityLayer.get(index)||[];
-    if(items.some(item=>item.type===utility.type))return null;
-    utility.world=this;items.push(utility);this.utilityLayer.set(index,items);return utility;
+    if(!utilityCanShareTile(utility.type,items))return null;
+    utility.world=this;items.push(utility);this.utilityLayer.set(index,items);this.bumpUtilityTopology();return utility;
   }
   removeUtility(utility){
     const index=this.index(utility.x,utility.y),items=this.utilityLayer.get(index)||[];
     const next=items.filter(item=>item!==utility);
     if(next.length)this.utilityLayer.set(index,next);else this.utilityLayer.delete(index);
+    if(next.length!==items.length)this.bumpUtilityTopology();
   }
   allUtilities(){return [...this.utilityLayer.values()].flat();}
   entityAt(x,y){return this.entities.find(e=>e.x===x&&e.y===y);}

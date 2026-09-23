@@ -16,9 +16,10 @@ export class DuctFlowSolver {
 
   solve(network){
     if(network.status!=='READY')return network;
-    const handlerNode=network.nodes.find(node=>node.entity.id===network.airHandlers[0].id),candidates=[];
+    const handlerNode=network.handlerPorts.find(node=>node.service===network.role),candidates=[];
+    if(!handlerNode||!network.airHandlers.length)return network;
     for(const vent of network.vents){
-      const ventNode=network.nodes.find(node=>node.entity.id===vent.id),path=this.shortestPath(network,handlerNode,ventNode);
+      const ventNode=network.nodes.find(node=>node.kind==='terminal'&&node.entity.id===vent.id),path=this.shortestPath(network,handlerNode,ventNode);
       if(!path.length)continue;
       if(network.role==='return')path.reverse();
       const resistance=this.pressure.pathResistance(path);
@@ -43,9 +44,9 @@ export class DuctFlowSolver {
         const fraction=(ductIndex+1)/(ductCount+1),staticPressure=network.role==='supply'?path.pressureDrop*(1-fraction):-path.pressureDrop*fraction;
         duct.pressure+=staticPressure*path.flowRate;duct._pressureWeight+=path.flowRate;
         duct.pressureLoss+=ductCount?path.pressureDrop/ductCount:0;
-        const next=path.path.slice(i+1).find(item=>item.kind==='duct'||item.entity.type==='airHandler'||item.entity.type.endsWith('Vent'));
-        const prev=path.path.slice(0,i).reverse().find(item=>item.kind==='duct'||item.entity.type==='airHandler'||item.entity.type.endsWith('Vent'));
-        duct.upstreamId=prev?.entity.id||null;duct.downstreamId=next?.entity.id||null;
+        const next=path.path.slice(i+1).find(item=>item.kind!=='duct');
+        const prev=path.path.slice(0,i).reverse().find(item=>item.kind!=='duct');
+        duct.upstreamId=prev?.entity.handler?.id||prev?.entity.id||null;duct.downstreamId=next?.entity.handler?.id||next?.entity.id||null;
         if(next)duct.direction={x:Math.sign(next.entity.x-duct.x),y:Math.sign(next.entity.y-duct.y)};
         ductIndex++;
       }

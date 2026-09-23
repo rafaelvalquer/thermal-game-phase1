@@ -33,6 +33,31 @@ test('critical facility provides enough pipes to complete the inherited circuit'
   assert.equal(level.inventory.pipe,400);
 });
 
+test('level six lays out aligned server racks for hot and cold aisle containment',()=>{
+  const level=LEVELS.find(candidate=>candidate.number===6);
+  const racks=level.entities.filter(entity=>entity.type==='serverRack');
+  assert.equal(level.name,'Critical Data Center');
+  assert.equal(racks.length,8);
+
+  for(const hall of ['a','b']){
+    const roomRacks=racks.filter(rack=>rack.zoneId===`server-${hall}`);
+    const north=roomRacks.filter(rack=>rack.y===12);
+    const south=roomRacks.filter(rack=>rack.y===18);
+    assert.deepEqual(north.map(rack=>rack.x).sort((a,b)=>a-b),south.map(rack=>rack.x).sort((a,b)=>a-b));
+    assert.ok(north.every(rack=>rack.airIntakeDirection.y===-1&&rack.airExhaustDirection.y===1));
+    assert.ok(south.every(rack=>rack.airIntakeDirection.y===1&&rack.airExhaustDirection.y===-1));
+
+    const loads=roomRacks.reduce((sum,rack)=>sum+rack.heatOutput,0);
+    assert.equal(loads,hall==='a'?15000:16000);
+    for(const aisle of ['cold-north','hot','cold-south']){
+      const zoneId=`server-${hall}-${aisle}`;
+      assert.ok(level.zones.some(zone=>zone.id===zoneId),`missing ${zoneId}`);
+      assert.ok(level.objectives.some(objective=>objective.type==='zoneTemperature'&&objective.zoneId===zoneId));
+    }
+  }
+  assert.equal(level.events.find(event=>event.time===180).filter.zoneId,'server-b');
+});
+
 test('campaign completion unlocks the next level and persists',()=>{
   const storage=new MemoryStorage(),campaign=new CampaignManager({storage});
   assert.equal(campaign.isUnlocked(LEVELS[0]),true);

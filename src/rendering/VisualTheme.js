@@ -51,4 +51,10 @@ export const entityLabel = (type) => ({
   radiator:'Radiador',
   exchanger:'Trocador de calor',
   sensor:'Sensor térmico',
+  airHandler:'Air Handler',
+  condenser:'Condensadora',
+  supplyVent:'Vent insuflação',
+  returnVent:'Vent retorno',
+  ductDamper:'Damper HVAC',
+  refrigerantLine:'Linha frigorífica',
 }[type]||type);

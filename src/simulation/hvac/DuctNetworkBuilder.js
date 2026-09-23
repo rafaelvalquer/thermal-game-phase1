@@ -1,57 +1,84 @@
 import { HVAC } from './HVACConstants.js';
 import { DuctNetwork } from './DuctNetwork.js';
+import { HVACPortResolver } from './ports/HVACPortResolver.js';
 
 const key=(x,y)=>`${x},${y}`;
 const dirs=[[1,0],[-1,0],[0,1],[0,-1]];
 
 export class DuctNetworkBuilder {
-  constructor(world){this.world=world;this.sequence=0;}
+  constructor(world){this.world=world;this.sequence=0;this.portResolver=new HVACPortResolver();this.cacheVersion=-1;this.cached=[];this.rebuildCount=0;}
 
-  build(){return [...this.buildRole('supply'),...this.buildRole('return')];}
-
-  buildRole(role){
-    const ventType=role==='supply'?'supplyVent':'returnVent';
-    const ducts=this.world.allUtilities().filter(entity=>HVAC.ductTypes.has(entity.type)&&entity.role===role);
-    const terminals=this.world.entities.filter(entity=>entity.type==='airHandler'||entity.type===ventType);
-    const nodes=[...ducts.map(entity=>({kind:'duct',entity})),...terminals.map(entity=>({kind:'terminal',entity}))];
-    const at=new Map();for(const node of nodes){const k=key(node.entity.x,node.entity.y),list=at.get(k)||[];list.push(node);at.set(k,list);}
-    const adjacency=new Map(nodes.map(node=>[node.entity.id,new Set()]));
-    for(const node of nodes){
+  build({force=false}={}){
+    const version=this.world.utilityTopologyVersion||0;
+    if(!force&&this.cacheVersion===version)return this.cached;
+    this.rebuildCount++;this.cacheVersion=version;
+    const world=this.world,ducts=world.allUtilities().filter(entity=>HVAC.ductTypes.has(entity.type));
+    const vents=world.entities.filter(entity=>entity.type==='supplyVent'||entity.type==='returnVent');
+    const ports=world.entities.filter(entity=>entity.type==='airHandler').flatMap(handler=>this.portResolver.airHandler(handler)
+      .filter(port=>port.type==='supply'||port.type==='return')
+      .map(port=>({id:port.id,kind:'port',service:port.type,entity:{id:port.id,type:'airHandlerPort',x:handler.x,y:handler.y,handler,port}})));
+    const nodes=[...ducts.map(entity=>({kind:'duct',entity})),...vents.map(entity=>({kind:'terminal',entity})),...ports];
+    const byId=new Map(nodes.map(node=>[node.entity.id,node])),adjacency=new Map(nodes.map(node=>[node.entity.id,new Set()]));
+    const connect=(a,b)=>{if(a===b)return;adjacency.get(a.entity.id).add(b.entity.id);adjacency.get(b.entity.id).add(a.entity.id);};
+    const ductsAt=new Map();for(const node of nodes.filter(item=>item.kind==='duct')){const cell=key(node.entity.x,node.entity.y),list=ductsAt.get(cell)||[];list.push(node);ductsAt.set(cell,list);}
+    const ventsAt=new Map();for(const node of nodes.filter(item=>item.kind==='terminal')){const cell=key(node.entity.x,node.entity.y),list=ventsAt.get(cell)||[];list.push(node);ventsAt.set(cell,list);}
+    for(const node of nodes.filter(item=>item.kind==='duct')){
       const {x,y}=node.entity;
-      for(const [dx,dy] of dirs)for(const other of at.get(key(x+dx,y+dy))||[]){
-        if(other===node)continue;
-        if(node.kind==='terminal'&&other.kind==='terminal'&&other.entity.type!=='airHandler'&&node.entity.type!=='airHandler')continue;
-        adjacency.get(node.entity.id).add(other.entity.id);adjacency.get(other.entity.id).add(node.entity.id);
-      }
-      for(const other of at.get(key(x,y))||[]){
-        if(other===node)continue;
-        adjacency.get(node.entity.id).add(other.entity.id);adjacency.get(other.entity.id).add(node.entity.id);
+      for(const [dx,dy] of dirs){
+        for(const other of ductsAt.get(key(x+dx,y+dy))||[])connect(node,other);
+        for(const terminal of ventsAt.get(key(x+dx,y+dy))||[])connect(node,terminal);
       }
     }
+    for(const portNode of ports){
+      const cell=portNode.entity.port.cell;
+      for(const duct of ductsAt.get(key(cell.x,cell.y))||[])connect(portNode,duct);
+    }
 
-    const byId=new Map(nodes.map(node=>[node.entity.id,node])),seen=new Set(),networks=[];
+    for(const item of ducts){item.networkId=null;item.networkRole=null;item.networkStatus='DISCONNECTED';item.flowRate=0;item.pressure=0;item.pressureLoss=0;item.velocity=0;item.direction={x:0,y:0};item.upstreamId=null;item.downstreamId=null;item.deadEnd=false;}
+    for(const vent of vents){vent.networkId=null;vent.networkStatus='DISCONNECTED';vent.networkRole=null;vent.flowRate=0;vent.pressure=0;}
+    for(const handler of world.entitiesByType('airHandler')){handler.networkIds=[];handler.supplyNetworkId=null;handler.returnNetworkId=null;}
+
+    const seen=new Set(),networks=[];
     for(const start of nodes){
       if(seen.has(start.entity.id))continue;
+      // Unconnected AH ports do not form phantom networks. The handler reports
+      // the missing circuit from the absence of a classified network.
+      if(start.kind==='port'&&!(adjacency.get(start.entity.id)?.size)){seen.add(start.entity.id);continue;}
       const stack=[start],members=[];seen.add(start.entity.id);
-      while(stack.length){const node=stack.pop();members.push(node);for(const id of adjacency.get(node.entity.id)){if(!seen.has(id)){seen.add(id);stack.push(byId.get(id));}}}
-      const network=new DuctNetwork({id:`HVAC-${String(++this.sequence).padStart(2,'0')}-${role==='supply'?'S':'R'}`,role,nodes:members,adjacency});
-      network.status=network.airHandlers.length===0?'NO AIR HANDLER':network.airHandlers.length>1?'MULTIPLE AIR HANDLERS':network.vents.length===0?(role==='supply'?'NO SUPPLY VENT':'NO RETURN'):'READY';
+      while(stack.length){const node=stack.pop();members.push(node);for(const id of adjacency.get(node.entity.id)||[])if(!seen.has(id)){seen.add(id);stack.push(byId.get(id));}}
+      const handlerPortTypes=new Set(members.filter(node=>node.kind==='port').map(node=>node.service));
+      const supplyTerminals=members.filter(node=>node.kind==='terminal'&&node.entity.type==='supplyVent');
+      const returnTerminals=members.filter(node=>node.kind==='terminal'&&node.entity.type==='returnVent');
+      const mixed=handlerPortTypes.size>1||(supplyTerminals.length>0&&returnTerminals.length>0)||
+        handlerPortTypes.has('supply')&&returnTerminals.length>0||handlerPortTypes.has('return')&&supplyTerminals.length>0;
+      const airHandlers=new Set(members.filter(node=>node.kind==='port').map(node=>node.entity.handler.id));
+      const service=handlerPortTypes.size===1?[...handlerPortTypes][0]:supplyTerminals.length&&!returnTerminals.length?'supply':returnTerminals.length&&!supplyTerminals.length?'return':null;
+      const role=mixed?'invalid':service;
+      let status;
+      if(mixed)status='SUPPLY / RETURN CROSS-CONNECTION';
+      else if(airHandlers.size>1)status='MULTIPLE AIR HANDLERS';
+      else if(!airHandlers.size)status=members.some(node=>node.kind==='duct'||node.kind==='terminal')?'NO AIR HANDLER':'UNCONNECTED';
+      else if(service==='supply'&&!supplyTerminals.length)status='NO SUPPLY VENT';
+      else if(service==='return'&&!returnTerminals.length)status='NO RETURN VENT';
+      else status='READY';
+      const network=new DuctNetwork({id:`HVAC-${String(++this.sequence).padStart(2,'0')}-${role==='supply'?'S':role==='return'?'R':'X'}`,role,nodes:members,adjacency,status});
       for(const node of members){
-        node.entity.networkId=network.id;node.entity.networkStatus=network.status;
-        if(node.kind==='duct'){
-          node.entity.flowRate=0;node.entity.pressure=0;node.entity.pressureLoss=0;node.entity.velocity=0;
-          node.entity.direction={x:0,y:0};node.entity.upstreamId=null;node.entity.downstreamId=null;node.entity.deadEnd=false;
-        }else if(node.entity.type!=='airHandler'){
-          node.entity.flowRate=0;node.entity.pressure=0;
+        const entity=node.entity;entity.networkId=network.id;entity.networkStatus=status;
+        if(node.kind==='duct'){entity.networkRole=role;entity.deadEnd=network.deadEnds.includes(entity);}
+        if(node.kind==='terminal')entity.networkRole=role;
+        if(node.kind==='port'){
+          const handler=entity.handler;handler.networkIds.push(network.id);
+          if(node.service==='supply')handler.supplyNetworkId=network.id;
+          if(node.service==='return')handler.returnNetworkId=network.id;
         }
       }
       for(const duct of network.ducts){
-        const damper=this.world.utilityAt(duct.x,duct.y,'ductDamper');
-        if(damper){damper.networkId=network.id;damper.networkStatus=network.status;}
+        const damper=world.utilityAt(duct.x,duct.y,'ductDamper');
+        if(damper){damper.networkId=network.id;damper.networkStatus=status;damper.networkRole=role;}
       }
-      for(const duct of network.deadEnds){duct.networkStatus=network.status==='READY'?'DEAD END':network.status;duct.deadEnd=true;}
+      for(const duct of network.deadEnds)if(status==='READY'){duct.networkStatus='DEAD END';duct.deadEnd=true;}
       networks.push(network);
     }
-    return networks;
+    this.cached=networks;return networks;
   }
 }
