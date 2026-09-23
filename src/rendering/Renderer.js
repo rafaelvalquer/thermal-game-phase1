@@ -4,6 +4,9 @@ import { AirflowRenderer } from './AirflowRenderer.js';
 import { PressureRenderer } from './PressureRenderer.js';
 import { EntityRenderer } from './EntityRenderer.js';
 import { EffectsRenderer } from './EffectsRenderer.js';
+import { ThermalDistortionBuffer } from './thermal/ThermalDistortionBuffer.js';
+import { HeatHazeRenderer } from './thermal/HeatHazeRenderer.js';
+import { VisualSettings } from './VisualSettings.js';
 import { FLUID_TYPES, waterCss } from './VisualTheme.js';
 
 export class Renderer {
@@ -12,6 +15,7 @@ export class Renderer {
     this.mode='normal';this.debug=false;this.hover=null;this.buildSystem=null;this.selectedEntity=null;
     this.tileRenderer=new TileRenderer();this.heatmap=new HeatmapRenderer();this.airflow=new AirflowRenderer();this.pressure=new PressureRenderer();
     this.entities=new EntityRenderer();this.effects=new EffectsRenderer();
+    this.distortionBuffer=new ThermalDistortionBuffer();this.heatHaze=new HeatHazeRenderer({quality:VisualSettings.heatHazeQuality,maxRegions:VisualSettings.maxHazeRegions});
   }
 
   resize(){
@@ -20,21 +24,45 @@ export class Renderer {
   }
 
   draw(world,simulation){
-    this.resize();const ctx=this.ctx,time=performance.now()/1000;
-    ctx.setTransform(this.dpr,0,0,this.dpr,0,0);ctx.clearRect(0,0,this.canvas.width/this.dpr,this.canvas.height/this.dpr);
-    const bg=ctx.createLinearGradient(0,0,0,this.canvas.height/this.dpr);bg.addColorStop(0,'#07111f');bg.addColorStop(1,'#020617');ctx.fillStyle=bg;ctx.fillRect(0,0,this.canvas.width/this.dpr,this.canvas.height/this.dpr);
-    ctx.save();ctx.scale(this.camera.zoom,this.camera.zoom);ctx.translate(-this.camera.x,-this.camera.y);
-    this.tileRenderer.draw(ctx,world,this.tile);
+    this.resize();
+    const ctx=this.ctx,time=performance.now()/1000;
+    const width=this.canvas.width/this.dpr,height=this.canvas.height/this.dpr;
+
+    ctx.setTransform(this.dpr,0,0,this.dpr,0,0);
+    ctx.clearRect(0,0,width,height);
+    const bg=ctx.createLinearGradient(0,0,0,height);
+    bg.addColorStop(0,'#07111f');bg.addColorStop(1,'#020617');
+    ctx.fillStyle=bg;ctx.fillRect(0,0,width,height);
+
+    if(this.distortionBuffer.ensure(width,height,this.dpr)){
+      const scene=this.distortionBuffer.context();
+      scene.save();
+      scene.scale(this.camera.zoom,this.camera.zoom);
+      scene.translate(-this.camera.x,-this.camera.y);
+      this.tileRenderer.draw(scene,world,this.tile);
+      if(this.mode==='thermal')this.heatmap.draw(scene,world,this.tile);
+      this.entities.draw(scene,world,this.tile,this.mode,time);
+      this.effects.draw(scene,world,this.tile,this.mode,time);
+      scene.restore();
+
+      if(VisualSettings.heatHaze)this.heatHaze.render(ctx,this.distortionBuffer.canvas,world,this.camera,this.tile,this.mode,time,width,height,this.dpr);
+      else ctx.drawImage(this.distortionBuffer.canvas,0,0,this.distortionBuffer.canvas.width,this.distortionBuffer.canvas.height,0,0,width,height);
+    }
+
+    ctx.save();
+    ctx.scale(this.camera.zoom,this.camera.zoom);
+    ctx.translate(-this.camera.x,-this.camera.y);
     this.drawZones(ctx);
-    if(this.mode==='thermal')this.heatmap.draw(ctx,world,this.tile);
     if(this.mode==='pressure')this.pressure.draw(ctx,world,this.tile);
     if(this.mode==='fluid')this.drawFluidNetwork(ctx,world,time);
-    this.entities.draw(ctx,world,this.tile,this.mode,time);
-    this.effects.draw(ctx,world,this.tile,this.mode,time);
     if(this.mode==='airflow')this.airflow.draw(ctx,world,this.tile,time);
-    this.drawSelection(ctx);this.drawHover(ctx,world,time);
+    this.drawSelection(ctx);
+    this.drawHover(ctx,world,time);
     if(this.debug)this.drawDebug(ctx,world);
-    ctx.restore();this.drawLegend(ctx,simulation);
+    ctx.restore();
+
+    this.drawLegend(ctx,simulation);
+    if(this.debug)this.drawVisualPhysicsDebug(ctx,time);
   }
 
   drawZones(ctx){
@@ -105,6 +133,30 @@ export class Renderer {
     ctx.font='10px ui-monospace,monospace';const x=t.x*this.tile+this.tile+4,y=t.y*this.tile;
     ctx.fillStyle='rgba(2,6,23,.94)';ctx.fillRect(x,y,138,txt.length*13+8);ctx.strokeStyle='#334155';ctx.strokeRect(x+.5,y+.5,137,txt.length*13+7);
     ctx.fillStyle='#e2e8f0';txt.forEach((s,i)=>ctx.fillText(s,x+5,y+14+i*13));
+  }
+
+  drawVisualPhysicsDebug(ctx,time){
+    const stream=this.airflow.diagnostics(time);
+    const haze=this.heatHaze.diagnostics();
+    const lines=[
+      'VISUAL PHYSICS',
+      'Streamlines  '+String(stream.active).padStart(4),
+      'Points       '+String(stream.points).padStart(4),
+      'Stream gen   '+stream.generationMs.toFixed(2)+' ms',
+      'Cache age    '+stream.cacheAgeMs.toFixed(0)+' ms',
+      'Haze regions '+String(haze.regions).padStart(4),
+      'Haze render  '+haze.renderMs.toFixed(2)+' ms',
+    ];
+    const x=18,y=this.canvas.height/this.dpr-112,w=154,h=96;
+    ctx.save();
+    ctx.fillStyle='rgba(2,6,23,.9)';ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle='rgba(71,85,105,.7)';ctx.strokeRect(x+.5,y+.5,w-1,h-1);
+    ctx.font='9px ui-monospace,monospace';
+    lines.forEach((line,i)=>{
+      ctx.fillStyle=i===0?'#67e8f9':'#cbd5e1';
+      ctx.fillText(line,x+7,y+14+i*12);
+    });
+    ctx.restore();
   }
 
   drawLegend(ctx){

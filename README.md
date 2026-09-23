@@ -83,3 +83,8 @@ O sistema de fluidos usa loops simples e orientados. Para gerar vazão, a rede p
 ## Airflow Physics
 
 O airflow usa agora um solver 2D incompressível em MAC grid com pressão, conservação de massa, wall drag, curva pressão-vazão das fans e advecção térmica conservativa. Corredores alteram o escoamento pela própria geometria: podem concentrar o jato, mas comprimento, estreitamento, curvas, obstáculos e dead-ends adicionam resistência. O jogo possui também um modo visual de Pressão e telemetria de operating point das fans.
+
+
+## Visual Physics
+
+O renderer suporta Airflow em Vetores, Streamlines RK2 e Partículas. Streamlines consomem diretamente o campo físico `world.airX/world.airY`, usam seeds adaptativos e cache de 250 ms. Zonas quentes recebem Heat Haze via offscreen Canvas e slice displacement, com intensidade baseada em ΔT e inclinação influenciada pelo airflow. F3 inclui telemetria de geração das linhas e custo do haze.
