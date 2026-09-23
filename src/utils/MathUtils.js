@@ -9,8 +9,8 @@ export const formatEnergy = (j) => {
   return `${j.toFixed(0)} J`;
 };
 export const formatPower = (w) => (Math.abs(w) >= 1000 ? `${(w / 1000).toFixed(2)} kW` : `${w.toFixed(0)} W`);
-export const rgbHeat = (temp) => {
-  const t = clamp((temp - 10) / 70, 0, 1);
+export const rgbHeat = (temp,min=10,max=80) => {
+  const t = clamp((temp - min) / Math.max(1,max-min), 0, 1);
   const stops = [
     [0.00, [20, 80, 220]],
     [0.25, [20, 190, 210]],

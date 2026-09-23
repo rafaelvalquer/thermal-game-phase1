@@ -8,6 +8,8 @@ import { MouseController } from '../input/MouseController.js';
 import { UIManager } from '../ui/UIManager.js';
 import { GameLoop } from './GameLoop.js';
 import { clamp } from '../utils/MathUtils.js';
+import { extendPipePath } from '../building/PipePath.js';
+import { DUCT_TOOLS } from '../building/PlacementValidator.js';
 
 export class Game {
   constructor(canvas,level,campaign){
@@ -15,7 +17,7 @@ export class Game {
     this.levelManager=new LevelManager();this.world=this.levelManager.load(level);
     this.sim=new Simulation(this.world,level);
     this.build=new BuildSystem(this.world,this.sim,{budget:level.budget,inventory:level.inventory});
-    this.camera=new Camera();this.renderer=new Renderer(canvas,this.camera);this.renderer.buildSystem=this.build;this.renderer.zones=level.zones||[];
+    this.camera=new Camera();this.renderer=new Renderer(canvas,this.camera);this.renderer.buildSystem=this.build;this.renderer.zones=level.zones||[];this.renderer.level=level;
     this.input=new InputManager(canvas);this.mouse=new MouseController(canvas,this.camera,this.renderer.tile);this.hover={x:0,y:0};
     this.setupInput();this.sim.initialize();this.ui=new UIManager(this,campaign);this.setSpeed(1);this.centerCamera();
     this.camera.setBounds(this.world.width*this.renderer.tile,this.world.height*this.renderer.tile);
@@ -23,19 +25,35 @@ export class Game {
   }
 
   setupInput(){
-    this.mouse.onMove=grid=>{this.hover=grid;this.renderer.hover=grid;};
+    this.pipeDrag=null;
+    this.renderer.pipePreview=()=>this.pipeDrag?.path||null;
+    this.mouse.onMove=grid=>{this.hover=grid;this.renderer.hover=grid;if(this.pipeDrag)this.pipeDrag.path=extendPipePath(this.pipeDrag.path,grid);};
+    this.mouse.onPrimaryDown=grid=>{if(this.build.selected==='pipe'||DUCT_TOOLS.has(this.build.selected))this.pipeDrag={path:[{x:grid.x,y:grid.y}],tool:this.build.selected};};
     this.mouse.onPrimary=grid=>{
       if(!this.world.inBounds(grid.x,grid.y))return;
+      if(this.build.selected==='pipe'||DUCT_TOOLS.has(this.build.selected))return;
       if(this.build.selected){const r=this.build.place(grid.x,grid.y);if(!r.ok)this.toast(r.reason);}
       else this.ui?.inspectAt(grid.x,grid.y);
     };
-    this.mouse.onSecondary=()=>this.build.select(null);
+    this.mouse.onPrimaryUp=grid=>{
+      if(!this.pipeDrag)return;
+      this.pipeDrag.path=extendPipePath(this.pipeDrag.path,grid);
+      const result=this.pipeDrag.tool==='pipe'?this.build.placePipePath(this.pipeDrag.path):this.build.placeDuctPath(this.pipeDrag.path);
+      this.pipeDrag=null;
+      if(result.failed)this.toast(`${result.placed} trechos instalados; ${result.failed} posição(ões) ignorada(s)`);
+    };
+    this.mouse.onSecondary=()=>{this.pipeDrag=null;this.build.select(null);};
     addEventListener('keydown',e=>{
+      if(window.__thermalLab!==this)return;
       if(e.repeat)return;
       if(e.code==='Space'){e.preventDefault();this.sim.togglePause();}
       if(e.code==='KeyR')this.build.rotate();
+      if(e.code==='KeyI'&&DUCT_TOOLS.has(this.build.selected))this.toast('Isolamento: '+(this.build.toggleDuctInsulation()?'ativado':'padrão'));
+      if((e.code==='KeyU'||e.code==='KeyJ')&&this.renderer.selectedEntity?.type==='ductDamper'){
+        const damper=this.renderer.selectedEntity;damper.setOpening(damper.opening+(e.code==='KeyU' ? .25 : -.25));
+      }
       if(e.code==='F3'){e.preventDefault();this.renderer.debug=!this.renderer.debug;}
-      if(e.code==='Escape')this.build.select(null);
+      if(e.code==='Escape'){this.pipeDrag=null;this.build.select(null);}
       if(['Digit1','Digit2','Digit4'].includes(e.code))this.setSpeed(Number(e.code.at(-1)));
     });
   }

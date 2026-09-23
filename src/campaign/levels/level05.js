@@ -5,13 +5,13 @@ export const level05={
   tagline:'Sistemas industriais',
   description:'Forno, motores e processo produtivo exigem isolamento, airflow e água trabalhando juntos.',
   briefing:'Nem tudo precisa estar frio. O forno opera quente por definição; sua tarefa é impedir que essa energia destrua os corredores, motores e área humana.',
-  map:level05Map,environment:{outdoorTemperature:27},budget:15000,powerLimit:15000,missionDuration:420,
-  inventory:{wall:50,insulation:70,copper:30,fan:10,exhaust:5,pipe:110,pump:3,tank:2,radiator:6,exchanger:8,sensor:14,demolish:Infinity},
+  map:level05Map,environment:{outdoorTemperature:27},budget:60000,powerLimit:15000,missionDuration:420,
+  inventory:{wall:50,insulation:70,copper:30,fan:10,exhaust:5,pipe:110,pump:3,tank:2,radiator:6,exchanger:8,sensor:14,airHandler:1,condenser:1,smallDuct:50,mediumDuct:80,largeDuct:40,supplyVent:4,returnVent:4,damper:10,demolish:Infinity},
   zones:[
-    {id:'furnace-zone',name:'Zona do Forno',x:7,y:8,width:20,height:20,target:900},
-    {id:'service-corridor',name:'Corredor de Serviço',x:4,y:29,width:80,height:10,target:45},
-    {id:'operators',name:'Sala de Operadores',x:9,y:41,width:19,height:11,target:30},
-    {id:'cooling-room',name:'Sala de Refrigeração',x:57,y:39,width:20,height:13,target:45},
+    {id:'furnace-zone',name:'Zona do Forno',x:7,y:8,width:20,height:20,target:900,visualStyle:'industrial'},
+    {id:'service-corridor',name:'Corredor de Serviço',x:4,y:29,width:80,height:10,target:45,visualStyle:'corridor'},
+    {id:'operators',name:'Sala de Operadores',x:9,y:41,width:19,height:11,target:30,visualStyle:'office'},
+    {id:'cooling-room',name:'Sala de Refrigeração',x:57,y:39,width:20,height:13,target:45,visualStyle:'utility'},
   ],
   entities:[
     {type:'furnace',id:'furnace-a',name:'Forno A',x:16,y:17,heatOutput:50000,temperature:800,zoneId:'furnace-zone'},
@@ -27,8 +27,8 @@ export const level05={
     {type:'zoneTemperature',zoneId:'service-corridor',max:45,label:'Corredor < 45°C'},
     {type:'powerBelow',max:15000,label:'Cooling < 15 kW'},
   ],
-  failures:[{type:'entityLimits',hold:30}],
+  failures:[{type:'entityLimits',hold:30},{type:'hvacOverload',hold:60,message:'Um Air Handler permaneceu sobrecarregado.'}],
   events:[],
-  tips:['Isole o forno em vez de tentar resfriá-lo.','Uma rede hidráulica grande pode perder vazão por resistência.','Use cobre apenas onde espalhar calor for desejável.'],
+  tips:['Isole o forno em vez de tentar resfriá-lo.','Dutos expostos ganham calor; use isolamento nos trechos quentes.','Instale a condensadora fora da sala de refrigeração.','Use cobre apenas onde espalhar calor for desejável.'],
 };
 

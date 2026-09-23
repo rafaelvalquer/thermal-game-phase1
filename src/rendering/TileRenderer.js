@@ -1,17 +1,24 @@
 export class TileRenderer {
-  draw(ctx,world,tile){
+  draw(ctx,world,tile,zones=[],mode='normal'){
     for(let y=0;y<world.height;y++)for(let x=0;x<world.width;x++){
       const m=world.materialAt(x,y),px=x*tile,py=y*tile;
-      if(m.id==='air') this.floor(ctx,x,y,px,py,tile);
+      if(m.id==='air') this.floor(ctx,x,y,px,py,tile,this.zoneStyle(zones,x,y));
+      else if(mode==='hvac'){ctx.save();ctx.globalAlpha=.48;this.material(ctx,m,x,y,px,py,tile);ctx.restore();}
       else this.material(ctx,m,x,y,px,py,tile);
     }
     this.grid(ctx,world,tile);
   }
 
-  floor(ctx,x,y,px,py,tile){
+  zoneStyle(zones,x,y){
+    return zones.find(z=>x>=z.x&&y>=z.y&&x<z.x+z.width&&y<z.y+z.height)?.visualStyle||'default';
+  }
+
+  floor(ctx,x,y,px,py,tile,style='default'){
     const panel=((Math.floor(x/2)+Math.floor(y/2))&1);
     ctx.fillStyle=panel?'#0c1623':'#0a131f';
     ctx.fillRect(px,py,tile,tile);
+    const tints={office:'rgba(96,165,250,.075)',lab:'rgba(45,212,191,.065)',server:'rgba(56,189,248,.07)',industrial:'rgba(251,146,60,.065)',corridor:'rgba(148,163,184,.045)',utility:'rgba(250,204,21,.055)'};
+    if(tints[style]){ctx.fillStyle=tints[style];ctx.fillRect(px,py,tile,tile);}
     if((x%4===0||y%4===0)){
       ctx.fillStyle='rgba(148,163,184,.025)';
       ctx.fillRect(px,py,tile,tile);
@@ -30,6 +37,8 @@ export class TileRenderer {
       ctx.fillStyle='#5f6978';ctx.fillRect(px+1,py+1,tile-2,Math.max(2,tile*.22));
       ctx.strokeStyle='rgba(15,23,42,.55)';ctx.lineWidth=Math.max(.5,tile*.035);
       ctx.strokeRect(px+.5,py+.5,tile-1,tile-1);
+      ctx.strokeStyle='rgba(255,255,255,.12)';ctx.beginPath();ctx.moveTo(px+1,py+tile*.25);ctx.lineTo(px+tile*.38,py+1);ctx.stroke();
+      ctx.strokeStyle='rgba(0,0,0,.28)';ctx.beginPath();ctx.moveTo(px+tile*.62,py+tile-1);ctx.lineTo(px+tile-1,py+tile*.62);ctx.stroke();
       if((x+y)&1){ctx.beginPath();ctx.moveTo(px,py+tile*.58);ctx.lineTo(px+tile,py+tile*.58);ctx.stroke();}
       return;
     }

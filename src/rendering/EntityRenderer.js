@@ -1,8 +1,13 @@
 import { FLUID_TYPES, dirAngle, heatCss, thermalState, waterCss } from './VisualTheme.js';
+import { EquipmentSpriteRenderer } from './sprites/EquipmentSpriteRenderer.js';
 
 export class EntityRenderer {
+  constructor(){this.sprites=new EquipmentSpriteRenderer();}
+
   draw(ctx,world,tile,mode,time=0){
-    for(const e of world.entities){
+    const ordered=[...world.entities].map((entity,index)=>({entity,index})).sort((a,b)=>(a.entity.y+this.sprites.visualFootY(a.entity))*tile-(b.entity.y+this.sprites.visualFootY(b.entity))*tile||a.index-b.index);
+    for(const {entity:e} of ordered){
+      if(this.sprites.draw(ctx,world,e,tile,mode,time))continue;
       const x=e.x*tile,y=e.y*tile,cx=x+tile/2,cy=y+tile/2;
       ctx.save();
       this.shadow(ctx,x,y,tile,e.type);
@@ -13,14 +18,61 @@ export class EntityRenderer {
       else if(e.type==='fan'||e.type==='exhaust')this.fan(ctx,e,cx,cy,tile,time);
       else if(FLUID_TYPES.has(e.type))this.fluid(ctx,world,e,x,y,tile,mode,time);
       else if(e.type==='sensor')this.sensor(ctx,e,cx,cy,tile,time);
+      else if(['airHandler','condenser','supplyVent','returnVent','ductDamper'].includes(e.type))this.hvacDevice(ctx,e,x,y,tile,time);
       ctx.restore();
     }
   }
 
+  drawPreview(ctx,world,tool,x,y,direction,tile,mode,time=0,valid=true){
+    const types={fan:'fan',exhaust:'exhaust',pipe:'pipe',pump:'pump',tank:'tank',radiator:'radiator',exchanger:'exchanger',sensor:'sensor',airHandler:'airHandler',condenser:'condenser',supplyVent:'supplyVent',returnVent:'returnVent',ductDamper:'ductDamper'};
+    if(!types[tool])return false;
+    const entity={id:987654,type:types[tool],x,y,direction:{...direction},enabled:true,started:true,currentVelocity:.35,currentFlow:.15,
+      circuitClosed:false,flowRate:0,waterTemperature:25,inletTemperature:25,outletTemperature:25,thermalPower:0,
+      airInTemperature:25,airOutTemperature:25,fanBoost:1,resistance:1,hydraulicPower:36,current:25,average:25,max:25,
+      name:'Prévia',temperature:25};
+    ctx.save();ctx.globalAlpha=valid?.58:.38;
+    const previewWorld={...world,entities:[entity],entityAt:(tx,ty)=>world.entityAt(tx,ty)};
+    if(!this.sprites.draw(ctx,previewWorld,entity,tile,mode,time,{preview:true,valid}))this.drawProcedural(ctx,previewWorld,entity,tile,mode,time);
+    ctx.restore();
+    return true;
+  }
+
+  drawProcedural(ctx,world,e,tile,mode,time){
+    return this.draw(ctx,{...world,entities:[e]},tile,mode,time);
+  }
+
   shadow(ctx,x,y,tile,type){
-    if(type==='pipe')return;
-    ctx.fillStyle='rgba(0,0,0,.28)';
-    ctx.fillRect(x+tile*.12,y+tile*.19,tile*.84,tile*.78);
+    if(type==='pipe'||['smallDuct','mediumDuct','largeDuct','damper'].includes(type))return;
+    const g=ctx.createRadialGradient(x+tile*.5,y+tile*.64,tile*.1,x+tile*.5,y+tile*.64,tile*.58);
+    g.addColorStop(0,'rgba(0,0,0,.38)');g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g;ctx.beginPath();ctx.ellipse(x+tile*.5,y+tile*.7,tile*.62,tile*.4,0,0,Math.PI*2);ctx.fill();
+  }
+
+  hvacDevice(ctx,e,x,y,tile,time){
+    const cx=x+tile/2,cy=y+tile/2;
+    if(e.type==='airHandler'||e.type==='condenser'){
+      const condenser=e.type==='condenser',color=condenser?'#fb923c':'#38bdf8';
+      const g=ctx.createLinearGradient(x,y,x+tile,y+tile);g.addColorStop(0,'#475569');g.addColorStop(1,'#0f172a');
+      ctx.fillStyle=g;ctx.strokeStyle=color;ctx.lineWidth=Math.max(1,tile*.07);ctx.fillRect(x+tile*.08,y+tile*.12,tile*.84,tile*.76);ctx.strokeRect(x+tile*.08,y+tile*.12,tile*.84,tile*.76);
+      ctx.fillStyle='#020617';ctx.fillRect(x+tile*.18,y+tile*.25,tile*.64,tile*.4);
+      ctx.strokeStyle=color;ctx.lineWidth=Math.max(.7,tile*.035);
+      for(let i=0;i<5;i++){const xx=x+tile*(.24+i*.13);ctx.beginPath();ctx.moveTo(xx,y+tile*.28);ctx.lineTo(xx,y+tile*.61);ctx.stroke();}
+      const active=condenser?e.heatRejected>0:e.currentFlow>0,statusColor=e.status==='HIGH HEAD'?'#fb7185':active?'#4ade80':'#fbbf24';
+      ctx.fillStyle=statusColor;ctx.beginPath();ctx.arc(x+tile*.77,y+tile*.76,tile*.055,0,Math.PI*2);ctx.fill();
+      ctx.save();ctx.translate(cx,cy);if(active&&time>0)ctx.rotate(time*(condenser?2.4:1.8));
+      ctx.strokeStyle=color;ctx.beginPath();ctx.arc(0,0,tile*.13,0,Math.PI*2);
+      for(let i=0;i<4;i++){ctx.rotate(Math.PI/2);ctx.moveTo(0,0);ctx.lineTo(tile*.12,0);}ctx.stroke();ctx.restore();
+      return;
+    }
+    if(e.type==='supplyVent'||e.type==='returnVent'){
+      const supply=e.type==='supplyVent',d=e.direction||{x:0,y:supply?1:-1};ctx.fillStyle='#0f172a';ctx.strokeStyle=supply?'#38bdf8':'#f59e0b';ctx.lineWidth=Math.max(1,tile*.06);ctx.fillRect(x+tile*.13,y+tile*.13,tile*.74,tile*.74);ctx.strokeRect(x+tile*.13,y+tile*.13,tile*.74,tile*.74);
+      for(let i=0;i<4;i++){const f=(i+1)/5,xx=x+tile*(.2+f*.6),yy=y+tile*(.2+f*.6);ctx.beginPath();if(Math.abs(d.x)>0){ctx.moveTo(xx,y+tile*.24);ctx.lineTo(xx,y+tile*.76);}else{ctx.moveTo(x+tile*.24,yy);ctx.lineTo(x+tile*.76,yy);}ctx.stroke();}
+      return;
+    }
+    if(e.type==='ductDamper'){
+      ctx.fillStyle='#172033';ctx.strokeStyle='#a78bfa';ctx.lineWidth=Math.max(1,tile*.05);ctx.fillRect(x+tile*.2,y+tile*.2,tile*.6,tile*.6);ctx.strokeRect(x+tile*.2,y+tile*.2,tile*.6,tile*.6);
+      ctx.save();ctx.translate(cx,cy);ctx.rotate((1-e.opening)*Math.PI/2);ctx.beginPath();ctx.moveTo(-tile*.2,0);ctx.lineTo(tile*.2,0);ctx.stroke();ctx.restore();
+    }
   }
 
   machine(ctx,e,x,y,tile,time){
@@ -85,8 +137,8 @@ export class EntityRenderer {
     ctx.fillStyle='#1f2937';ctx.strokeStyle='#64748b';ctx.lineWidth=Math.max(1,tile*.055);
     ctx.fillRect(-tile*.42,-tile*.42,tile*.84,tile*.84);ctx.strokeRect(-tile*.42,-tile*.42,tile*.84,tile*.84);
     ctx.strokeStyle=accent;ctx.strokeRect(-tile*.34,-tile*.34,tile*.68,tile*.68);
-    const rotorSpeed=.6+Math.max(0,e.currentVelocity||0)*2.2;
-    ctx.save();ctx.rotate(time*(exhaust?-rotorSpeed:rotorSpeed));
+    const flow=Math.max(0,e.currentVelocity||0),rotorSpeed=flow>0.04?.6+flow*2.2:0;
+    ctx.save();if(rotorSpeed)ctx.rotate(time*(exhaust?-rotorSpeed:rotorSpeed));
     ctx.fillStyle=exhaust?'#be123c':'#0891b2';
     for(let i=0;i<4;i++){ctx.rotate(Math.PI/2);ctx.beginPath();ctx.moveTo(0,0);ctx.quadraticCurveTo(tile*.3,-tile*.08,tile*.28,tile*.24);ctx.quadraticCurveTo(tile*.1,tile*.2,0,0);ctx.fill();}
     ctx.restore();
@@ -133,7 +185,7 @@ export class EntityRenderer {
     const ok=e.circuitClosed&&e.flowRate>.02;
     ctx.fillStyle='#172033';ctx.strokeStyle=ok?'#38bdf8':'#f59e0b';ctx.lineWidth=Math.max(1,tile*.06);
     ctx.beginPath();ctx.arc(cx,cy,tile*.33,0,Math.PI*2);ctx.fill();ctx.stroke();
-    ctx.save();ctx.translate(cx,cy);ctx.rotate(time*(ok?5:1.4));
+    ctx.save();ctx.translate(cx,cy);if(ok)ctx.rotate(time*5);
     ctx.strokeStyle=ok?'rgba(186,230,253,'+(.55+pulse*.4)+')':'rgba(245,158,11,.6)';
     ctx.lineWidth=Math.max(1,tile*.08);
     for(let i=0;i<3;i++){ctx.rotate(Math.PI*2/3);ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(tile*.22,0);ctx.stroke();}

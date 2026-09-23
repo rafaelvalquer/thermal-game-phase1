@@ -5,17 +5,17 @@ export const level06={
   tagline:'Gerenciamento térmico integrado',
   description:'Uma instalação crítica parcialmente pronta precisa sobreviver a picos de carga, novos processos e uma onda de calor.',
   briefing:'Você herdou infraestrutura incompleta e não pode remover os componentes bloqueados. Diagnostique o projeto existente, corrija gargalos e mantenha margem para três eventos operacionais.',
-  map:level06Map,environment:{outdoorTemperature:25},budget:25000,powerLimit:20000,missionDuration:600,
-  inventory:{wall:70,insulation:80,copper:30,fan:12,exhaust:6,pipe:120,pump:3,tank:3,radiator:8,exchanger:12,sensor:16,demolish:Infinity},
+  map:level06Map,environment:{outdoorTemperature:25},budget:65000,powerLimit:20000,missionDuration:600,
+  inventory:{wall:70,insulation:80,copper:30,fan:12,exhaust:6,pipe:400,pump:3,tank:3,radiator:8,exchanger:12,sensor:16,airHandler:1,condenser:1,smallDuct:50,mediumDuct:80,largeDuct:40,supplyVent:4,returnVent:4,damper:10,demolish:Infinity},
   zones:[
-    {id:'server-a',name:'Server Room A',x:7,y:8,width:22,height:15,target:36},
-    {id:'server-b',name:'Server Room B',x:35,y:8,width:22,height:15,target:36},
-    {id:'electrical',name:'Sala Elétrica',x:64,y:8,width:22,height:15,target:45},
-    {id:'pump-room',name:'Sala de Bombas',x:8,y:32,width:20,height:10,target:45},
-    {id:'process-a-zone',name:'Processo A',x:35,y:32,width:20,height:10,target:50},
-    {id:'process-b-zone',name:'Processo B',x:63,y:32,width:23,height:10,target:50},
-    {id:'control-room',name:'Sala de Controle',x:8,y:49,width:20,height:7,target:32},
-    {id:'technical-corridor',name:'Corredor Técnico',x:3,y:24,width:90,height:8,target:45},
+    {id:'server-a',name:'Server Room A',x:7,y:8,width:22,height:15,target:36,visualStyle:'server'},
+    {id:'server-b',name:'Server Room B',x:35,y:8,width:22,height:15,target:36,visualStyle:'server'},
+    {id:'electrical',name:'Sala Elétrica',x:64,y:8,width:22,height:15,target:45,visualStyle:'utility'},
+    {id:'pump-room',name:'Sala de Bombas',x:8,y:32,width:20,height:10,target:45,visualStyle:'utility'},
+    {id:'process-a-zone',name:'Processo A',x:35,y:32,width:20,height:10,target:50,visualStyle:'industrial'},
+    {id:'process-b-zone',name:'Processo B',x:63,y:32,width:23,height:10,target:50,visualStyle:'industrial'},
+    {id:'control-room',name:'Sala de Controle',x:8,y:49,width:20,height:7,target:32,visualStyle:'office'},
+    {id:'technical-corridor',name:'Corredor Técnico',x:3,y:24,width:90,height:8,target:45,visualStyle:'corridor'},
   ],
   entities:[
     {type:'serverRack',id:'srv-a1',name:'Server A1',x:12,y:14,heatOutput:7000,zoneId:'server-a',category:'serverRack',airIntakeDirection:{x:0,y:-1},airExhaustDirection:{x:0,y:1}},
@@ -45,6 +45,8 @@ export const level06={
   ],
   failures:[
     {type:'entityLimits',hold:30},
+    {type:'hvacOverload',hold:60,message:'Um Air Handler permaneceu sobrecarregado.'},
+    {type:'condenserHighHead',hold:30,message:'A condensadora falhou após operar sob alta pressão de condensação.'},
     {type:'zoneOverheat',zoneId:'control-room',temperature:40,hold:30,message:'A sala de controle tornou-se inoperável.'},
   ],
   events:[
@@ -52,6 +54,6 @@ export const level06={
     {time:300,type:'activateMachine',filter:{missionId:'process-b-main'},message:'EVENTO 2: Processo B iniciou operação.'},
     {time:420,type:'outdoorTemperature',value:35,message:'EVENTO 3: onda de calor — exterior agora em 35°C.'},
   ],
-  tips:['Componentes bloqueados fazem parte do problema, não do inventário.','Deixe folga de potência para os eventos futuros.','Sensores em corredores ajudam a localizar o gargalo antes do colapso.'],
+  tips:['Componentes bloqueados fazem parte do problema, não do inventário.','Dutos podem cruzar paredes sem abrir caminho para o ar da sala.','Use vents de retorno para fechar a rede e dampers para equilibrar zonas.','Deixe folga de capacidade e potência para a onda de calor.'],
 };
 

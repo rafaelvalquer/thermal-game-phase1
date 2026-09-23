@@ -20,7 +20,9 @@ export class World {
     this.heatFlux=new Float32Array(this.size);
     this.tileMap=new TileMap(this);
     this.entities=[];
+    this.utilityLayer=new Map();
     this.environment={temperature:OUTDOOR_TEMP,energyReceived:0};
+    this.hvacZonePressure=new Map();
     this.fill('air',OUTDOOR_TEMP);
   }
 
@@ -65,6 +67,20 @@ export class World {
   addEnergyAt(x,y,joules){if(this.inBounds(x,y))this.energy[this.index(x,y)]+=joules;}
   addEntity(entity){this.entities.push(entity);return entity;}
   removeEntity(entity){this.entities=this.entities.filter(e=>e!==entity);}
+  utilitiesAt(x,y){return this.utilityLayer.get(this.index(x,y))||[];}
+  utilityAt(x,y,type=null){return this.utilitiesAt(x,y).find(item=>!type||item.type===type)||null;}
+  addUtility(utility){
+    if(!this.inBounds(utility.x,utility.y))return null;
+    const index=this.index(utility.x,utility.y),items=this.utilityLayer.get(index)||[];
+    if(items.some(item=>item.type===utility.type))return null;
+    utility.world=this;items.push(utility);this.utilityLayer.set(index,items);return utility;
+  }
+  removeUtility(utility){
+    const index=this.index(utility.x,utility.y),items=this.utilityLayer.get(index)||[];
+    const next=items.filter(item=>item!==utility);
+    if(next.length)this.utilityLayer.set(index,next);else this.utilityLayer.delete(index);
+  }
+  allUtilities(){return [...this.utilityLayer.values()].flat();}
   entityAt(x,y){return this.entities.find(e=>e.x===x&&e.y===y);}
   entitiesByType(type){return this.entities.filter(e=>e.type===type);}
   totalTileEnergy(){let s=0;for(let i=0;i<this.size;i++)s+=this.energy[i];return s;}

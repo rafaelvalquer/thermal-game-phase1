@@ -1,6 +1,6 @@
 import { World } from '../world/World.js';
 import { MapBuilder } from './MapBuilder.js';
-import { Machine, ServerRack, Furnace, PassiveHeatSource, Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, TemperatureSensor } from '../entities/index.js';
+import { Machine, ServerRack, Furnace, PassiveHeatSource, Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, TemperatureSensor, AirDuct, AirHandler, Condenser, SupplyVent, ReturnVent, DuctDamper } from '../entities/index.js';
 
 const constructors={
   machine:(d)=>new Machine(d.x,d.y,d),
@@ -15,6 +15,14 @@ const constructors={
   radiator:(d)=>new Radiator(d.x,d.y),
   exchanger:(d)=>new HeatExchanger(d.x,d.y),
   sensor:(d)=>new TemperatureSensor(d.x,d.y),
+  airHandler:(d)=>new AirHandler(d.x,d.y,d),
+  condenser:(d)=>new Condenser(d.x,d.y,d),
+  supplyVent:(d)=>new SupplyVent(d.x,d.y,d),
+  returnVent:(d)=>new ReturnVent(d.x,d.y,d),
+  ductDamper:(d)=>new DuctDamper(d.x,d.y,d),
+  smallDuct:(d)=>new AirDuct(d.x,d.y,{...d,size:'smallDuct'}),
+  mediumDuct:(d)=>new AirDuct(d.x,d.y,{...d,size:'mediumDuct'}),
+  largeDuct:(d)=>new AirDuct(d.x,d.y,{...d,size:'largeDuct'}),
 };
 
 export class LevelManager {
@@ -36,7 +44,8 @@ export class LevelManager {
       if(def.failureTemperature!=null)entity.failureTemperature=def.failureTemperature;
       if(def.loadMultiplier!=null)entity.loadMultiplier=def.loadMultiplier;
       if(def.waterTemperature!=null&&typeof entity.waterMass==='number')entity.energy=entity.waterMass*4186*def.waterTemperature;
-      world.addEntity(entity);
+      if(['smallDuct','mediumDuct','largeDuct','ductDamper'].includes(entity.type))world.addUtility(entity);
+      else world.addEntity(entity);
     }
     this.world=world;return world;
   }

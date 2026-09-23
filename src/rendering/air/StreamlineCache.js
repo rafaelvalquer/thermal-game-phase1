@@ -18,6 +18,7 @@ export class StreamlineCache {
     this.lastTime=-Infinity;
     this.lastSignature=null;
     this.lastTopology=-1;
+    this.lastDensity=null;
     this.generationMs=0;
     this.pointCount=0;
   }
@@ -31,9 +32,10 @@ export class StreamlineCache {
     return count?sum/count:0;
   }
 
-  shouldRefresh(world,timeMs){
+  shouldRefresh(world,timeMs,density=1){
     if(!this.lines.length)return true;
     if((world.airTopologyVersion??0)!==this.lastTopology)return true;
+    if(density!==this.lastDensity)return true;
     if(timeMs-this.lastTime<this.refreshMs)return false;
     const sig=this.signature(world);
     const base=Math.max(.08,Math.abs(this.lastSignature??0));
@@ -50,13 +52,14 @@ export class StreamlineCache {
     this.pointCount=lines.reduce((n,l)=>n+l.points.length,0);
     this.lastSignature=this.signature(world);
     this.lastTopology=world.airTopologyVersion??0;
+    this.lastDensity=density;
     this.lastTime=timeMs;
     this.generationMs=now()-started;
     return lines;
   }
 
   get(world,density=1,timeMs=now()){
-    if(this.shouldRefresh(world,timeMs))this.rebuild(world,density,timeMs);
+    if(this.shouldRefresh(world,timeMs,density))this.rebuild(world,density,timeMs);
     return this.lines;
   }
 

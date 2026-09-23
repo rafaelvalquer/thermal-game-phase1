@@ -14,3 +14,27 @@
 @media(max-width:620px){.campaign-grid{grid-template-columns:1fr}.campaign-header{padding:0 18px}.campaign-main{padding-inline:16px}.briefing-card{padding:18px}}
 
 .airflow-submodes{position:absolute;left:50%;top:52px;transform:translateX(-50%);display:flex;gap:3px;padding:3px;background:#07101de8;border:1px solid #263247;border-radius:9px;backdrop-filter:blur(8px);box-shadow:0 6px 18px #0008;z-index:2}.airflow-submodes.hidden{display:none}.airflow-submodes button{border:0;background:transparent;color:#64748b;border-radius:6px;padding:5px 8px;font-size:8px;cursor:pointer}.airflow-submodes button:hover{color:#cbd5e1;background:#0f1d2e}.airflow-submodes button.active{color:#ecfeff;background:#0e7490;box-shadow:inset 0 0 9px #22d3ee22}.airflow-submodes:not(.hidden)~.mode-help{top:88px}
+@media(max-width:840px){
+  .shell{position:relative;grid-template-columns:minmax(0,1fr);grid-template-rows:54px minmax(0,1fr)}
+  .topbar{grid-column:1;grid-row:1;position:relative;display:flex;justify-content:space-between;gap:6px;padding:5px 9px}
+  .brand{gap:6px}.brand-mark{width:32px;height:32px}.brand-mark span{font-size:17px}.brand-mark small{margin-bottom:5px}
+  .brand h1{font-size:10px;letter-spacing:.12em}.brand p,.mission-box,#speedLabel{display:none}
+  .sim-controls{gap:4px}.sim-controls>span:first-child{font-size:12px;min-width:40px}
+  .sim-controls button{padding:6px 7px;font-size:10px}.speed-group button{padding-inline:6px}
+  .left-panel,.right-panel{display:block;position:absolute;z-index:7;top:54px;bottom:auto;width:min(320px,90vw);max-height:calc(100% - 66px);overflow:auto;box-shadow:0 12px 32px #000b;transform:translateX(-110%);transition:transform .18s ease}
+  .left-panel{left:0}.right-panel{right:0;transform:translateX(110%)}
+  .left-panel.mobile-open,.right-panel.mobile-open{transform:translateX(0)}
+  .panel-head{position:sticky;top:0}
+  .mobile-panel-toggle{display:inline-flex;align-items:center;border:1px solid #27364d;border-radius:6px;background:#0d1726;color:#a5f3fc;padding:5px 8px;font-size:9px;cursor:pointer}
+  .viewport-wrap{grid-row:2;grid-column:1}
+  .view-switcher{max-width:calc(100% - 12px);overflow-x:auto;left:6px;right:6px;transform:none;justify-content:flex-start}
+  .view-switcher button{white-space:nowrap;padding:7px 8px;font-size:8px}
+  .mode-help{top:55px;max-width:90%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .airflow-submodes{max-width:95%;white-space:nowrap}
+}
+@media(min-width:841px){.mobile-panel-toggle{display:none}}
+@media(max-width:420px){.sim-controls{gap:3px}.sim-controls button{padding:5px;font-size:9px}.sim-controls>span:first-child{min-width:34px;font-size:11px}.speed-group button{padding-inline:4px}.brand-mark{width:28px;height:28px}}
+.thermal-scale-switch{white-space:nowrap!important;color:#a5f3fc!important;border:1px solid #155e75!important;background:#082f49!important;padding:6px 8px!important;font-size:8px!important}
+.thermal-scale-switch.hidden{display:none!important}
+.view-switcher{max-width:calc(100% - 16px);overflow-x:auto;scrollbar-width:none}.view-switcher::-webkit-scrollbar{display:none}
+@media(max-width:840px){.thermal-scale-switch{padding:5px 6px!important;font-size:8px!important}}

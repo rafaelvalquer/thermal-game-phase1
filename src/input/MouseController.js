@@ -1,7 +1,10 @@
 export class MouseController {
-  constructor(canvas,camera,tilePixels=14){this.canvas=canvas;this.camera=camera;this.tilePixels=tilePixels;this.onPrimary=()=>{};this.onSecondary=()=>{};this.onMove=()=>{};
+  constructor(canvas,camera,tilePixels=14){this.canvas=canvas;this.camera=camera;this.tilePixels=tilePixels;this.onPrimary=()=>{};this.onSecondary=()=>{};this.onMove=()=>{};this.onPrimaryDown=()=>{};this.onPrimaryUp=()=>{};this.primaryDown=false;
     canvas.addEventListener('mousemove',e=>this.onMove(this.gridFromEvent(e),e));
-    canvas.addEventListener('mousedown',e=>{if(e.button===0)this.onPrimary(this.gridFromEvent(e),e);if(e.button===2)this.onSecondary(this.gridFromEvent(e),e);});
+    canvas.addEventListener('mousedown',e=>{if(e.button===0){this.primaryDown=true;this.onPrimaryDown(this.gridFromEvent(e),e);this.onPrimary(this.gridFromEvent(e),e);}if(e.button===2)this.onSecondary(this.gridFromEvent(e),e);});
+    const release=e=>{if(e.button!==0||!this.primaryDown)return;this.primaryDown=false;this.onPrimaryUp(this.gridFromEvent(e),e);};
+    canvas.addEventListener('mouseup',release);window.addEventListener('mouseup',release);
+    canvas.addEventListener('mouseleave',e=>this.onMove(this.gridFromEvent(e),e));
     canvas.addEventListener('contextmenu',e=>e.preventDefault());
     canvas.addEventListener('wheel',e=>{e.preventDefault();const r=canvas.getBoundingClientRect();this.camera.zoomAt(e.deltaY<0?1.12:.89,e.clientX-r.left,e.clientY-r.top);},{passive:false});
   }

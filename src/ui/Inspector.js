@@ -14,7 +14,7 @@ export class Inspector {
       this.root.innerHTML='<div class="inspector-empty"><span>⌖</span><strong>Nenhuma seleção</strong><p>Clique no mapa para ver temperatura, pressão, energia, fluxo e estado operacional.</p></div>';
       return;
     }
-    if(t.kind==='entity'&&!world.entities.includes(t.entity)){this.target=null;return this.update(world);}
+    if(t.kind==='entity'&&!world.entities.includes(t.entity)&&!world.allUtilities().includes(t.entity)){this.target=null;return this.update(world);}
     if(t.kind==='entity')return this.entity(world,t.entity);
     return this.tile(world,t.x,t.y);
   }
@@ -76,6 +76,35 @@ export class Inspector {
       );
     }
 
+    if(['smallDuct','mediumDuct','largeDuct'].includes(e.type))rows.push(
+      ['Rede HVAC',e.networkId||'—'],['Lado',e.role==='return'?'Retorno':'Insuflação'],['Estado',e.networkStatus||'DISCONNECTED'],
+      ['Seção',e.crossSectionArea.toFixed(2)+' m²'],['Temperatura',e.airTemperature.toFixed(2)+' °C'],
+      ['Pressão',e.pressure.toFixed(1)+' Pa'],['Perda de carga',e.pressureLoss.toFixed(2)+' Pa'],
+      ['Vazão',e.flowRate.toFixed(2)+' m³/s'],['Velocidade',e.velocity.toFixed(2)+' m/s'],
+      ['Instalação',e.embedded?'Embutido':'Exposto'],['Isolamento',e.insulated?'Isolado':'Padrão'],
+    );
+    if(e.type==='airHandler')rows.push(
+      ['Estado',e.status],['Retorno',e.returnTemperature.toFixed(1)+' °C'],['Insuflação',e.supplyTemperature.toFixed(1)+' °C'],
+      ['Alvo',e.targetSupplyTemperature.toFixed(1)+' °C'],['Vazão',e.currentFlow.toFixed(2)+' m³/s'],
+      ['Vazão real ins. / ret.',e.supplyFlow.toFixed(2)+' / '+e.returnFlow.toFixed(2)+' m³/s'],
+      ['Capacidade rede ins. / ret.',e.supplyAvailableFlow.toFixed(2)+' / '+e.returnAvailableFlow.toFixed(2)+' m³/s'],
+      ['Pressão insuflação / retorno',e.supplyPressure.toFixed(1)+' / '+e.returnPressure.toFixed(1)+' Pa'],
+      ['Demanda de frio',formatPower(e.coolingDemand)],['Frio entregue',formatPower(e.coolingPower)],
+      ['Frio retirado da sala',formatPower(e.actualRoomCooling)],
+      ['Capacidade',formatPower(e.coolingCapacity)],['COP',e.cop.toFixed(2)],['Potência elétrica',formatPower(e.power+e.compressorPower)],
+    );
+    if(e.type==='condenser')rows.push(
+      ['Estado',e.status],['Exterior',e.outdoorTemperature.toFixed(1)+' °C'],['Calor rejeitado',formatPower(e.heatRejected)],
+      ['Carga',e.availableCapacity?((e.heatRejected/e.availableCapacity)*100).toFixed(0)+'%':'0%'],
+      ['Capacidade',formatPower(e.coolingCapacity)],['Potência elétrica',formatPower(e.electricalPower)],['Local',e.indoor?'Interno':'Externo'],
+    );
+    if(e.type==='supplyVent'||e.type==='returnVent')rows.push(
+      ['Rede HVAC',e.networkId||'—'],['Estado',e.networkStatus],['Vazão',e.flowRate.toFixed(2)+' m³/s'],
+      ['Temperatura',e.airTemperature.toFixed(2)+' °C'],['Pressão',e.pressure.toFixed(1)+' Pa'],
+      ...(e.type==='supplyVent'?[['Velocidade',e.dischargeVelocity.toFixed(2)+' m/s'],['Frio entregue',formatPower(e.coolingDelivered)]]:[]),
+    );
+    if(e.type==='ductDamper')rows.push(['Abertura',(e.opening*100).toFixed(0)+'%'],['Controle','U abre · J fecha'],['Estado',e.networkStatus]);
+
     if(e.power)rows.push(['Consumo',formatPower(e.power)]);
 
     let state;
@@ -93,6 +122,7 @@ export class Inspector {
     this.root.innerHTML='<div class="inspector-title"><div class="entity-symbol">□</div><div><small>AIR CELL '+x+', '+y+'</small><h3>'+tile.material.name+'</h3></div></div><div class="status-badge status-'+state.id+'"><i style="background:'+state.color+'"></i>'+state.label+'</div>'+
       '<div class="kv"><span>Temperatura</span><strong>'+tile.temperature.toFixed(2)+' °C</strong></div>'+
       '<div class="kv"><span>Pressão</span><strong>'+(pressure>=0?'+':'')+pressure.toFixed(2)+' Pa</strong></div>'+
+      (()=>{const zone=(world.zones||[]).find(item=>x>=item.x&&y>=item.y&&x<item.x+item.width&&y<item.y+item.height),hvacPressure=zone?world.hvacZonePressure?.get(zone.id):null;return Number.isFinite(hvacPressure)?'<div class="kv"><span>Pressão HVAC</span><strong>'+(hvacPressure>=0?'+':'')+hvacPressure.toFixed(2)+' Pa</strong></div>':'';})()+
       '<div class="kv"><span>Velocity X</span><strong>'+tile.airflowX.toFixed(2)+' m/s</strong></div>'+
       '<div class="kv"><span>Velocity Y</span><strong>'+tile.airflowY.toFixed(2)+' m/s</strong></div>'+
       '<div class="kv"><span>Speed</span><strong>'+speed.toFixed(2)+' m/s</strong></div>'+
@@ -101,5 +131,5 @@ export class Inspector {
       '<div class="kv"><span>Energia térmica</span><strong>'+formatEnergy(tile.thermalEnergy)+'</strong></div>';
   }
 
-  symbol(type){return ({machine:'▣',serverRack:'▥',furnace:'♨',passiveHeat:'•',fan:'✣',exhaust:'◉',pipe:'━',pump:'⟳',tank:'▰',radiator:'▥',exchanger:'HX',sensor:'°'}[type]||'□');}
+  symbol(type){return ({machine:'▣',serverRack:'▥',furnace:'♨',passiveHeat:'•',fan:'✣',exhaust:'◉',pipe:'━',pump:'⟳',tank:'▰',radiator:'▥',exchanger:'HX',sensor:'°',airHandler:'AH',condenser:'CD',supplyVent:'↓',returnVent:'↑',smallDuct:'═',mediumDuct:'═',largeDuct:'═',ductDamper:'╫'}[type]||'□');}
 }

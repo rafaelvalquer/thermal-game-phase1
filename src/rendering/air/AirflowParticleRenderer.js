@@ -1,4 +1,5 @@
 import { StreamlineGenerator } from './StreamlineGenerator.js';
+import { clamp } from '../../utils/MathUtils.js';
 
 export class AirflowParticleRenderer {
   constructor({count=150}={}){
@@ -33,7 +34,9 @@ export class AirflowParticleRenderer {
     for(let i=0;i<this.count;i++){const p={x:0,y:0,life:0};this.resetParticle(p,world);this.particles.push(p);}
   }
 
-  draw(ctx,world,tile,time){
+  draw(ctx,world,tile,time,zoom=1){
+    const zoomBucket=Math.round(zoom*4)/4;
+    this.count=Math.round(clamp(150*zoomBucket,90,210));
     this.ensure(world);
     const dt=this.lastTime==null?0:Math.min(.05,Math.max(0,time-this.lastTime));
     this.lastTime=time;

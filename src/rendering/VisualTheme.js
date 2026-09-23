@@ -10,8 +10,8 @@ export const thermalState = (temperature) => {
   return { id:'stable', label:'ESTÁVEL', color:'#34d399', glow:0 };
 };
 
-export const heatCss = (temperature, alpha=1) => {
-  const [r,g,b]=rgbHeat(temperature);
+export const heatCss = (temperature, alpha=1,min=10,max=80) => {
+  const [r,g,b]=rgbHeat(temperature,min,max);
   return 'rgba('+r+','+g+','+b+','+alpha+')';
 };
 

@@ -11,6 +11,7 @@ export class MetricsPanel {
         this.card('△','Temperatura máxima',m.maxTemp.toFixed(1)+' °C',thermal)+
         this.card('≈','Média do ar',m.avgTemp.toFixed(1)+' °C','ok')+
         this.card('ϟ','Cooling',formatPower(m.powerDraw)+' / '+formatPower(level.powerLimit),power)+
+        this.card('▤','HVAC',formatPower(m.hvacCooling||0),m.hvacCooling>0?'ok':'warn')+
         this.card('$','Orçamento','$'+build.budget,build.budget<500?'warn':'ok')+
       '</div>'+
       '<div class="energy-list">'+

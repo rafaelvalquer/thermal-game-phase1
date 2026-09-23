@@ -2,6 +2,7 @@ import { VisualSettings } from './VisualSettings.js';
 import { StreamlineCache } from './air/StreamlineCache.js';
 import { StreamlineRenderer } from './air/StreamlineRenderer.js';
 import { AirflowParticleRenderer } from './air/AirflowParticleRenderer.js';
+import { clamp } from '../utils/MathUtils.js';
 
 export class AirflowRenderer {
   constructor(){
@@ -15,17 +16,19 @@ export class AirflowRenderer {
     if(['vectors','streamlines','particles'].includes(mode))this.submode=mode;
   }
 
-  draw(ctx,world,tile,time=0){
-    if(this.submode==='vectors')return this.drawVectors(ctx,world,tile,time);
-    if(this.submode==='particles')return this.particles.draw(ctx,world,tile,time);
-    const lines=this.cache.get(world,VisualSettings.streamlineDensity,time*1000);
-    this.streamlines.draw(ctx,lines,tile,time);
+  draw(ctx,world,tile,time=0,zoom=1){
+    if(this.submode==='vectors')return this.drawVectors(ctx,world,tile,time,zoom);
+    if(this.submode==='particles')return this.particles.draw(ctx,world,tile,time,zoom);
+    const density=clamp(VisualSettings.streamlineDensity*(.62+zoom*.38),.5,1.35);
+    const lines=this.cache.get(world,density,time*1000);
+    this.streamlines.draw(ctx,lines,tile,time,zoom);
   }
 
-  drawVectors(ctx,world,tile,time=0){
+  drawVectors(ctx,world,tile,time=0,zoom=1){
     ctx.save();
     ctx.lineCap='round';
-    for(let y=1;y<world.height;y+=2)for(let x=1;x<world.width;x+=2){
+    const step=Math.max(1,Math.min(5,Math.round(2/zoom)));
+    for(let y=1;y<world.height;y+=step)for(let x=1;x<world.width;x+=step){
       if(!world.isAir(x,y))continue;
       const i=world.index(x,y),vx=world.airX[i],vy=world.airY[i],speed=Math.hypot(vx,vy);
       if(speed<.12)continue;
@@ -36,7 +39,7 @@ export class AirflowRenderer {
       const ex=sx+nx*len,ey=sy+ny*len;
       const alpha=Math.min(.9,.22+speed*.13);
       ctx.strokeStyle='rgba(125,211,252,'+alpha+')';
-      ctx.lineWidth=Math.max(1,tile*(.055+Math.min(.05,speed*.009)));
+      ctx.lineWidth=Math.max(.7,tile*(.055+Math.min(.05,speed*.009))*clamp(.85+zoom*.15,.75,1.5));
       ctx.beginPath();ctx.moveTo(sx,sy);ctx.quadraticCurveTo((sx+ex)/2-ny*tile*.08,(sy+ey)/2+nx*tile*.08,ex,ey);ctx.stroke();
       const ah=Math.max(2,tile*.16);
       ctx.fillStyle='rgba(186,230,253,'+alpha+')';

@@ -28,6 +28,11 @@ test('all six levels load from data definitions',()=>{
   }
 });
 
+test('critical facility provides enough pipes to complete the inherited circuit',()=>{
+  const level=LEVELS.find(candidate=>candidate.number===6);
+  assert.equal(level.inventory.pipe,400);
+});
+
 test('campaign completion unlocks the next level and persists',()=>{
   const storage=new MemoryStorage(),campaign=new CampaignManager({storage});
   assert.equal(campaign.isUnlocked(LEVELS[0]),true);

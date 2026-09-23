@@ -8,9 +8,9 @@ export const level02={
   map:level02Map,environment:{outdoorTemperature:25},budget:6000,powerLimit:6000,missionDuration:240,
   inventory:{wall:20,insulation:30,copper:0,fan:6,exhaust:2,pipe:0,pump:0,tank:0,radiator:0,exchanger:0,sensor:6,demolish:Infinity},
   zones:[
-    {id:'room-a',name:'Sala A',x:9,y:10,width:15,height:14,target:38},
-    {id:'room-b',name:'Sala B',x:36,y:10,width:15,height:14,target:38},
-    {id:'main-corridor',name:'Corredor Principal',x:5,y:25,width:54,height:9,target:42},
+    {id:'room-a',name:'Sala A',x:9,y:10,width:15,height:14,target:38,visualStyle:'industrial'},
+    {id:'room-b',name:'Sala B',x:36,y:10,width:15,height:14,target:38,visualStyle:'industrial'},
+    {id:'main-corridor',name:'Corredor Principal',x:5,y:25,width:54,height:9,target:42,visualStyle:'corridor'},
   ],
   entities:[
     {type:'machine',id:'corridor-m1',name:'Compressor A',x:16,y:15,heatOutput:10000,zoneId:'room-a',category:'process'},

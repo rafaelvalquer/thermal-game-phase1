@@ -5,6 +5,7 @@ export const VisualSettings={
   heatHaze:true,
   heatHazeQuality:'high',
   maxHazeRegions:24,
+  reduceMotion:globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches??false,
 };
 
 export const HEAT_HAZE_MODE_FACTOR={

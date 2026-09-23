@@ -11,6 +11,14 @@ const MODE_HELP={
   airflow:'Airflow · streamlines mostram trajetórias contínuas do campo de velocidade',
   pressure:'Pressão · azul negativa, vermelho positiva, cinza próximo de 0 Pa',
   fluid:'Fluido · temperatura, sentido e status de cada circuito',
+  hvac:'HVAC · dutos embutidos, temperatura, pressão e direção da vazão',
+};
+const HVAC_DUCT_TOOLS=new Set(['smallDuct','mediumDuct','largeDuct']);
+const DUCT_HINT=g=>{
+  if(HVAC_DUCT_TOOLS.has(g.build.selected))return (g.build.ductInsulated?'Isolado':'Sem isolamento')+' · I alterna · lado retorno inferido pelo vent';
+  if(g.build.selected&&['fan','exhaust','pump','supplyVent','returnVent'].includes(g.build.selected))return 'Direção: '+['→','↓','←','↑'][g.build.rotation]+' · R gira';
+  if(g.renderer.selectedEntity?.type==='ductDamper')return 'Abertura: '+Math.round(g.renderer.selectedEntity.opening*100)+'% · U abre · J fecha';
+  return '';
 };
 
 export class UIManager {
@@ -21,7 +29,7 @@ export class UIManager {
     this.metrics=new MetricsPanel(document.querySelector('#metrics'));
     this.objectives=new ObjectivePanel(document.querySelector('#objectives'));
     this.minimap=new Minimap(document.querySelector('#minimap'),game);
-    this.debriefing=new MissionDebriefing(game,campaign);
+    this.debriefing=new MissionDebriefing(game,campaign,()=>window.__thermalShowCampaign?.(),level=>window.__thermalStartLevel?.(level));
     this.graph=document.querySelector('#history');this.graphCtx=this.graph.getContext('2d');
     this.bind();game.build.onChange=()=>{this.toolbar.render();if(game.build.selected)game.renderer.selectedEntity=null;};
   }
@@ -30,6 +38,7 @@ export class UIManager {
     document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{
       this.game.renderer.mode=b.dataset.mode;
       document.querySelectorAll('[data-mode]').forEach(x=>x.classList.toggle('active',x===b));
+      document.querySelector('[data-thermal-scale]')?.classList.toggle('hidden',b.dataset.mode!=='thermal');
       const help=document.querySelector('#modeHelp');if(help)help.textContent=MODE_HELP[b.dataset.mode];
       const airflowModes=document.querySelector('#airflowModes');if(airflowModes)airflowModes.classList.toggle('hidden',b.dataset.mode!=='airflow');
     });
@@ -41,12 +50,21 @@ export class UIManager {
     });
     document.querySelector('#pauseBtn').onclick=()=>this.game.sim.togglePause();
     document.querySelectorAll('[data-speed]').forEach(b=>b.onclick=()=>this.game.setSpeed(Number(b.dataset.speed)));
-    document.querySelector('#resetBtn').onclick=()=>location.reload();
-    document.querySelector('#exitBtn').onclick=()=>location.reload();
+    document.querySelector('#resetBtn').onclick=()=>window.__thermalStartLevel?.(this.game.level);
+    document.querySelector('#exitBtn').onclick=()=>window.__thermalShowCampaign?.();
+    document.querySelectorAll('[data-panel-toggle]').forEach(button=>button.onclick=()=>{
+      const panel=document.querySelector('#'+button.dataset.panelToggle),expanded=button.getAttribute('aria-expanded')==='true';
+      button.setAttribute('aria-expanded',String(!expanded));panel.classList.toggle('mobile-open',!expanded);
+    });
+    document.querySelector('[data-thermal-scale]')?.addEventListener('click',event=>{
+      const renderer=this.game.renderer;renderer.thermalScaleMode=renderer.thermalScaleMode==='fixed'?'auto':'fixed';
+      event.currentTarget.textContent=renderer.thermalScaleMode==='fixed'?'Escala fixa':'Escala automática';
+      event.currentTarget.setAttribute('aria-pressed',String(renderer.thermalScaleMode==='fixed'));
+    });
   }
 
   inspectAt(x,y){
-    const e=this.game.world.entityAt(x,y);
+    const e=this.game.world.entityAt(x,y)||this.game.world.utilityAt(x,y);
     this.inspector.setTarget(e?{kind:'entity',entity:e}:{kind:'tile',x,y});
     this.game.renderer.selectedEntity=e||null;
   }
@@ -58,7 +76,7 @@ export class UIManager {
     document.querySelector('#missionText').textContent=s.mission.message;
     document.querySelector('#pauseBtn').textContent=s.paused?'▶ Continuar':'Ⅱ Pausar';
     document.querySelector('#speedLabel').textContent=s.speed+'×';
-    document.querySelector('#rotateHint').textContent=g.build.selected&&['fan','exhaust','pump'].includes(g.build.selected)?'Direção: '+['→','↓','←','↑'][g.build.rotation]+' · R gira':'';
+    document.querySelector('#rotateHint').textContent=DUCT_HINT(g);
     this.updateAlerts();this.drawGraph();
     if(s.mission.state!=='running')this.debriefing.show();
   }
@@ -76,6 +94,22 @@ export class UIManager {
     const badNetwork=networks.find(n=>n.entities.some(e=>e.type==='pump')&&!n.closed);
     if(badNetwork)alerts.push(['warn','FLUID '+badNetwork.status,badNetwork.id+' sem circulação válida']);
     else if(networks.some(n=>n.closed&&n.flowRate<.05))alerts.push(['warn','LOW FLOW','Circuito hidráulico com vazão insuficiente']);
+
+    const hvac=s.hvac;
+    const hvacIssue=hvac?.handlers.find(handler=>!['READY','DIRECT ROOM RETURN','OFF'].includes(handler.status));
+    if(hvacIssue)alerts.push(['warn','HVAC '+hvacIssue.status,hvacIssue.name+' sem operação HVAC nominal']);
+    if(hvac?.networks.some(network=>network.status==='READY'&&network.flowRate<.05))alerts.push(['warn','LOW HVAC FLOW','Rede HVAC conectada sem vazão suficiente']);
+    if(hvac?.networks.some(network=>network.deadEnds?.length))alerts.push(['warn','DUCT DEAD END','Há trechos de duto sem saída conectada']);
+    if(hvac?.networks.some(network=>network.pressure>180))alerts.push(['warn','DUCT PRESSURE HIGH','A rede está operando com perda de carga elevada']);
+    const pressurizedZone=[...(s.world.hvacZonePressure||new Map())].find(([,pressure])=>Math.abs(pressure)>35);
+    if(pressurizedZone)alerts.push(['warn','ROOM PRESSURE',pressurizedZone[1]>0?'Zona '+pressurizedZone[0]+' com pressão positiva elevada':'Zona '+pressurizedZone[0]+' com pressão negativa elevada']);
+    if(hvac?.handlers.some(handler=>handler.currentFlow>0&&handler.supplyTemperature>20))alerts.push(['warn','SUPPLY AIR TOO WARM','Insuflação acima de 20°C']);
+    const paired=hvac?.handlers.filter(handler=>handler.currentFlow>0)||[];
+    if(paired.some(handler=>Math.abs(handler.flowImbalance||0)>.2))alerts.push(['warn','RETURN / SUPPLY IMBALANCE','Vazões de retorno e insuflação diferem']);
+    const hotCondenser=hvac?.condensers.find(condenser=>condenser.indoor&&condenser.heatRejected>0);
+    if(hotCondenser)alerts.push(['warn','CONDENSER HEAT RECIRCULATION','Condensadora rejeitando calor dentro da instalação']);
+    if(hvac?.handlers.some(handler=>handler.status==='OVERLOAD'))alerts.push(['warn','AIR HANDLER OVERLOAD','Demanda de resfriamento supera capacidade disponível']);
+    if(hvac?.condensers.some(condenser=>condenser.status==='HIGH LOAD'||condenser.status==='HIGH HEAD'))alerts.push(['warn','CONDENSER OVERLOAD','Condensadora próxima do limite de rejeição térmica']);
 
     if(s.mission.lastEventMessage)alerts.push(['warn','MISSION EVENT',s.mission.lastEventMessage]);
     root.innerHTML=alerts.length?alerts.slice(0,3).map(a=>'<div class="alert '+a[0]+'"><b>'+a[1]+'</b><span>'+a[2]+'</span></div>').join(''):'<div class="alert ok"><b>SYSTEM NOMINAL</b><span>Nenhum alerta operacional</span></div>';

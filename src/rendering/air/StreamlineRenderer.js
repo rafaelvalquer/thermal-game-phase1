@@ -1,7 +1,7 @@
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
 export class StreamlineRenderer {
-  draw(ctx,lines,tile,time=0){
+  draw(ctx,lines,tile,time=0,zoom=1){
     ctx.save();
     ctx.lineCap='round';ctx.lineJoin='round';
 
@@ -10,7 +10,7 @@ export class StreamlineRenderer {
       if(line.points.length<3)continue;
       const speed=Math.max(.05,line.averageSpeed||0);
       const alpha=clamp(.17+speed*.095,.18,.72);
-      const width=clamp(.7+speed*.12,.7,2.2);
+      const width=clamp((.7+speed*.12)*clamp(.85+zoom*.15,.75,1.5),.65,2.5);
 
       ctx.strokeStyle='rgba(56,189,248,'+alpha+')';
       ctx.lineWidth=width;

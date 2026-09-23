@@ -8,11 +8,11 @@ export const level03={
   map:level03Map,environment:{outdoorTemperature:26},budget:9000,powerLimit:9000,missionDuration:300,
   inventory:{wall:28,insulation:35,copper:12,fan:7,exhaust:2,pipe:55,pump:1,tank:1,radiator:1,exchanger:3,sensor:9,demolish:Infinity},
   zones:[
-    {id:'office-a',name:'Escritório A',x:8,y:9,width:12,height:13,target:30},
-    {id:'office-b',name:'Escritório B',x:25,y:9,width:10,height:13,target:30},
-    {id:'laboratory',name:'Laboratório',x:40,y:9,width:22,height:17,target:35},
-    {id:'electrical',name:'Sala Elétrica',x:9,y:36,width:18,height:10,target:45},
-    {id:'office-corridor',name:'Corredor Central',x:4,y:27,width:64,height:7,target:38},
+    {id:'office-a',name:'Escritório A',x:8,y:9,width:12,height:13,target:30,visualStyle:'office'},
+    {id:'office-b',name:'Escritório B',x:25,y:9,width:10,height:13,target:30,visualStyle:'office'},
+    {id:'laboratory',name:'Laboratório',x:40,y:9,width:22,height:17,target:35,visualStyle:'lab'},
+    {id:'electrical',name:'Sala Elétrica',x:9,y:36,width:18,height:10,target:45,visualStyle:'utility'},
+    {id:'office-corridor',name:'Corredor Central',x:4,y:27,width:64,height:7,target:38,visualStyle:'corridor'},
   ],
   entities:[
     {type:'machine',id:'lab-m1',name:'Analisador A',x:46,y:15,heatOutput:9000,zoneId:'laboratory',category:'lab'},
