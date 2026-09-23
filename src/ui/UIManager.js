@@ -8,7 +8,7 @@ import { MissionDebriefing } from './MissionDebriefing.js';
 const MODE_HELP={
   normal:'Operação · zonas, equipamentos e efeitos físicos',
   thermal:'Térmico · cores representam temperatura',
-  airflow:'Airflow · vetores mostram velocidade calculada pelo campo de pressão',
+  airflow:'Airflow · streamlines mostram trajetórias contínuas do campo de velocidade',
   pressure:'Pressão · azul negativa, vermelho positiva, cinza próximo de 0 Pa',
   fluid:'Fluido · temperatura, sentido e status de cada circuito',
 };
@@ -31,6 +31,13 @@ export class UIManager {
       this.game.renderer.mode=b.dataset.mode;
       document.querySelectorAll('[data-mode]').forEach(x=>x.classList.toggle('active',x===b));
       const help=document.querySelector('#modeHelp');if(help)help.textContent=MODE_HELP[b.dataset.mode];
+      const airflowModes=document.querySelector('#airflowModes');if(airflowModes)airflowModes.classList.toggle('hidden',b.dataset.mode!=='airflow');
+    });
+    document.querySelectorAll('[data-airflow-mode]').forEach(b=>b.onclick=()=>{
+      this.game.renderer.airflow.setSubmode(b.dataset.airflowMode);
+      document.querySelectorAll('[data-airflow-mode]').forEach(x=>x.classList.toggle('active',x===b));
+      const help=document.querySelector('#modeHelp');
+      if(help)help.textContent='Airflow · '+({vectors:'vetores locais',streamlines:'trajetórias RK2 contínuas',particles:'partículas seguindo o campo'}[b.dataset.airflowMode]||'campo de velocidade');
     });
     document.querySelector('#pauseBtn').onclick=()=>this.game.sim.togglePause();
     document.querySelectorAll('[data-speed]').forEach(b=>b.onclick=()=>this.game.setSpeed(Number(b.dataset.speed)));
