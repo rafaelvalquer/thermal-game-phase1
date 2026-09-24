@@ -30,6 +30,10 @@ export class ObjectiveSystem {
     } else if(def.type==='flowAbove'){
       const list=this.world.entities.filter(e=>['pipe','pump','tank','radiator','exchanger'].includes(e.type)&&entityMatches(e,def.filter));
       current=list.length?Math.max(...list.map(e=>e.flowRate||0)):0;ok=current>=def.min;label=def.label||'Vazão ≥ '+fmt(def.min)+' kg/s';
+    } else if(def.type==='coolingCapacityMargin'){
+      current=this.metrics.coolingReserveMargin??0;ok=current>=def.min;label=def.label||'Reserva de refrigeração ≥ '+Math.round(def.min*100)+'%';
+    } else if(def.type==='activeCoolingUnits'){
+      const units=this.world.entitiesByType('coolingUnit');current=units.filter(unit=>unit.enabled&&['READY','PARTIAL LOAD','HIGH LOAD'].includes(unit.status)).length;ok=current>=def.min;label=def.label||'Unidades de refrigeração ativas ≥ '+def.min;
     } else if(def.type==='survive'){
       ok=true;current=null;label=def.label||'Manter operação';
     }

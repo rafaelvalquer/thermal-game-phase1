@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../../src/world/World.js';
 import { Fan } from '../../../src/entities/Fan.js';
+import { ExhaustFan } from '../../../src/entities/ExhaustFan.js';
+import { CoolingUnit } from '../../../src/entities/CoolingUnit.js';
 import { StreamlineGenerator } from '../../../src/rendering/air/StreamlineGenerator.js';
 import { StreamlineSeeder } from '../../../src/rendering/air/StreamlineSeeder.js';
 
@@ -65,4 +67,28 @@ test('fan seeds are placed in the airflow direction',()=>{
   const seeds=seeder.generate(world,1);
   assert.ok(seeds.length>0);
   assert.ok(seeds.slice(0,3).every(s=>s.x>fan.x+.5));
+});
+
+test('exhaust seeds show suction on the inlet side',()=>{
+  const world=new World(12,8);uniform(world,1,0);
+  const exhaust=world.addEntity(new ExhaustFan(8,4));
+  const seeds=new StreamlineSeeder({gridStep:20}).generate(world,1);
+  assert.ok(seeds.slice(0,3).every(s=>s.x<exhaust.x));
+});
+
+test('hot indoor cooling unit seeds streamlines in the condenser exhaust direction',()=>{
+  const world=new World(14,8);uniform(world,1,0);
+  const unit=world.addEntity(new CoolingUnit(3,4,{direction:{x:1,y:0}}));unit.indoor=true;unit.heatRejected=12000;
+  const seeds=new StreamlineSeeder({gridStep:20}).generate(world,1);
+  assert.ok(seeds.length>=1&&seeds.length<=3);
+  assert.ok(seeds.every(seed=>seed.x>unit.x+.5));
+});
+
+test('inactive and outdoor cooling units do not seed indoor hot-air streamlines',()=>{
+  const world=new World(14,8);uniform(world,1,0);
+  const unit=world.addEntity(new CoolingUnit(3,4,{direction:{x:1,y:0}}));unit.indoor=true;unit.heatRejected=12000;
+  unit.enabled=false;
+  assert.ok(new StreamlineSeeder({gridStep:20}).generate(world,1).every(seed=>seed.priority!==2));
+  unit.enabled=true;unit.indoor=false;
+  assert.ok(new StreamlineSeeder({gridStep:20}).generate(world,1).every(seed=>seed.priority!==2));
 });

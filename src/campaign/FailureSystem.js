@@ -8,7 +8,7 @@ export class FailureSystem {
   update(dt){
     for(let i=0;i<(this.level.failures||[]).length;i++){
       const def=this.level.failures[i],key=def.id||'failure-'+i;
-      if(['machineOverheat','entityLimits','hvacOverload','condenserHighHead'].includes(def.type)){
+      if(['machineOverheat','entityLimits','coolingUnitOverload'].includes(def.type)){
         const affected=this.evaluateEntities(def);
         const active=new Set(affected.map(({entity})=>entity.id));
         for(const entity of this.world.entities){
@@ -41,13 +41,9 @@ export class FailureSystem {
       const bad=this.world.entities.find(e=>e.failureTemperature&&typeof e.temperature==='number'&&e.temperature>e.failureTemperature);
       return {ok:!!bad,reason:bad?bad.name+' excedeu o limite de '+bad.failureTemperature+'°C.':''};
     }
-    if(def.type==='hvacOverload'){
-      const bad=this.world.entities.find(e=>e.type==='airHandler'&&e.status==='OVERLOAD');
-      return {ok:!!bad,reason:bad?bad.name+' operou acima da capacidade de resfriamento.':''};
-    }
-    if(def.type==='condenserHighHead'){
-      const bad=this.world.entities.find(e=>e.type==='condenser'&&e.status==='HIGH HEAD');
-      return {ok:!!bad,reason:bad?'A condensadora permaneceu sob alta pressão de condensação.':''};
+    if(def.type==='coolingUnitOverload'){
+      const bad=this.world.entities.find(e=>e.type==='coolingUnit'&&e.status==='OVERLOAD');
+      return {ok:!!bad,reason:bad?(bad.name||'A unidade')+' permaneceu sobrecarregada.':''};
     }
     if(def.type==='powerOverload')return {ok:this.level.powerLimit&&this.level.powerLimit>0&&this.level.powerLimit<def.threshold};
     return {ok:false};
@@ -60,12 +56,9 @@ export class FailureSystem {
     if(def.type==='entityLimits')return this.world.entities
       .filter(e=>e.failureTemperature&&typeof e.temperature==='number'&&e.temperature>e.failureTemperature)
       .map(entity=>({entity,reason:entity.name+' excedeu o limite de '+entity.failureTemperature+'°C.'}));
-    if(def.type==='hvacOverload')return this.world.entities
-      .filter(entity=>entity.type==='airHandler'&&entity.status==='OVERLOAD')
-      .map(entity=>({entity,reason:entity.name+' operou acima da capacidade de resfriamento.'}));
-    if(def.type==='condenserHighHead')return this.world.entities
-      .filter(entity=>entity.type==='condenser'&&entity.status==='HIGH HEAD')
-      .map(entity=>({entity,reason:'Alta pressão de condensação na '+(entity.name||'condensadora')+'.'}));
+    if(def.type==='coolingUnitOverload')return this.world.entities
+      .filter(entity=>entity.type==='coolingUnit'&&entity.status==='OVERLOAD')
+      .map(entity=>({entity,reason:(entity.name||'A unidade')+' permaneceu sobrecarregada. Adicione capacidade ou reduza a carga.'}));
     return [];
   }
 
@@ -78,10 +71,8 @@ export class FailureSystem {
         threshold=def.temperature;matches=entity.isHeatMachine&&entityMatches(entity,def.filter);
       }else if(def.type==='entityLimits'){
         threshold=entity.failureTemperature;matches=Number.isFinite(threshold);
-      }else if(def.type==='hvacOverload'){
-        matches=entity.type==='airHandler'&&entity.status==='OVERLOAD';
-      }else if(def.type==='condenserHighHead'){
-        matches=entity.type==='condenser'&&entity.status==='HIGH HEAD';
+      }else if(def.type==='coolingUnitOverload'){
+        matches=entity.type==='coolingUnit'&&entity.status==='OVERLOAD';
       }
       if(!matches)continue;
       if(Number.isFinite(threshold)&&entity.temperature<=threshold)continue;

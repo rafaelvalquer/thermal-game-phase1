@@ -2,7 +2,7 @@ export class Minimap {
   constructor(canvas,game){this.canvas=canvas;this.game=game;this.ctx=canvas?.getContext('2d');this.timer=0;}
   update(dt=0){
     if(!this.canvas||!this.ctx)return;
-    const level=this.game.level;if(level.number<4){this.canvas.parentElement?.classList.add('hidden');return;}
+    const level=this.game.level;if(!level.datacenterSandbox&&level.number<4){this.canvas.parentElement?.classList.add('hidden');return;}
     this.timer+=dt;if(this.timer<.2)return;this.timer=0;this.draw();
   }
   draw(){

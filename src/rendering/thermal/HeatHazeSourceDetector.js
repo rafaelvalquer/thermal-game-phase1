@@ -14,6 +14,7 @@ export class HeatHazeSourceDetector {
   entityTemperature(e){
     if(e.isHeatMachine)return e.temperature;
     if(e.type==='radiator')return e.waterTemperature;
+    if(e.type==='coolingUnit'&&e.indoor&&e.heatRejected>0)return this.localAirTemperature(e.world,e)+Math.min(80,e.heatRejected/450);
     return null;
   }
 

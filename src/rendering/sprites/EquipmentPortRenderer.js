@@ -14,7 +14,7 @@ export class EquipmentPortRenderer {
       const isFluidPort=port.type==='fluid';
       const showPort=isFluidPort
         ? Boolean(neighbor&&FLUID_TYPES.has(neighbor.type))
-        : mode==='hvac'||options.selected;
+        : options.selected;
       if(!showPort)continue;
       const px=centerX+(visual.x-.5)*tile,py=centerY+(visual.y-.5)*tile;
       const edgeX=centerX+dx*tile*.47,edgeY=centerY+dy*tile*.47;

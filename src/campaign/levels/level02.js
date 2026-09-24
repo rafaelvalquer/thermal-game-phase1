@@ -4,9 +4,10 @@ export const level02={
   id:'ventilation-corridor',number:2,name:'Ventilation Corridor',difficulty:2,
   tagline:'Airflow e corredores',
   description:'Duas salas industriais dependem de um corredor central para levar ar quente até a exaustão.',
-  briefing:'A geometria agora importa. Crie uma rota de ar coerente entre as salas e o corredor. Água não está disponível nesta operação.',
-  map:level02Map,environment:{outdoorTemperature:25},budget:6000,powerLimit:6000,missionDuration:240,
-  inventory:{wall:20,insulation:30,copper:0,fan:6,exhaust:2,pipe:0,pump:0,tank:0,radiator:0,exchanger:0,sensor:6,demolish:Infinity},
+  briefing:'A geometria agora importa. Use uma condensadora, ramifique os dutos até várias saídas e compare como a distância reduz a eficiência.',
+  thermalSystems:{simpleCooling:true,waterCooling:true,coolingUnitModel:'commercial'},
+  map:level02Map,environment:{outdoorTemperature:25},budget:18000,powerLimit:10000,missionDuration:240,
+  inventory:{pipe:32,pump:1,tank:1,radiator:2,exchanger:2,wall:20,insulation:30,copper:0,fan:6,exhaust:2,sensor:6,coolingUnit:1,duct:160,supplyVent:3,demolish:Infinity},
   zones:[
     {id:'room-a',name:'Sala A',x:9,y:10,width:15,height:14,target:38,visualStyle:'industrial'},
     {id:'room-b',name:'Sala B',x:36,y:10,width:15,height:14,target:38,visualStyle:'industrial'},
@@ -27,6 +28,6 @@ export const level02={
     {type:'zoneOverheat',zoneId:'main-corridor',temperature:65,hold:30,message:'O corredor principal entrou em colapso térmico.'},
   ],
   events:[],
-  tips:['Crie uma direção dominante para o ar.','Evite ventiladores soprando um contra o outro.','Use sensores nas portas para enxergar recirculação.'],
+  tips:['Uma única condensadora pode alimentar várias saídas.','Cada ramal compartilha a vazão; ramais mais longos perdem eficiência.','A junção aparece automaticamente quando os dutos se encontram.','Use sensores nas portas para enxergar recirculação.'],
 };
 

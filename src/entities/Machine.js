@@ -17,6 +17,7 @@ export class Machine extends Entity {
     this.energy=mass*heatCapacity*temperature;this.started=false;this.coolingPower=0;this.overheatSeconds=0;
     this.startAt=startAt;this.failureTemperature=failureTemperature;this.category=category;this.loadMultiplier=loadMultiplier;
     this.isHeatMachine=true;
+    this.heatGenerationPower=0;this.thermalBalance=0;
   }
   get temperature(){return this.energy/(this.mass*this.heatCapacity);}
   set temperature(v){this.energy=this.mass*this.heatCapacity*v;}

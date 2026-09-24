@@ -28,14 +28,11 @@ export class AirPressureSolver {
         if(g.solid[i]){g.pressureNext[i]=0;continue;}
         let sum=0,count=0;
 
-        const add=(nx,ny)=>{
-          if(nx<0||ny<0||nx>=g.width||ny>=g.height){count++;return;}
-          const ni=g.cellIndex(nx,ny);
-          if(g.solid[ni])return;
-          sum+=g.pressure[ni];count++;
-        };
-
-        add(x-1,y);add(x+1,y);add(x,y-1);add(x,y+1);
+        // Same Jacobi stencil without allocating a closure per cell/iteration.
+        if(x===0)count++;else if(!g.solid[i-1]){sum+=g.pressure[i-1];count++;}
+        if(x===g.width-1)count++;else if(!g.solid[i+1]){sum+=g.pressure[i+1];count++;}
+        if(y===0)count++;else if(!g.solid[i-g.width]){sum+=g.pressure[i-g.width];count++;}
+        if(y===g.height-1)count++;else if(!g.solid[i+g.width]){sum+=g.pressure[i+g.width];count++;}
         g.pressureNext[i]=count?(sum-rhsScale*g.divergence[i])/count:0;
       }
       [g.pressure,g.pressureNext]=[g.pressureNext,g.pressure];

@@ -45,6 +45,8 @@ test('animation speed follows equipment operation and freezes when disabled',()=
   assert.equal(animator.fpsFor({type:'tank',enabled:false},SPRITES.tank),0);
   assert.equal(animator.fpsFor({type:'fan',enabled:true,currentVelocity:.5},SPRITES.fan),1);
   assert.equal(animator.fpsFor({type:'fan',enabled:true,currentVelocity:20},SPRITES.fan),14);
+  assert.equal(animator.fpsFor({type:'coolingUnit',enabled:true,currentAirFlow:2.5,loadRatio:1},SPRITES.coolingUnit),6);
+  assert.equal(animator.fpsFor({type:'coolingUnit',enabled:true,currentAirFlow:0,loadRatio:0},SPRITES.coolingUnit),0);
   assert.equal(animator.frameFor({id:'x',type:'pump',enabled:false,flowRate:0},pump,99),0);
 });
 

@@ -7,6 +7,9 @@ import { MissionEventSystem } from '../src/campaign/MissionEventSystem.js';
 import { ObjectiveSystem } from '../src/campaign/ObjectiveSystem.js';
 import { World } from '../src/world/World.js';
 import { Machine } from '../src/entities/Machine.js';
+import { Simulation } from '../src/simulation/Simulation.js';
+import { BuildSystem } from '../src/building/BuildSystem.js';
+import { engineeringSandbox } from '../src/campaign/engineeringSandbox.js';
 
 class MemoryStorage {
   constructor(){this.data=new Map();}
@@ -25,19 +28,27 @@ test('all six levels load from data definitions',()=>{
     assert.equal(world.height,level.map.height);
     assert.equal(world.levelId,level.id);
     assert.ok(world.entities.length>0);
+    assert.equal(level.thermalSystems.simpleCooling,true);
+    assert.equal(level.thermalSystems.waterCooling,true);
+    for(const waterTool of ['pipe','pump','tank','radiator','exchanger'])assert.ok(level.inventory[waterTool]>0,`${level.name} should stock ${waterTool}`);
+    for(const legacyTool of ['airHandler','returnVent','refrigerantLine','smallDuct','mediumDuct','largeDuct','damper'])assert.equal(level.inventory[legacyTool],undefined);
+    assert.ok(level.inventory.coolingUnit>=1);
+    assert.ok(level.inventory.duct>0);
+    assert.ok(level.inventory.supplyVent>0);
   }
 });
 
-test('critical facility provides enough pipes to complete the inherited circuit',()=>{
+test('critical data center provides enough air ducts for independent cooling networks',()=>{
   const level=LEVELS.find(candidate=>candidate.number===6);
-  assert.equal(level.inventory.pipe,400);
+  assert.equal(level.inventory.duct,400);
+  assert.equal(level.inventory.coolingUnit,4);
 });
 
 test('level six lays out aligned server racks for hot and cold aisle containment',()=>{
   const level=LEVELS.find(candidate=>candidate.number===6);
   const racks=level.entities.filter(entity=>entity.type==='serverRack');
-  assert.equal(level.name,'Critical Data Center');
-  assert.equal(racks.length,8);
+  assert.equal(level.name,'Data Center Crítico');
+  assert.equal(racks.length,12);
 
   for(const hall of ['a','b']){
     const roomRacks=racks.filter(rack=>rack.zoneId===`server-${hall}`);
@@ -48,6 +59,7 @@ test('level six lays out aligned server racks for hot and cold aisle containment
     assert.ok(south.every(rack=>rack.airIntakeDirection.y===1&&rack.airExhaustDirection.y===-1));
 
     const loads=roomRacks.reduce((sum,rack)=>sum+rack.heatOutput,0);
+    assert.deepEqual(north.map(rack=>rack.x).sort((a,b)=>a-b),hall==='a'?[10,18,26]:[38,46,54]);
     assert.equal(loads,hall==='a'?15000:16000);
     for(const aisle of ['cold-north','hot','cold-south']){
       const zoneId=`server-${hall}-${aisle}`;
@@ -86,8 +98,23 @@ test('mission event changes machine load at configured time',()=>{
   events.update(300);assert.equal(machine.loadMultiplier,1.3);
 });
 
-test('critical facility contains locked inherited infrastructure',()=>{
-  const world=new LevelManager().load(LEVELS[5]);
+test('campaign data center keeps water-cooling tools available alongside simple cooling',()=>{
+  const level=LEVELS[5],world=new LevelManager().load(level),simulation=new Simulation(world,level);
   const locked=world.entities.filter(e=>e.locked);
-  assert.ok(locked.length>=5);
+  assert.ok(locked.length>=2);
+  assert.equal(world.entities.some(e=>['pipe','pump','tank','radiator','exchanger'].includes(e.type)),false);
+  assert.equal(simulation.simpleCooling,true);
+  assert.equal(simulation.waterCooling,true);
+  assert.ok(simulation.fluid);
+  const build=new BuildSystem(world,simulation,{inventory:level.inventory});
+  for(const tool of ['pipe','pump','tank','radiator','exchanger'])assert.ok(build.catalog[tool],tool);
+  for(const tool of ['airHandler','condenser','refrigerantLine','smallDuct','returnVent'])assert.equal(build.catalog[tool],undefined);
+});
+
+test('engineering sandbox uses climatization tools alongside water equipment',()=>{
+  const world=new LevelManager().load(engineeringSandbox),simulation=new Simulation(world,engineeringSandbox);
+  const build=new BuildSystem(world,simulation,{inventory:engineeringSandbox.inventory});
+  assert.equal(simulation.simpleCooling,true);assert.equal(simulation.engineeringHvac,undefined);assert.equal(simulation.waterCooling,true);
+  for(const tool of ['coolingUnit','duct','supplyVent','pipe','pump','tank','radiator','exchanger'])assert.ok(build.catalog[tool],tool);
+  for(const tool of ['airHandler','condenser','refrigerantLine','smallDuct','mediumDuct','largeDuct','returnVent','damper'])assert.equal(build.catalog[tool],undefined);
 });

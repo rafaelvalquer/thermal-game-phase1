@@ -4,9 +4,10 @@ export const level03={
   id:'office-complex',number:3,name:'Office Complex',difficulty:3,
   tagline:'Distribuição entre salas',
   description:'Escritórios, laboratório e sala elétrica possuem limites térmicos diferentes e compartilham a mesma saída externa.',
-  briefing:'Nem todos os ambientes toleram a mesma temperatura. Proteja áreas humanas e concentre refrigeração onde a carga térmica é maior.',
-  map:level03Map,environment:{outdoorTemperature:26},budget:9000,powerLimit:9000,missionDuration:300,
-  inventory:{wall:28,insulation:35,copper:12,fan:7,exhaust:2,pipe:55,pump:1,tank:1,radiator:1,exchanger:3,sensor:9,demolish:Infinity},
+  briefing:'Duas condensadoras podem manter redes independentes. Distribua capacidade entre laboratório e salas, e teste como saídas de redes diferentes podem atender o mesmo ambiente.',
+  thermalSystems:{simpleCooling:true,waterCooling:true,coolingUnitModel:'commercial'},
+  map:level03Map,environment:{outdoorTemperature:26},budget:30000,powerLimit:18000,missionDuration:300,
+  inventory:{pipe:50,pump:2,tank:1,radiator:2,exchanger:3,wall:28,insulation:35,copper:12,fan:7,exhaust:2,sensor:9,coolingUnit:2,duct:220,supplyVent:6,demolish:Infinity},
   zones:[
     {id:'office-a',name:'Escritório A',x:8,y:9,width:12,height:13,target:30,visualStyle:'office'},
     {id:'office-b',name:'Escritório B',x:25,y:9,width:10,height:13,target:30,visualStyle:'office'},
@@ -34,6 +35,6 @@ export const level03={
   ],
   failures:[{type:'machineOverheat',temperature:85,hold:30}],
   events:[],
-  tips:['Isolar uma sala pode proteger outra, mas também prender calor.','O único radiador deve ser colocado onde mais agrega valor.','A sala elétrica tolera mais calor que os escritórios.'],
+  tips:['Mantenha as redes das duas condensadoras fisicamente separadas.','Duas redes independentes podem descarregar ar frio na mesma sala.','Uma unidade reserva ajuda quando outra fica desligada.','A sala elétrica tolera mais calor que os escritórios.'],
 };
 

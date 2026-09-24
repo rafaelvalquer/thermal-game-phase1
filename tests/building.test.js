@@ -5,7 +5,6 @@ import { BuildSystem } from '../src/building/BuildSystem.js';
 import { PlacementValidator } from '../src/building/PlacementValidator.js';
 import { FluidSystem } from '../src/simulation/FluidSystem.js';
 import { World } from '../src/world/World.js';
-import { ReturnVent } from '../src/entities/ReturnVent.js';
 
 test('pipe path fills straight and diagonal cursor gaps orthogonally',()=>{
   assert.deepEqual(pipePathBetween({x:1,y:1},{x:4,y:1}),[
@@ -76,17 +75,53 @@ test('pipe click and drag can pass under walls without replacing the wall',()=>{
   assert.equal(world.materialAt(2,1).id,'concrete');
 });
 
-test('duct preview and placement do not persist a supply or return role',()=>{
-  const world=new World(7,4);world.setMaterial(1,1,'concrete');world.addEntity(new ReturnVent(0,1));
-  world.addEntity({id:'machine-blocker',type:'machine',x:3,y:1});
-  const simulation={totalInternalEnergy:()=>0,registerConstruction:()=>{}};
-  const build=new BuildSystem(world,simulation,{budget:420,inventory:{mediumDuct:3}});build.select('mediumDuct');
-  const path=[{x:1,y:1},{x:2,y:1},{x:3,y:1},{x:4,y:1}];
-  const preview=build.ductPlacement.planPath('mediumDuct',path,{inventory:build.inventory.mediumDuct,budget:build.budget,cost:140});
-  assert.deepEqual(preview.entries.map(point=>point.valid),[true,true,false,true]);
-  assert.ok(preview.entries.every(point=>point.role===undefined));
-  assert.equal(world.allUtilities().length,0);assert.equal(build.inventory.mediumDuct,3);assert.equal(build.budget,420);
-  assert.deepEqual(build.placeDuctPath(path),{placed:3,failed:1});
-  assert.equal(world.allUtilities().filter(item=>item.role!==undefined).length,0);
-  assert.equal(world.materialAt(1,1).id,'concrete');assert.equal(build.inventory.mediumDuct,0);assert.equal(build.budget,0);
+test('climatization duct preview and placement respect blockers and preserve utility behavior',()=>{
+  const world=new World(7,4);world.setMaterial(1,1,'concrete');world.addEntity({id:'machine-blocker',type:'machine',x:3,y:1});
+  const simulation={totalInternalEnergy:()=>0,registerConstruction:()=>{}},build=new BuildSystem(world,simulation,{budget:150,inventory:{duct:4}});build.select('duct');
+  const path=[{x:1,y:1},{x:2,y:1},{x:3,y:1},{x:4,y:1}],preview=build.ductPlacement.planPath('duct',path,{inventory:build.inventory.duct,budget:build.budget,cost:50});
+  assert.deepEqual(preview.entries.map(point=>point.valid),[true,true,false,true]);assert.equal(world.allUtilities().length,0);assert.equal(build.inventory.duct,4);assert.equal(build.budget,150);
+  assert.deepEqual(build.placeDuctPath(path),{placed:3,failed:1});assert.ok(world.allUtilities().every(item=>item.type==='duct'));
+  assert.equal(world.materialAt(1,1).id,'concrete');assert.equal(build.inventory.duct,1);assert.equal(build.budget,0);
 });
+
+test('simple cooling tools drag a single duct across a wall and connect a rotated cold outlet',()=>{
+  const world=new World(9,5);world.thermalSystems={simpleCooling:true,coolingUnitModel:'compact'};world.setMaterial(3,2,'concrete');
+  const simulation={totalInternalEnergy:()=>0,registerConstruction:()=>{}};
+  const build=new BuildSystem(world,simulation,{budget:9000,inventory:{coolingUnit:2,duct:2,supplyVent:1}});
+  assert.ok(build.catalog.coolingUnit);assert.ok(build.catalog.duct);assert.ok(build.catalog.supplyVent);
+  for(const tool of ['airHandler','returnVent','refrigerantLine','smallDuct','mediumDuct','largeDuct','damper','pipe','pump','radiator'])assert.equal(build.catalog[tool],undefined);
+  build.select('coolingUnit');assert.equal(build.place(1,2).ok,true);
+  assert.deepEqual(world.entitiesByType('coolingUnit')[0].direction,{x:1,y:0});
+  build.rotate();build.select('coolingUnit');assert.equal(build.place(2,3).ok,true);
+  assert.deepEqual(world.entitiesByType('coolingUnit')[1].direction,{x:0,y:1});
+  assert.equal(world.entityAt(1,2).ratedCoolingCapacity,10000);assert.equal(build.budget,1000);
+  build.select('duct');assert.deepEqual(build.placeDuctPath([{x:2,y:2},{x:3,y:2}]),{placed:1,failed:1});
+  assert.equal(world.materialAt(3,2).id,'concrete');
+  build.select('supplyVent');build.rotate();build.rotate();assert.equal(build.place(4,2).ok,true);
+  assert.deepEqual(world.entityAt(4,2).direction,{x:0,y:-1});
+  assert.equal(build.budget,750);
+});
+
+test('simple cooling campaign can also build water equipment when enabled',()=>{
+  const world=new World(8,6);world.thermalSystems={simpleCooling:true,waterCooling:true,coolingUnitModel:'commercial'};
+  const build=new BuildSystem(world,{totalInternalEnergy:()=>0,registerConstruction:()=>{}},{budget:3000,inventory:{pipe:4,pump:1,tank:1,radiator:1,exchanger:1,coolingUnit:1}});
+  for(const tool of ['pipe','pump','tank','radiator','exchanger','coolingUnit'])assert.ok(build.catalog[tool],tool);
+  for(const tool of ['airHandler','condenser','smallDuct','returnVent'])assert.equal(build.catalog[tool],undefined);
+  build.select('pipe');assert.equal(build.place(1,1).ok,true);
+  assert.equal(build.inventory.pipe,3);assert.equal(build.budget,2990);
+});
+
+test('cooling unit model selection applies the correct cost and restores its stock on demolition',()=>{
+  const world=new World(5,5);world.thermalSystems={simpleCooling:true,coolingUnitModel:'commercial'};
+  const build=new BuildSystem(world,{totalInternalEnergy:()=>0,registerConstruction:()=>{}},{budget:15000,inventory:{coolingUnit:1}});
+  build.select('coolingUnit');assert.equal(build.place(2,2).ok,true);
+  assert.equal(world.entityAt(2,2).ratedCoolingCapacity,25000);assert.equal(world.entityAt(2,2).missionId,'ac-1');assert.equal(build.budget,7000);
+  build.select('demolish');assert.equal(build.place(2,2).ok,true);
+  assert.equal(build.inventory.coolingUnit,1);assert.equal(build.budget,15000);
+  build.select('coolingUnit');assert.equal(build.place(3,3).ok,true);
+  assert.equal(world.entityAt(3,3).missionId,'ac-2');
+});
+
+
+
+

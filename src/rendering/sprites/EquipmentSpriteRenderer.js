@@ -12,7 +12,7 @@ export class EquipmentSpriteRenderer {
     this.manager=manager;this.animator=animator;this.effects=effects;this.ports=ports;
   }
   preload(){return this.manager.loadAll();}
-  isAnimated(entity){return ['pump','radiator','exchanger','fan','exhaust','machine','serverRack','furnace','sensor','airHandler','condenser'].includes(entity.type);}
+  isAnimated(entity){return ['pump','radiator','exchanger','fan','exhaust','machine','serverRack','furnace','sensor','coolingUnit'].includes(entity.type);}
   visualFootY(entity){return SPRITES[entity.type]?.anchor?.y??.8;}
   draw(ctx,world,entity,tile,mode,time=0,options={}){
     const id=SPRITE_ENTITY_TYPES[entity.type],definition=SPRITES[id],image=this.manager.get(id);
@@ -22,8 +22,10 @@ export class EquipmentSpriteRenderer {
     const height=tile*(entity.visualHeight||definition.visualHeight||definition.visualScale)*scale;
     const anchor=definition.anchor||{x:.5,y:.78},centerX=(entity.x+.5)*tile,footY=(entity.y+anchor.y)*tile;
     const x=centerX-width*anchor.x,y=footY-height*anchor.y;
-    this.effects.drawShadow(ctx,x,y,width,height);
-    this.effects.drawThermalGlow(ctx,entity,x,y,width,height);
+    if(mode!=='thermal'){
+      this.effects.drawShadow(ctx,x,y,width,height);
+      this.effects.drawThermalGlow(ctx,entity,x,y,width,height);
+    }
     if(FLUID_TYPES.has(entity.type)&&entity.type!=='pipe'){
       // Keep the existing network linework behind the sprite housing.
       if(this.fallback?.equipmentPorts)this.fallback.equipmentPorts(ctx,world,entity,entity.x*tile,entity.y*tile,tile,mode,time);
@@ -31,7 +33,7 @@ export class EquipmentSpriteRenderer {
     const animated=this.isAnimated(entity);
     const frame=animated?this.animator.frameFor(entity,definition,time):0;
     ctx.save();
-    if(definition.rotation&&['pump','fan','exhaust','radiator','exchanger','airHandler','condenser'].includes(entity.type)){
+    if(definition.rotation&&['pump','fan','exhaust','radiator','exchanger','coolingUnit'].includes(entity.type)){
       ctx.translate(centerX,(entity.y+.5)*tile);ctx.rotate(resolveVisualRotation(entity.direction));ctx.translate(-centerX,-(entity.y+.5)*tile);
     }
     ctx.imageSmoothingEnabled=true;if('imageSmoothingQuality'in ctx)ctx.imageSmoothingQuality='high';

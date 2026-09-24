@@ -37,12 +37,38 @@ export class StreamlineSeeder {
     if(this.farEnough(seeds,candidate,minimumDistance))seeds.push(candidate);
   }
 
+  addEquipmentSeed(seeds,world,candidate,max,minimumDistance=.42){
+    if(seeds.length>=max)return;
+    const x=Math.floor(candidate.x),y=Math.floor(candidate.y);
+    if(!world.inBounds(x,y)||!world.isAir(x,y)||this.speedAt(world,x,y)<this.minSpeed)return;
+    if(this.farEnough(seeds,candidate,minimumDistance))seeds.push({...candidate,priority:2});
+  }
+
   fromEquipment(world,seeds,max){
     for(const e of world.entities){
-      if(!['fan','exhaust','radiator'].includes(e.type))continue;
+      if(!['fan','exhaust','radiator','coolingUnit'].includes(e.type))continue;
+      if(!e.enabled)continue;
       if(e.type==='radiator'&&(e.waterTemperature||25)<35)continue;
+      if(e.type==='coolingUnit'&&(!e.indoor||(e.heatRejected||0)<=0))continue;
       const d=e.direction||{x:1,y:0};
       const px=-d.y,py=d.x;
+      if(e.type==='coolingUnit'){
+        for(const lateral of [-.3,0,.3]){
+          const candidate={x:e.x+.5+d.x*.9+px*lateral,y:e.y+.5+d.y*.9+py*lateral};
+          this.addEquipmentSeed(seeds,world,candidate,max,.15);
+          const cx=Math.floor(candidate.x),cy=Math.floor(candidate.y),faceBlocked=d.x?world.materialAt(d.x>0?e.x+1:e.x,e.y).solid:world.materialAt(e.x,d.y>0?e.y+1:e.y).solid;
+          if(!faceBlocked&&world.isAir(cx,cy)&&this.speedAt(world,cx,cy)>=this.minSpeed&&this.farEnough(seeds,candidate,.15))seeds.push({...candidate,priority:2});
+        }
+        continue;
+      }
+      if(e.type==='exhaust'){
+        // Seed the inlet so streamlines reveal capture, not just discharge.
+        for(const lateral of [-1.2,0,1.2])this.addSeed(seeds,world,{
+          x:e.x+.5-d.x*1.6+px*lateral,
+          y:e.y+.5-d.y*1.6+py*lateral,
+          priority:2,
+        },max,.42);
+      }
       for(const lateral of [-.5,0,.5]){
         this.addSeed(seeds,world,{
           x:e.x+.5+d.x*.62+px*lateral,
@@ -54,8 +80,11 @@ export class StreamlineSeeder {
   }
 
   generate(world,density=1){
-    const max=this.maxLines(world,density),seeds=[];
-    this.fromEquipment(world,seeds,max);
+    const max=this.maxLines(world,density),equipmentSeeds=[];
+    this.fromEquipment(world,equipmentSeeds,max);
+    const activeCondenser=world.entities.some(e=>e.type==='coolingUnit'&&e.enabled&&e.indoor&&(e.heatRejected||0)>0);
+    if(activeCondenser)return equipmentSeeds;
+    const seeds=equipmentSeeds.slice();
 
     const step=Math.max(2,Math.round(this.gridStep/Math.max(.5,density)));
     for(let y=1;y<world.height-1&&seeds.length<max;y+=step){

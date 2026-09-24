@@ -10,11 +10,13 @@ export const AIR={
   pressureIterations:40,
   wallDrag:0.005,
   wallDragQuadratic:0.0015,
-  wallTurbulenceSuppression:1.15,
+  wallTurbulenceSuppression:4,
   velocityDamping:0.006,
   maxVelocity:14,
   minRenderableVelocity:0.03,
-  fanResponse:7,
+  fanSourceSpread:2,
+  exhaustCaptureRadius:3.5,
+  exhaustCaptureStrength:0.8,
 };
 
 export const AIR_FACE_AREA=TILE_SIZE_METERS*AIR.roomHeight;

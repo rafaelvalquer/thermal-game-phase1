@@ -1,0 +1,20 @@
+export const datacenterSandbox={
+  id:'datacenter-sandbox',number:0,name:'Data Center Sandbox',difficulty:0,campaign:false,datacenterSandbox:true,
+  tagline:'Operação contínua · crescimento por contratos',
+  description:'Construa um data center, aceite clientes e equilibre caixa, energia e refrigeração.',
+  briefing:'Comece com R$ 150 mil e 100 kW contratados. Aceite contratos, instale os racks na sala de servidores e amplie a infraestrutura antes de crescer demais.',
+  thermalSystems:{simpleCooling:true,waterCooling:true,allBuildTools:true,coolingUnitModel:'compact'},
+  map:{width:112,height:72,initialTemperature:25,
+    rooms:[{x:2,y:3,w:88,h:62,material:'concrete'}],
+    lines:[{x1:17,y1:4,x2:17,y2:20,material:'concrete'}],
+    openings:[{x:2,y:31,w:1,h:4},{x:89,y:30,w:1,h:5},{x:17,y:10,w:1,h:4}]},
+  environment:{outdoorTemperature:25},budget:150000,powerLimit:100000,missionDuration:Infinity,objectiveStartAt:0,
+  inventory:{wall:180,insulation:60,copper:20,fan:8,exhaust:4,sensor:12,coolingUnit:3,duct:200,supplyVent:16,
+    serverRack:Infinity,demolish:Infinity},
+  datacenter:{initialCash:150000,powerCapacityKW:100,energyTariff:.85,coolingMaintenanceDaily:110,rackSpace:24,allBuildTools:true,unlimitedBuildInventory:true,
+    serverHall:{x:18,y:4,width:70,height:59},electricalRoom:{x:3,y:4,width:13,height:16}},
+  zones:[
+    {id:'server-hall',name:'Data Hall A · Sala de servidores',x:18,y:4,width:70,height:59,target:27,visualStyle:'industrial'},
+    {id:'electrical-room',name:'Sala elétrica',x:3,y:4,width:13,height:16,target:30,visualStyle:'industrial'},
+  ],entities:[],objectives:[],failures:[],events:[],startMessage:'Aceite um contrato no mercado e instale os racks solicitados.',
+};

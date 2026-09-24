@@ -3,10 +3,9 @@ export class TileRenderer {
     for(let y=0;y<world.height;y++)for(let x=0;x<world.width;x++){
       const m=world.materialAt(x,y),px=x*tile,py=y*tile;
       if(m.id==='air') this.floor(ctx,x,y,px,py,tile,this.zoneStyle(zones,x,y));
-      else if(mode==='hvac'){ctx.save();ctx.globalAlpha=.48;this.material(ctx,m,x,y,px,py,tile);ctx.restore();}
       else this.material(ctx,m,x,y,px,py,tile);
     }
-    this.grid(ctx,world,tile);
+    this.grid(ctx,world,tile,mode==='thermal'?.018:.055);
   }
 
   zoneStyle(zones,x,y){
@@ -61,8 +60,8 @@ export class TileRenderer {
     ctx.fillStyle=m.color;ctx.fillRect(px,py,tile,tile);
   }
 
-  grid(ctx,world,tile){
-    ctx.strokeStyle='rgba(148,163,184,.055)';
+  grid(ctx,world,tile,alpha=.055){
+    ctx.strokeStyle='rgba(148,163,184,'+alpha+')';
     ctx.lineWidth=.5;
     for(let x=0;x<=world.width;x++){ctx.beginPath();ctx.moveTo(x*tile,0);ctx.lineTo(x*tile,world.height*tile);ctx.stroke();}
     for(let y=0;y<=world.height;y++){ctx.beginPath();ctx.moveTo(0,y*tile);ctx.lineTo(world.width*tile,y*tile);ctx.stroke();}

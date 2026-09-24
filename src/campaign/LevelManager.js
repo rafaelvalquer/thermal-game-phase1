@@ -1,6 +1,6 @@
 import { World } from '../world/World.js';
 import { MapBuilder } from './MapBuilder.js';
-import { Machine, ServerRack, Furnace, PassiveHeatSource, Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, TemperatureSensor, AirDuct, RefrigerantLine, AirHandler, Condenser, SupplyVent, ReturnVent, DuctDamper } from '../entities/index.js';
+import { Machine, ServerRack, Furnace, PassiveHeatSource, Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, TemperatureSensor, AirDuct, CoolingUnit, SupplyVent } from '../entities/index.js';
 
 const constructors={
   machine:(d)=>new Machine(d.x,d.y,d),
@@ -15,16 +15,14 @@ const constructors={
   radiator:(d)=>new Radiator(d.x,d.y),
   exchanger:(d)=>new HeatExchanger(d.x,d.y),
   sensor:(d)=>new TemperatureSensor(d.x,d.y),
-  airHandler:(d)=>new AirHandler(d.x,d.y,d),
-  condenser:(d)=>new Condenser(d.x,d.y,d),
+  coolingUnit:(d)=>new CoolingUnit(d.x,d.y,d),
   supplyVent:(d)=>new SupplyVent(d.x,d.y,d),
-  returnVent:(d)=>new ReturnVent(d.x,d.y,d),
-  ductDamper:(d)=>new DuctDamper(d.x,d.y,d),
-  smallDuct:(d)=>new AirDuct(d.x,d.y,{...d,size:'smallDuct'}),
-  mediumDuct:(d)=>new AirDuct(d.x,d.y,{...d,size:'mediumDuct'}),
-  largeDuct:(d)=>new AirDuct(d.x,d.y,{...d,size:'largeDuct'}),
-  refrigerantLine:(d)=>new RefrigerantLine(d.x,d.y,d),
 };
+
+export function createLevelEntity(definition){
+  const factory=constructors[definition.type];
+  return factory?factory(definition):null;
+}
 
 export class LevelManager {
   constructor(){this.currentLevel=null;this.world=null;}
@@ -34,10 +32,9 @@ export class LevelManager {
     const world=new World(level.map.width,level.map.height);
     world.environment.temperature=level.environment?.outdoorTemperature??25;
     MapBuilder.apply(world,level.map);
-    world.zones=level.zones||[];world.levelId=level.id;
+    world.zones=level.zones||[];world.levelId=level.id;world.thermalSystems=level.thermalSystems||{};world.datacenterConfig=level.datacenter||null;
     for(const def of level.entities||[]){
-      const factory=constructors[def.type];if(!factory)continue;
-      const entity=factory(def);
+      const entity=createLevelEntity(def);if(!entity)continue;
       entity.missionId=def.id||entity.missionId||null;entity.zoneId=def.zoneId||null;entity.category=def.category||entity.category||null;
       entity.locked=!!def.locked;
       if(def.enabled===false)entity.enabled=false;
@@ -45,7 +42,7 @@ export class LevelManager {
       if(def.failureTemperature!=null)entity.failureTemperature=def.failureTemperature;
       if(def.loadMultiplier!=null)entity.loadMultiplier=def.loadMultiplier;
       if(def.waterTemperature!=null&&typeof entity.waterMass==='number')entity.energy=entity.waterMass*4186*def.waterTemperature;
-      if(['smallDuct','mediumDuct','largeDuct','ductDamper','refrigerantLine'].includes(entity.type))world.addUtility(entity);
+      if(entity.type==='duct')world.addUtility(entity);
       else world.addEntity(entity);
     }
     this.world=world;return world;

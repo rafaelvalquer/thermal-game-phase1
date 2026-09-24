@@ -14,6 +14,7 @@ const fillRect=(world,{x,y,w,h,material})=>{
 
 export class MapBuilder {
   static apply(world,spec){
+    world.airRooms=(spec.rooms||[]).map(room=>({...room}));
     world.fill(spec.baseMaterial||'air',spec.initialTemperature??world.environment.temperature);
     for(const r of spec.rooms||[])rect(world,r);
     for(const l of spec.lines||[])setLine(world,l.x1,l.y1,l.x2,l.y2,l.material||'concrete');

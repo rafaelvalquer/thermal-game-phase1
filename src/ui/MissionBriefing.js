@@ -3,7 +3,7 @@ export class MissionBriefing {
 
   show(level){
     const overlay=document.createElement('div');overlay.className='briefing-overlay';
-    const inventory=Object.entries(level.inventory||{}).filter(([k,v])=>k!=='demolish'&&v>0&&Number.isFinite(v)).map(([k,v])=>'<span><b>'+v+'×</b> '+this.label(k)+'</span>').join('');
+    const inventory=Object.entries(level.inventory||{}).filter(([k,v])=>k!=='demolish'&&v>0&&Number.isFinite(v)).map(([k,v])=>'<span><b>'+v+'×</b> '+this.label(k,level)+'</span>').join('');
     const objectives=(level.objectives||[]).map(o=>'<li>'+this.objectiveLabel(o,level)+'</li>').join('');
     const tips=(level.tips||[]).map(t=>'<li>'+t+'</li>').join('');
     overlay.innerHTML=
@@ -24,7 +24,10 @@ export class MissionBriefing {
     this.root.append(overlay);
   }
 
-  label(id){return ({wall:'Parede',insulation:'Isolante',copper:'Cobre',fan:'Ventilador',exhaust:'Exaustor',pipe:'Tubo',pump:'Bomba',tank:'Tanque',radiator:'Radiador',exchanger:'Trocador',sensor:'Sensor'}[id]||id);}
+  label(id,level){
+    if(id==='coolingUnit')return 'Condensadora ('+({compact:'Compacta',commercial:'Comercial',industrial:'Industrial'}[level.thermalSystems?.coolingUnitModel]||'Comercial')+')';
+    return ({wall:'Parede',insulation:'Isolante',copper:'Cobre',fan:'Ventilador',exhaust:'Exaustor',pipe:'Tubo',pump:'Bomba',tank:'Tanque',radiator:'Radiador',exchanger:'Trocador',sensor:'Sensor',duct:'Duto',supplyVent:'Saída de ar gelado',coolingUnit:'Condensadora'}[id]||id);
+  }
 
   objectiveLabel(o,level){
     if(o.label)return o.label;

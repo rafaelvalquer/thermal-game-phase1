@@ -12,7 +12,7 @@ export class EnergySystem {
 
   registerConstructionDelta(delta){this.constructionDelta+=delta;}
 
-  update(dt){
+  update(dt,{billingDt=dt}={}){
     let power=0;
     for(const e of this.world.entities){
       if(!e.enabled||!e.power)continue;
@@ -25,7 +25,7 @@ export class EnergySystem {
       }
     }
     this.metrics.powerDraw=power;
-    this.metrics.powerEnergy+=power*dt;
+    this.metrics.powerEnergy+=power*billingDt;
     const current=this.totalInternalEnergy();
     this.metrics.energyBalance=this.baseline+this.constructionDelta+this.metrics.generatedHeat-this.metrics.externalEnergy-current;
   }

@@ -24,7 +24,6 @@ export class World {
     this.entities=[];
     this.utilityLayer=new Map();
     this.environment={temperature:OUTDOOR_TEMP,energyReceived:0};
-    this.hvacZonePressure=new Map();
     this.fill('air',OUTDOOR_TEMP);
   }
 
@@ -68,8 +67,8 @@ export class World {
   isAir(x,y){return this.inBounds(x,y)&&this.materialAt(x,y).id==='air';}
   addEnergyAt(x,y,joules){if(this.inBounds(x,y))this.energy[this.index(x,y)]+=joules;}
   bumpUtilityTopology(){this.utilityTopologyVersion++;}
-  addEntity(entity){this.entities.push(entity);entity.world=this;if(['airHandler','condenser','supplyVent','returnVent'].includes(entity.type))this.bumpUtilityTopology();return entity;}
-  removeEntity(entity){this.entities=this.entities.filter(e=>e!==entity);if(['airHandler','condenser','supplyVent','returnVent'].includes(entity.type))this.bumpUtilityTopology();}
+  addEntity(entity){this.entities.push(entity);entity.world=this;if(['coolingUnit','supplyVent'].includes(entity.type))this.bumpUtilityTopology();return entity;}
+  removeEntity(entity){this.entities=this.entities.filter(e=>e!==entity);if(['coolingUnit','supplyVent'].includes(entity.type))this.bumpUtilityTopology();}
   utilitiesAt(x,y){return this.utilityLayer.get(this.index(x,y))||[];}
   utilityAt(x,y,type=null){return this.utilitiesAt(x,y).find(item=>!type||item.type===type)||null;}
   addUtility(utility){

@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test": "node --test",
+    "balance:airflow": "node scripts/balance-airflow.js",
     "sprites:generate": "node scripts/generate-sprite-assets.js"
   },
   "devDependencies": {

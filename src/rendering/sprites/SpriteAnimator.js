@@ -19,8 +19,7 @@ export class SpriteAnimator {
       case 'serverRack':return entity.enabled===false?0:clamp(1+(entity.loadMultiplier||0)*2,1,8);
       case 'machine':return entity.enabled===false?0:1.5;
       case 'sensor':return 1;
-      case 'condenser':return (entity.heatRejected||0)>0?clamp(2+(entity.heatRejected||0)/10000,2,6):0;
-      case 'airHandler':return (entity.currentFlow||0)>0?clamp(1+(entity.currentFlow||0)*2,1,5):0;
+      case 'coolingUnit':return (entity.currentAirFlow||0)>0?clamp(2+(entity.loadRatio||0)*4,2,8):0;
       default:return definition.fps||0;
     }
   }

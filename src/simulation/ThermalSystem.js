@@ -9,8 +9,10 @@ export class ThermalSystem {
 
   applyHeatSources(dt,elapsed){
     for(const m of this.heatMachines()){
-      m.started=m.enabled&&elapsed>=(m.startAt??10);m.coolingPower=0;if(!m.started)continue;
-      const q=m.heatOutput*(m.loadMultiplier||1)*dt;m.energy+=q;this.metrics.generatedHeat+=q;
+      m.started=m.enabled&&elapsed>=(m.startAt??10);m.coolingPower=0;
+      m.heatGenerationPower=m.started?m.heatOutput*(m.loadMultiplier??1):0;
+      m.thermalBalance=-m.heatGenerationPower;if(!m.started)continue;
+      const q=m.heatGenerationPower*dt;m.energy+=q;this.metrics.generatedHeat+=q;
     }
     for(const source of this.world.entities.filter(e=>e.isPassiveHeatSource)){
       source.started=source.enabled&&elapsed>=(source.startAt??0);if(!source.started)continue;
@@ -41,7 +43,10 @@ export class ThermalSystem {
     w.energy.set(w.nextEnergy);
   }
 
-  exchangeMachines(dt){for(const m of this.heatMachines())m.type==='serverRack'?this.exchangeServerRack(m,dt):this.exchangeGenericMachine(m,dt);}
+  exchangeMachines(dt){for(const m of this.heatMachines()){
+    m.type==='serverRack'?this.exchangeServerRack(m,dt):this.exchangeGenericMachine(m,dt);
+    m.thermalBalance=m.coolingPower-m.heatGenerationPower;
+  }}
 
   exchangeGenericMachine(m,dt){
     const w=this.world,cells=[];
@@ -50,7 +55,7 @@ export class ThermalSystem {
     const Cm=m.mass*m.heatCapacity,avgSpeed=cells.reduce((sum,i)=>sum+Math.hypot(w.airX[i],w.airY[i]),0)/cells.length,totalUA=C.machinePassiveUA+C.machineForcedUAperMS*avgSpeed;
     for(const i of cells){
       const Ta=w.temperatureAtIndex(i),Tm=m.temperature,Ca=w.capacityAtIndex(i),dT=Tm-Ta;if(Math.abs(dT)<1e-5)continue;
-      let q=totalUA*dT*dt/cells.length;const qEq=Math.abs(dT)/(1/Cm+1/Ca);q=clamp(q,-qEq*.35,qEq*.35);m.energy-=q;w.energy[i]+=q;if(q>0)m.coolingPower+=q/dt;
+      let q=totalUA*dT*dt/cells.length;const qEq=Math.abs(dT)/(1/Cm+1/Ca);q=clamp(q,-qEq*.35,qEq*.35);m.energy-=q;w.energy[i]+=q;m.coolingPower+=q/dt;
     }
   }
 
@@ -60,7 +65,7 @@ export class ThermalSystem {
     const inletIndex=intakeOk?w.index(intake.x,intake.y):w.index(exhaust.x,exhaust.y),outIndex=exhaustOk?w.index(exhaust.x,exhaust.y):inletIndex;
     const Tin=w.temperatureAtIndex(inletIndex),Cm=m.mass*m.heatCapacity,Ca=w.capacityAtIndex(outIndex),intakeSpeed=Math.hypot(w.airX[inletIndex],w.airY[inletIndex]);
     const ua=(C.machinePassiveUA*1.2)+(C.machineForcedUAperMS*1.6*intakeSpeed),dT=m.temperature-Tin;if(Math.abs(dT)<1e-5)return;
-    let q=ua*dT*dt;const qEq=Math.abs(dT)/(1/Cm+1/Ca);q=clamp(q,-qEq*.45,qEq*.45);m.energy-=q;w.energy[outIndex]+=q;if(q>0)m.coolingPower+=q/dt;
+    let q=ua*dT*dt;const qEq=Math.abs(dT)/(1/Cm+1/Ca);q=clamp(q,-qEq*.45,qEq*.45);m.energy-=q;w.energy[outIndex]+=q;m.coolingPower+=q/dt;
   }
 
   passiveOutdoorExchange(dt){

@@ -4,6 +4,7 @@ import { World } from '../../../src/world/World.js';
 import { Machine } from '../../../src/entities/Machine.js';
 import { HeatHazeSourceDetector } from '../../../src/rendering/thermal/HeatHazeSourceDetector.js';
 import { HeatHazeMask } from '../../../src/rendering/thermal/HeatHazeMask.js';
+import { CoolingUnit } from '../../../src/entities/CoolingUnit.js';
 
 const worldWithMachine=(temperature)=>{
   const world=new World(14,10);
@@ -24,6 +25,12 @@ test('hot machine produces heat haze region',()=>{
   const region=detector.detect(world).find(r=>r.kind==='machine');
   assert.ok(region);
   assert.ok(region.intensity>0);
+});
+
+test('an indoor cooling unit rejecting heat contributes a visible heat haze source',()=>{
+  const world=new World(14,10),unit=new CoolingUnit(6,5);unit.indoor=true;unit.heatRejected=20000;world.addEntity(unit);
+  const region=new HeatHazeSourceDetector().detect(world).find(item=>item.kind==='coolingUnit');
+  assert.ok(region);assert.ok(region.intensity>0);
 });
 
 test('larger temperature delta produces stronger haze',()=>{

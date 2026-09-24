@@ -1,12 +1,11 @@
 const FLUID_TYPES=new Set(['pipe','pump','tank','radiator','exchanger']);
 const FLUID_TOOLS=new Set(['pipe','pump','tank','radiator','exchanger']);
-import { HVACPortResolver } from '../simulation/hvac/ports/HVACPortResolver.js';
-export const DUCT_TOOLS=new Set(['smallDuct','mediumDuct','largeDuct']);
-export const HVAC_PATH_TOOLS=new Set([...DUCT_TOOLS,'refrigerantLine']);
+export const DUCT_TOOLS=new Set(['duct']);
+export const DUCT_PATH_TOOLS=DUCT_TOOLS;
 const DIRS=[[1,0],[-1,0],[0,1],[0,-1]];
 
 export class PlacementValidator {
-  constructor(world){this.world=world;this.hvacPorts=new HVACPortResolver();}
+  constructor(world){this.world=world;}
 
   fluidEntityAt(x,y,additionalEntities=[]){
     const entity=this.world.entityAt(x,y)||additionalEntities.find(candidate=>candidate.x===x&&candidate.y===y);
@@ -17,14 +16,40 @@ export class PlacementValidator {
     return DIRS.map(([dx,dy])=>this.fluidEntityAt(x+dx,y+dy,additionalEntities)).filter(Boolean);
   }
 
-  isHVACPortCell(x,y){
-    for(const entity of this.world.entities){
-      if(entity.type==='airHandler'&&this.hvacPorts.airHandler(entity).some(port=>port.cell.x===x&&port.cell.y===y))return true;
-      if(entity.type==='condenser'){
-        const port=this.hvacPorts.condenser(entity).cell;if(port.x===x&&port.y===y)return true;
+  wouldJoinCoolingUnits(x,y,additionalUtilities=[]){
+    const w=this.world,ducts=[...w.allUtilities().filter(item=>DUCT_TOOLS.has(item.type)),...additionalUtilities.filter(item=>DUCT_TOOLS.has(item.type)),{type:'duct',x,y}];
+    const at=new Map(ducts.map(d=>[`${d.x},${d.y}`,d])),start=`${x},${y}`,queue=[at.get(start)],seen=new Set([start]),units=new Set();
+    while(queue.length){
+      const duct=queue.shift();
+      for(const [dx,dy] of DIRS){
+        const nx=duct.x+dx,ny=duct.y+dy,key=`${nx},${ny}`,entity=w.entityAt(nx,ny);
+        if(entity?.type==='coolingUnit')units.add(entity.id);
+        const neighbor=at.get(key);if(neighbor&&!seen.has(key)){seen.add(key);queue.push(neighbor);}
       }
     }
-    return false;
+    return units.size>1;
+  }
+
+  adjacentCoolingDuctComponents(x,y){
+    const w=this.world,ducts=w.allUtilities().filter(item=>DUCT_TOOLS.has(item.type)),at=new Map(ducts.map(d=>[`${d.x},${d.y}`,d])),seen=new Set(),components=[];
+    for(const [dx,dy] of DIRS){
+      const sx=x+dx,sy=y+dy,start=at.get(`${sx},${sy}`);if(!start)continue;
+      const key=`${sx},${sy}`;if(seen.has(key))continue;
+      const queue=[start],component=[];seen.add(key);
+      for(let head=0;head<queue.length;head++){
+        const duct=queue[head];component.push(duct);
+        for(const [ox,oy] of DIRS){const nx=duct.x+ox,ny=duct.y+oy,nkey=`${nx},${ny}`,next=at.get(nkey);if(next&&!seen.has(nkey)){seen.add(nkey);queue.push(next);}}
+      }
+      components.push(component);
+    }
+    return components;
+  }
+
+  wouldPlaceUnitOnOwnedNetwork(x,y){
+    return this.adjacentCoolingDuctComponents(x,y).some(component=>{
+      const ids=new Set(component.map(duct=>`${duct.x},${duct.y}`));
+      return this.world.entities.some(entity=>entity.type==='coolingUnit'&&DIRS.some(([dx,dy])=>ids.has(`${entity.x+dx},${entity.y+dy}`)));
+    });
   }
 
   canPlace(tool,x,y,{additionalEntities=[],additionalUtilities=[]}={}){
@@ -33,25 +58,18 @@ export class PlacementValidator {
     if(['wall','insulation','copper'].includes(tool))return w.isAir(x,y)&&!w.entityAt(x,y);
     if(DUCT_TOOLS.has(tool)){
       if(w.utilitiesAt(x,y).some(item=>DUCT_TOOLS.has(item.type))||additionalUtilities.some(item=>DUCT_TOOLS.has(item.type)&&item.x===x&&item.y===y)||w.entityAt(x,y))return false;
-      for(const [dx,dy] of DIRS){
-        const entity=w.entityAt(x+dx,y+dy);if(!entity)continue;
-        if(entity.type==='condenser')return false;
-        if(entity.type==='airHandler'&&!['supply','return'].some(service=>this.hvacPorts.portForCell(entity,x,y,service)))return false;
-      }
+      if(this.wouldJoinCoolingUnits(x,y,additionalUtilities))return false;
       return true;
     }
-    if(tool==='refrigerantLine'){
-      if(w.utilitiesAt(x,y).some(item=>item.type==='refrigerantLine')||additionalUtilities.some(item=>item.type==='refrigerantLine'&&item.x===x&&item.y===y)||w.entityAt(x,y))return false;
-      for(const [dx,dy] of DIRS){
-        const entity=w.entityAt(x+dx,y+dy);if(!entity)continue;
-        if(['supplyVent','returnVent'].includes(entity.type))return false;
-        if(['airHandler','condenser'].includes(entity.type)&&!this.hvacPorts.portForCell(entity,x,y,'refrigerant'))return false;
-      }
-      return true;
+    if(tool==='coolingUnit')return w.isAir(x,y)&&!w.entityAt(x,y)&&!w.utilityAt(x,y)&&this.adjacentCoolingDuctComponents(x,y).length<=1&&!this.wouldPlaceUnitOnOwnedNetwork(x,y);
+    if(tool==='serverRack'){
+      const hall=w.datacenterConfig?.serverHall;
+      const inHall=!hall||(x>=hall.x&&y>=hall.y&&x<hall.x+hall.width&&y<hall.y+hall.height);
+      return inHall&&w.isAir(x,y)&&!w.entityAt(x,y)&&!w.utilityAt(x,y);
     }
-    if(tool==='damper')return Boolean((w.utilitiesAt(x,y).some(item=>DUCT_TOOLS.has(item.type))||additionalUtilities.some(item=>DUCT_TOOLS.has(item.type)&&item.x===x&&item.y===y))&&!w.utilityAt(x,y,'ductDamper')&&!additionalUtilities.some(item=>item.type==='ductDamper'&&item.x===x&&item.y===y));
-    if(['supplyVent','returnVent'].includes(tool)&&this.isHVACPortCell(x,y))return false;
-    if(['airHandler','condenser','supplyVent','returnVent'].includes(tool))return w.isAir(x,y)&&!w.entityAt(x,y)&&!w.utilityAt(x,y);
+    if(tool==='supplyVent'&&w.thermalSystems?.simpleCooling&&this.adjacentCoolingDuctComponents(x,y).length>1)return false;
+    if(tool==='supplyVent'&&w.thermalSystems?.simpleCooling&&this.adjacentCoolingDuctComponents(x,y).length>1)return false;
+    if(['coolingUnit','supplyVent'].includes(tool))return w.isAir(x,y)&&!w.entityAt(x,y)&&!w.utilityAt(x,y);
     if(w.entityAt(x,y))return false;
     if(tool!=='pipe'&&!w.isAir(x,y))return false;
 

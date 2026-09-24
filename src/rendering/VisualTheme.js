@@ -1,4 +1,7 @@
 import { clamp, rgbHeat } from '../utils/MathUtils.js';
+import { thermalColor, thermalCss } from './thermal/ThermalPalette.js';
+
+export { thermalColor, thermalCss, thermalState as thermalGameplayState, THERMAL_STOPS, THERMAL_MIN, THERMAL_MAX } from './thermal/ThermalPalette.js';
 
 export const FLUID_TYPES = new Set(['pipe','pump','tank','radiator','exchanger']);
 
@@ -14,6 +17,9 @@ export const heatCss = (temperature, alpha=1,min=10,max=80) => {
   const [r,g,b]=rgbHeat(temperature,min,max);
   return 'rgba('+r+','+g+','+b+','+alpha+')';
 };
+
+export const thermalGameplayColor = thermalColor;
+export const thermalGameplayCss = thermalCss;
 
 export const waterCss = (temperature, alpha=1) => {
   const t=clamp((temperature-15)/55,0,1);
@@ -51,10 +57,4 @@ export const entityLabel = (type) => ({
   radiator:'Radiador',
   exchanger:'Trocador de calor',
   sensor:'Sensor térmico',
-  airHandler:'Air Handler',
-  condenser:'Condensadora',
-  supplyVent:'Vent insuflação',
-  returnVent:'Vent retorno',
-  ductDamper:'Damper HVAC',
-  refrigerantLine:'Linha frigorífica',
 }[type]||type);

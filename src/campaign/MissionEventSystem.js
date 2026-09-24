@@ -16,7 +16,9 @@ export class MissionEventSystem {
   }
 
   targets(event){
-    const filter=event.filter||{};
+    const filter={...(event.filter||{})};
+    if(event.unitId)filter.missionId=event.unitId;
+    if(['coolingUnitFailure','coolingUnitRestore'].includes(event.type))filter.type='coolingUnit';
     return this.world.entities.filter(e=>entityMatches(e,filter));
   }
 
@@ -29,6 +31,10 @@ export class MissionEventSystem {
       this.world.environment.temperature=event.value;
     } else if(event.type==='toggleEntity'){
       for(const e of this.targets(event))e.enabled=event.enabled!==false;
+    } else if(event.type==='coolingUnitFailure'){
+      for(const e of this.targets(event))e.enabled=false;
+    } else if(event.type==='coolingUnitRestore'){
+      for(const e of this.targets(event))e.enabled=true;
     }
   }
 
@@ -36,6 +42,8 @@ export class MissionEventSystem {
     if(event.type==='machineLoad')return 'Pico de carga térmica: ×'+event.multiplier+'.';
     if(event.type==='outdoorTemperature')return 'Temperatura externa alterada para '+event.value+'°C.';
     if(event.type==='activateMachine')return 'Novo processo entrou em operação.';
+    if(event.type==='coolingUnitFailure')return 'Uma unidade de refrigeração saiu de operação.';
+    if(event.type==='coolingUnitRestore')return 'Uma unidade de refrigeração voltou à operação.';
     return 'Evento operacional.';
   }
 }

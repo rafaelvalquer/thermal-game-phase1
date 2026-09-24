@@ -2,6 +2,7 @@ import { FLUID_TYPES, heatCss, thermalState } from './VisualTheme.js';
 
 export class EffectsRenderer {
   draw(ctx,world,tile,mode,time){
+    if(mode==='thermal')return;
     this.thermalEffects(ctx,world,tile,time);
     if(mode==='normal')this.ambientAir(ctx,world,tile,time);
     this.exhaustEffects(ctx,world,tile,time);

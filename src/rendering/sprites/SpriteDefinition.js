@@ -13,8 +13,6 @@ export function getVisualState(entity){
     :entity?.type==='tank'?true
     :entity?.type==='sensor'?true
     :entity?.type==='furnace'?entity.started!==false
-    :entity?.type==='airHandler'?(entity.currentFlow||0)>0
-    :entity?.type==='condenser'?(entity.heatRejected||0)>0
     :entity?.type==='serverRack'?(entity.loadMultiplier||0)>0
     :entity?.started!==false;
   return active?'running':'idle';

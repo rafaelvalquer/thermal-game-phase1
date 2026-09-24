@@ -17,12 +17,6 @@ export class FanModel {
     return Math.max(0,p(down)-p(up));
   }
 
-  targetFlow(fan){
-    const dp=this.localPressureDelta(fan);
-    const ratio=clamp(1-dp/Math.max(fan.pressureShutoff,1e-6),0,1);
-    return fan.qFree*Math.sqrt(ratio);
-  }
-
   sourceFace(fan){
     const g=this.grid,d=fan.direction||{x:1,y:0};
     if(d.x>0)return {kind:'u',index:g.uIndex(fan.x+1,fan.y),sign:1};
@@ -32,16 +26,29 @@ export class FanModel {
   }
 
   apply(fan,dt){
+    this.applyMomentumSource(fan,dt);
+  }
+
+  applyMomentumSource(fan,dt){
     if(!fan.enabled)return;
-    const g=this.grid,face=this.sourceFace(fan);
-    const targetFlow=this.targetFlow(fan);
+    const g=this.grid,d=fan.direction||{x:1,y:0};
     const area=fan.faceArea||AIR_FACE_AREA*.52;
-    const targetVelocity=targetFlow/Math.max(area,1e-6);
-    const field=face.kind==='u'?g.u:g.v;
-    const response=1-Math.exp(-AIR.fanResponse*dt);
-    const currentSigned=field[face.index]*face.sign;
-    const next=currentSigned+(targetVelocity-currentSigned)*response;
-    field[face.index]=clamp(next,-AIR.maxVelocity,AIR.maxVelocity)*face.sign;
+    const face=this.sourceFace(fan),field=face.kind==='u'?g.u:g.v;
+    const measuredFlow=Math.max(0,field[face.index]*face.sign*area);
+    const pressure=this.pressureRise(fan,measuredFlow);
+    // A finite actuator region adds momentum before projection. Pressure remains
+    // responsible for back pressure and for redistributing incompressible flow.
+    const impulse=pressure*dt/(AIR.density*g.dx*AIR.fanSourceSpread);
+    const limit=Math.min(AIR.maxVelocity,fan.qFree/area);
+    for(let offset=0;offset<AIR.fanSourceSpread;offset++){
+      const x=fan.x+d.x*offset,y=fan.y+d.y*offset;
+      if(!g.isAir(x,y))break;
+      const f=this.sourceFace({...fan,x,y});
+      const fx=x+(d.x>0?1:0),fy=y+(d.y>0?1:0);
+      if(d.x?g.blockedU(fx,y):g.blockedV(x,fy))break;
+      const current=field[f.index]*f.sign;
+      field[f.index]=(current+Math.min(impulse,Math.max(0,limit-current)))*f.sign;
+    }
   }
 
   updateDiagnostics(fan){
@@ -49,12 +56,14 @@ export class FanModel {
     const field=face.kind==='u'?g.u:g.v;
     const signedVelocity=field[face.index]*face.sign;
     const area=fan.faceArea||AIR_FACE_AREA*.52;
-    const flow=Math.max(0,signedVelocity*area);
+    const flow=fan.enabled?clamp(signedVelocity*area,0,fan.qFree):0;
     fan.currentVelocity=Math.max(0,signedVelocity);
     fan.currentFlow=flow;
     fan.currentPressureRise=this.localPressureDelta(fan);
     fan.availablePressure=this.pressureRise(fan,flow);
     fan.operatingPoint=clamp(flow/Math.max(fan.qFree,1e-6),0,1);
+    fan.flowEfficiency=fan.operatingPoint;
+    fan.flowCondition=fan.flowEfficiency>=.8?'FREE FLOW':fan.flowEfficiency>=.6?'NORMAL':fan.flowEfficiency>=.4?'HIGH RESISTANCE':fan.flowEfficiency>=.2?'RESTRICTED':'BLOCKED';
     fan.airflow=fan.currentVelocity;
   }
 

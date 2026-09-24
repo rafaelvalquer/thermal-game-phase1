@@ -67,7 +67,7 @@ test('fan transports heat downstream',()=>{
 });
 
 test('exhaust transfers removed heat to outdoor accounting',()=>{
-  const w=new World(7,5);w.setTemperature(2,2,60);const exhaust=new ExhaustFan(2,2,{x:1,y:0});w.addEntity(exhaust);const m=metrics(),sys=new AirflowSystem(w,m);
+  const w=new World(7,5);w.setTemperature(6,2,60);const exhaust=new ExhaustFan(6,2,{x:1,y:0});w.addEntity(exhaust);const m=metrics(),sys=new AirflowSystem(w,m);
   for(let i=0;i<80;i++)sys.updateVelocity(.05);
   const before=w.totalTileEnergy();sys.applyExhaust(.5);const lost=before-w.totalTileEnergy();assert.ok(exhaust.currentFlow>0);assert.ok(lost>0);close(m.externalEnergy,lost,1e-10);
 });

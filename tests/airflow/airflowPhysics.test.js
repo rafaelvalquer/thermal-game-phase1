@@ -99,7 +99,7 @@ test('thermal advection transports heat downstream and conserves tile energy',()
   const before=world.totalTileEnergy(),downstreamBefore=world.temperatureAt(10,7);
   for(let i=0;i<180;i++)system.update(.05);
   assert.ok(world.temperatureAt(10,7)>downstreamBefore);
-  const after=world.totalTileEnergy();
+  const after=world.totalTileEnergy()+system.metrics.externalEnergy;
   const rel=Math.abs(after-before)/Math.max(1,Math.abs(before));
   assert.ok(rel<1e-10,'energy drift '+rel);
 });

@@ -1,3 +1,4 @@
+import { thermalLegendPosition } from './thermal/ThermalPalette.js';
 import { TileRenderer } from './TileRenderer.js';
 import { HeatmapRenderer } from './HeatmapRenderer.js';
 import { AirflowRenderer } from './AirflowRenderer.js';
@@ -7,24 +8,22 @@ import { EffectsRenderer } from './EffectsRenderer.js';
 import { ThermalDistortionBuffer } from './thermal/ThermalDistortionBuffer.js';
 import { HeatHazeRenderer } from './thermal/HeatHazeRenderer.js';
 import { VisualSettings } from './VisualSettings.js';
-import { FLUID_TYPES, waterCss } from './VisualTheme.js';
+import { FLUID_TYPES, waterCss, THERMAL_STOPS } from './VisualTheme.js';
 import { BUILD_CATALOG } from '../building/BuildCatalog.js';
-import { clamp, rgbHeat } from '../utils/MathUtils.js';
-import { DUCT_TOOLS, HVAC_PATH_TOOLS } from '../building/PlacementValidator.js';
-import { DuctRenderer } from './hvac/DuctRenderer.js';
-import { RefrigerantLineRenderer } from './hvac/RefrigerantLineRenderer.js';
-import { HVACPortRenderer } from './hvac/HVACPortRenderer.js';
-import { HVACPortResolver } from '../simulation/hvac/ports/HVACPortResolver.js';
-import { HVACFlowRenderer } from './hvac/HVACFlowRenderer.js';
-import { HVACOverlayRenderer } from './hvac/HVACOverlayRenderer.js';
+import { clamp } from '../utils/MathUtils.js';
+import { DUCT_TOOLS } from '../building/PlacementValidator.js';
+import { CoolingDuctRenderer } from './cooling/CoolingDuctRenderer.js';
+import { CoolingFlowRenderer } from './cooling/CoolingFlowRenderer.js';
+import { CoolingOverlayRenderer } from './cooling/CoolingOverlayRenderer.js';
+import { CoolingUnitRenderer } from './cooling/CoolingUnitRenderer.js';
 
 export class Renderer {
   constructor(canvas,camera,{tilePixels=14}={}){
     this.canvas=canvas;this.ctx=canvas.getContext('2d');this.camera=camera;this.tile=tilePixels;
-    this.mode='normal';this.debug=false;this.hover=null;this.buildSystem=null;this.selectedEntity=null;this.thermalScaleMode='fixed';this.level=null;
+    this.mode='normal';this.debug=false;this.hover=null;this.buildSystem=null;this.selectedEntity=null;this.level=null;
     this.tileRenderer=new TileRenderer();this.heatmap=new HeatmapRenderer();this.airflow=new AirflowRenderer();this.pressure=new PressureRenderer();
     this.entities=new EntityRenderer();this.effects=new EffectsRenderer();
-    this.ducts=new DuctRenderer();this.refrigerantLines=new RefrigerantLineRenderer();this.hvacPorts=new HVACPortRenderer();this.hvacPortResolver=new HVACPortResolver();this.hvacFlow=new HVACFlowRenderer();this.hvacOverlay=new HVACOverlayRenderer();
+    this.coolingDucts=new CoolingDuctRenderer();this.coolingFlow=new CoolingFlowRenderer();this.coolingOverlay=new CoolingOverlayRenderer();this.coolingUnits=new CoolingUnitRenderer();
     this.distortionBuffer=new ThermalDistortionBuffer();this.heatHaze=new HeatHazeRenderer({quality:VisualSettings.heatHazeQuality,maxRegions:VisualSettings.maxHazeRegions});
   }
 
@@ -44,23 +43,26 @@ export class Renderer {
     bg.addColorStop(0,'#07111f');bg.addColorStop(1,'#020617');
     ctx.fillStyle=bg;ctx.fillRect(0,0,width,height);
 
-    if(this.distortionBuffer.ensure(width,height,this.dpr)){
-      const scene=this.distortionBuffer.context();
+    const renderDirect=this.mode==='thermal';
+    if(renderDirect||this.distortionBuffer.ensure(width,height,this.dpr)){
+      const scene=renderDirect?ctx:this.distortionBuffer.context();
       scene.save();
       scene.scale(this.camera.zoom,this.camera.zoom);
       scene.translate(-this.camera.x,-this.camera.y);
       this.tileRenderer.draw(scene,world,this.tile,this.zones||[],this.mode);
-      if(this.mode==='thermal')this.heatmap.draw(scene,world,this.tile,this.thermalScale(world));
+      if(this.mode==='thermal')this.heatmap.draw(scene,world,this.tile);
       this.entities.draw(scene,world,this.tile,this.mode,time,{selectedEntity:this.selectedEntity});
-      this.ducts.draw(scene,world,this.tile,this.mode,this.camera.zoom);
-      this.refrigerantLines.draw(scene,world,this.tile,this.mode,time,this.camera.zoom);
+      this.coolingDucts.draw(scene,world,this.tile,this.mode,this.camera.zoom);
       this.effects.draw(scene,world,this.tile,this.mode,time);
       if(this.buildSystem?.selected)this.drawBuildPreview(scene,world,time);
       this.drawRecentPlacement(scene,time);
       scene.restore();
 
-      if(VisualSettings.heatHaze)this.heatHaze.render(ctx,this.distortionBuffer.canvas,world,this.camera,this.tile,this.mode,time,width,height,this.dpr);
-      else ctx.drawImage(this.distortionBuffer.canvas,0,0,this.distortionBuffer.canvas.width,this.distortionBuffer.canvas.height,0,0,width,height);
+      if(!renderDirect){
+        const allowHeatHaze=VisualSettings.heatHaze&&this.mode!=='pressure';
+        if(allowHeatHaze)this.heatHaze.render(ctx,this.distortionBuffer.canvas,world,this.camera,this.tile,this.mode,time,width,height,this.dpr);
+        else ctx.drawImage(this.distortionBuffer.canvas,0,0,this.distortionBuffer.canvas.width,this.distortionBuffer.canvas.height,0,0,width,height);
+      }
     }
 
     ctx.save();
@@ -69,10 +71,10 @@ export class Renderer {
     this.drawZones(ctx);
     if(this.mode==='pressure')this.pressure.draw(ctx,world,this.tile);
     if(this.mode==='fluid')this.drawFluidNetwork(ctx,world,time);
-    if(this.mode==='hvac'){
-      this.hvacFlow.draw(ctx,world,this.tile,time,this.camera.zoom);
-      this.hvacOverlay.draw(ctx,world,this.tile,time,this.camera.zoom);
-      this.hvacPorts.draw(ctx,world,this.tile,this.camera.zoom);
+    if(this.mode==='cooling'&&simulation.cooling){
+      this.coolingOverlay.draw(ctx,world,this.tile,time,this.camera.zoom,this.selectedEntity);
+      this.coolingFlow.draw(ctx,simulation.cooling.networks,this.tile,time,this.camera.zoom);
+      for(const unit of simulation.cooling.units)this.coolingUnits.draw(ctx,unit,this.tile,this.camera.zoom);
     }
     if(this.mode==='airflow'){
       this.airflow.draw(ctx,world,this.tile,time,this.camera.zoom);
@@ -97,29 +99,14 @@ export class Renderer {
 
   preloadSprites(){return this.entities.preloadSprites();}
 
-  thermalScale(world){
-    if(this.thermalScaleMode==='auto'){
-      let min=Infinity,max=-Infinity;
-      for(let i=0;i<world.size;i++){const t=world.temperatureAtIndex(i);min=Math.min(min,t);max=Math.max(max,t);}
-      const targets=(this.level?.objectives||[]).filter(o=>['machineTemperature','zoneTemperature','maxAirTemperature'].includes(o.type)).map(o=>o.max).filter(Number.isFinite);
-      const floor=Math.floor(min/10)*10,ceiling=Math.ceil(Math.max(max,...targets)/10)*10;
-      return {min:Math.min(floor,10),max:Math.max(ceiling,20)};
-    }
-    const targets=(this.level?.objectives||[]).filter(o=>['machineTemperature','zoneTemperature','maxAirTemperature'].includes(o.type)).map(o=>o.max).filter(Number.isFinite);
-    const failures=(this.level?.failures||[]).flatMap(f=>[f.temperature]).filter(Number.isFinite);
-    return {min:10,max:Math.max(80,...targets,...failures)+10};
-  }
-
   drawBuildPreview(ctx,world,time){
-    const p=this.hover,tool=this.buildSystem.selected;if(!p||(!world.inBounds(p.x,p.y)&&tool!=='pipe'&&!HVAC_PATH_TOOLS.has(tool)))return;
+    const p=this.hover,tool=this.buildSystem.selected;if(!p||(!world.inBounds(p.x,p.y)&&tool!=='pipe'&&!DUCT_TOOLS.has(tool)))return;
     const pipePath=tool==='pipe'?this.pipePreview?.():null;
-    const utilityPath=HVAC_PATH_TOOLS.has(tool)?this.pipePreview?.():null;
-    if(utilityPath?.length&&HVAC_PATH_TOOLS.has(tool)){
+    const utilityPath=DUCT_TOOLS.has(tool)?this.pipePreview?.():null;
+    if(utilityPath?.length&&DUCT_TOOLS.has(tool)){
       const plan=this.buildSystem.utilityPlacement.planPath(tool,utilityPath,{inventory:this.buildSystem.inventory[tool]??0,budget:this.buildSystem.budget,cost:BUILD_CATALOG[tool].cost});
       for(const point of plan.entries){
-        const port=this.previewPortCompatibility(world,tool,point.x,point.y),valid=point.valid&&!port.incompatible;
-        if(tool==='refrigerantLine')this.refrigerantLines.preview(ctx,point.x,point.y,this.tile,valid,this.camera.zoom,{embedded:point.embedded,blockedPort:port.incompatible});
-        else this.ducts.preview(ctx,point.x,point.y,this.tile,tool,valid,this.camera.zoom,{embedded:point.embedded,role:port.role,color:port.incompatible?'#ef4444':null});
+        this.coolingDucts.preview(ctx,point.x,point.y,this.tile,tool,point.valid,this.camera.zoom,{embedded:point.embedded});
       }
       return;
     }
@@ -142,9 +129,7 @@ export class Renderer {
       this.tileRenderer.material(ctx,world.registry.get(c.material),p.x,p.y,p.x*this.tile,p.y*this.tile,this.tile);
       ctx.restore();
     }else if(DUCT_TOOLS.has(tool)){
-      const port=this.previewPortCompatibility(world,tool,p.x,p.y);this.ducts.preview(ctx,p.x,p.y,this.tile,tool,valid&&!port.incompatible,this.camera.zoom,{embedded:!world.isAir(p.x,p.y),role:port.role,color:port.incompatible?'#ef4444':null});
-    }else if(tool==='refrigerantLine'){
-      const port=this.previewPortCompatibility(world,tool,p.x,p.y);this.refrigerantLines.preview(ctx,p.x,p.y,this.tile,valid&&!port.incompatible,this.camera.zoom,{embedded:!world.isAir(p.x,p.y),blockedPort:port.incompatible});
+      this.coolingDucts.preview(ctx,p.x,p.y,this.tile,tool,valid,this.camera.zoom,{embedded:!world.isAir(p.x,p.y)});
     }
     else this.entities.drawPreview(ctx,world,tool,p.x,p.y,this.buildSystem.direction(),this.tile,this.mode,time,valid);
 
@@ -156,31 +141,7 @@ export class Renderer {
     ctx.lineWidth=Math.max(1,1.6/this.camera.zoom);ctx.fillRect(p.x*this.tile,p.y*this.tile,this.tile,this.tile);ctx.strokeRect(p.x*this.tile+1,p.y*this.tile+1,this.tile-2,this.tile-2);ctx.restore();
   }
 
-  previewPortCompatibility(world,tool,x,y){
-    const result={role:null,incompatible:false};
-    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
-      const entity=world.entityAt(x+dx,y+dy);if(!entity)continue;
-      if(tool==='refrigerantLine'){
-        if(['supplyVent','returnVent'].includes(entity.type))result.incompatible=true;
-        if(entity.type==='airHandler'&&!this.hvacPortResolver.portForCell(entity,x,y,'refrigerant'))result.incompatible=true;
-        if(entity.type==='condenser'&&!this.hvacPortResolver.portForCell(entity,x,y,'refrigerant'))result.incompatible=true;
-      }else if(DUCT_TOOLS.has(tool)){
-        if(entity.type==='condenser')result.incompatible=true;
-        if(entity.type==='airHandler'){
-          const port=this.hvacPortResolver.airHandler(entity).find(item=>['supply','return'].includes(item.type)&&item.cell.x===x&&item.cell.y===y);
-          if(port)result.role=port.type;else result.incompatible=true;
-        }
-        if(entity.type==='supplyVent')result.role='supply';
-        if(entity.type==='returnVent')result.role='return';
-      }
-    }
-    if(DUCT_TOOLS.has(tool)&&!result.role){
-      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
-        const adjacent=world.utilitiesAt(x+dx,y+dy).find(item=>DUCT_TOOLS.has(item.type));if(adjacent?.networkRole){result.role=adjacent.networkRole;break;}
-      }
-    }
-    return result;
-  }
+
 
   drawRecentPlacement(ctx,time){
     const item=this.buildSystem?.lastPlacement;if(!item)return;
@@ -248,8 +209,8 @@ export class Renderer {
     const e=this.selectedEntity;if(!e)return;
     const p=this.camera.worldToScreen((e.x+.5)*this.tile,(e.y+.5)*this.tile),w=Math.max(40,Math.min(164,width-16)),h=58,gap=10;
     let x=p.x+gap,y=p.y-h/2;if(x+w>width-8)x=p.x-w-gap;x=clamp(x,8,Math.max(8,width-w-8));y=clamp(y,8,height-h-8);
-    const temp=e.temperature??e.waterTemperature??e.airTemperature??(e.type==='airHandler'?e.supplyTemperature:e.outdoorTemperature);
-    const power=e.isHeatMachine?e.heatOutput:e.type==='airHandler'?(e.power||0)+(e.compressorPower||0):e.type==='condenser'?(e.electricalPower||0):e.power||e.thermalPower||0;
+    const temp=e.temperature??e.waterTemperature??e.airTemperature??e.outdoorTemperature;
+    const power=e.isHeatMachine?e.heatOutput:e.power||e.thermalPower||0;
     const state=e.isHeatMachine?(e.started?'EM OPERAÇÃO':'AGUARDANDO'):FLUID_TYPES.has(e.type)?(e.networkStatus||'SEM REDE'):e.networkStatus&&e.networkStatus!=='READY'?e.networkStatus:e.status|| (e.enabled?'OPERACIONAL':'DESLIGADO');
     ctx.save();ctx.fillStyle='rgba(4,13,24,.94)';ctx.strokeStyle='#facc15';ctx.lineWidth=1;
     ctx.beginPath();ctx.roundRect(x,y,w,h,8);ctx.fill();ctx.stroke();
@@ -262,8 +223,9 @@ export class Renderer {
 
   drawZones(ctx){
     if(!this.zones?.length)return;
-    ctx.save();ctx.font='700 '+Math.max(7,this.tile*.34)+'px system-ui';ctx.textBaseline='top';
-    for(const z of this.zones){const x=z.x*this.tile,y=z.y*this.tile,w=z.width*this.tile,h=z.height*this.tile;ctx.strokeStyle='rgba(56,189,248,.16)';ctx.lineWidth=Math.max(.7,1/this.camera.zoom);ctx.setLineDash([this.tile*.24,this.tile*.18]);ctx.strokeRect(x+.5,y+.5,w-1,h-1);ctx.setLineDash([]);ctx.fillStyle='rgba(2,6,23,.68)';const label=(z.name||z.id)+(z.target?' · < '+z.target+'°C':'');const mw=ctx.measureText(label).width+8;ctx.fillRect(x+3,y+3,mw,Math.max(12,this.tile*.58));ctx.fillStyle='#7dd3fc';ctx.fillText(label,x+7,y+5);}
+    const thermal=this.mode==='thermal';
+    ctx.save();ctx.globalAlpha=thermal?.48:1;ctx.font='700 '+Math.max(7,this.tile*.34)+'px system-ui';ctx.textBaseline='top';
+    for(const z of this.zones){const x=z.x*this.tile,y=z.y*this.tile,w=z.width*this.tile,h=z.height*this.tile;ctx.strokeStyle=thermal?'rgba(56,189,248,.1)':'rgba(56,189,248,.16)';ctx.lineWidth=Math.max(.7,1/this.camera.zoom);ctx.setLineDash([this.tile*.24,this.tile*.18]);ctx.strokeRect(x+.5,y+.5,w-1,h-1);ctx.setLineDash([]);if(!thermal){ctx.fillStyle='rgba(2,6,23,.68)';const label=(z.name||z.id)+(z.target?' · < '+z.target+'°C':'');const mw=ctx.measureText(label).width+8;ctx.fillRect(x+3,y+3,mw,Math.max(12,this.tile*.58));ctx.fillStyle='#7dd3fc';ctx.fillText(label,x+7,y+5);}}
     ctx.restore();
   }
 
@@ -321,7 +283,7 @@ export class Renderer {
     ctx.save();ctx.fillStyle=selected?(valid?'rgba(34,197,94,.09)':'rgba(239,68,68,.12)'):'rgba(248,250,252,.025)';
     ctx.fillRect(x*this.tile,y*this.tile,this.tile,this.tile);
     ctx.strokeStyle=selected?(valid?'#4ade80':'#f87171'):'#f8fafc';ctx.globalAlpha=.72+pulse*.25;ctx.lineWidth=Math.max(1,2/this.camera.zoom);ctx.strokeRect(x*this.tile+1,y*this.tile+1,this.tile-2,this.tile-2);ctx.globalAlpha=1;
-    if(selected&&['fan','exhaust','pump','supplyVent','returnVent'].includes(selected)){
+    if(selected&&['fan','exhaust','pump','supplyVent','coolingUnit'].includes(selected)){
       const d=this.buildSystem.direction(),cx=(x+.5)*this.tile,cy=(y+.5)*this.tile;
       const distance=selected==='pump'?this.tile*1.4:this.tile*4;
       const spread=selected==='pump'?this.tile*.28:this.tile*.9;
@@ -347,20 +309,24 @@ export class Renderer {
     const stream=this.airflow.diagnostics(time);
     const haze=this.heatHaze.diagnostics();
     const sprites=this.entities.sprites.manager.stats,entityStats=this.entities.stats||{};
-    const hvac=world.hvac,handlers=world.entitiesByType('airHandler'),condensers=world.entitiesByType('condenser');
-    const supplyFlow=hvac?.networks.filter(network=>network.role==='supply').reduce((sum,network)=>sum+network.flowRate,0)||0;
-    const returnFlow=hvac?.networks.filter(network=>network.role==='return').reduce((sum,network)=>sum+network.flowRate,0)||0;
-    const hvacBalance=metrics?.hvacEnergyBalance;
+    const air=world.airDiagnostics||{},n=(value,digits=2)=>Number(value||0).toFixed(digits);
     const lines=[
+      'AIRFLOW',
+      `Velocity max/avg ${n(air.maxVelocity)} / ${n(air.averageVelocity)} m/s`,
+      `Pressure ${n(air.maxPressure)} Pa   Div ${n(air.maxDivergence,4)}`,
+      'FANS',
+      `Free/actual ${n(air.totalFanFreeFlow)} / ${n(air.totalFanActualFlow)} m³/s`,
+      `Operating point ${n(100*air.averageFanOperatingPoint,0)}%`,
+      'EXHAUST',
+      `Flow ${n(air.totalExhaustActualFlow)} m³/s   OP ${n(100*air.averageExhaustOperatingPoint,0)}%`,
+      `Heat rejection ${n(metrics?.exhaustRejectedPower/1000)} kW`,
+      'THERMAL',
+      `Machine heat ${n(world.entities.filter(e=>e.isHeatMachine).reduce((s,e)=>s+(e.heatGenerationPower||0),0)/1000)} kW`,
+      `Machine cooling ${n(metrics?.machineCoolingPower/1000)} kW`,
+      `External rejection ${n(metrics?.externalRejectedPower/1000)} kW`,
       'VISUAL PHYSICS',
       `Sprites      ${sprites.loaded}/${sprites.available}`,
       `Animated     ${entityStats.animated||0}   Fallback ${entityStats.fallbacks||0}`,
-      `HVAC networks ${hvac?.networks.length||0}   REF ${hvac?.refrigerantCircuits.length||0}`,
-      `Supply/return ${supplyFlow.toFixed(2)} / ${returnFlow.toFixed(2)} m³/s`,
-      `Cooling/room  ${(metrics?.hvacCooling/1000||0).toFixed(1)} / ${(handlers.reduce((sum,e)=>sum+(e.actualRoomCooling||0),0)/1000).toFixed(1)} kW`,
-      `Compressor/AH ${(handlers.reduce((sum,e)=>sum+(e.compressorPower||0),0)/1000).toFixed(1)} / ${(handlers.reduce((sum,e)=>sum+(e.power||0),0)/1000).toFixed(1)} kW`,
-      `Rejected heat ${(condensers.reduce((sum,e)=>sum+(e.heatRejected||0),0)/1000).toFixed(1)} kW`,
-      `Energy error  ${(hvacBalance?.errorPercent||0).toFixed(2)}%`,
       'Streamlines  '+String(stream.active).padStart(4),
       'Points       '+String(stream.points).padStart(4),
       'Stream gen   '+stream.generationMs.toFixed(2)+' ms',
@@ -368,7 +334,7 @@ export class Renderer {
       'Haze regions '+String(haze.regions).padStart(4),
       'Haze render  '+haze.renderMs.toFixed(2)+' ms',
     ];
-    const x=18,y=this.canvas.height/this.dpr-222,w=238,h=206;
+    const h=lines.length*12+14,x=18,y=Math.max(80,this.canvas.height/this.dpr-h-16),w=280;
     ctx.save();
     ctx.fillStyle='rgba(2,6,23,.9)';ctx.fillRect(x,y,w,h);
     ctx.strokeStyle='rgba(71,85,105,.7)';ctx.strokeRect(x+.5,y+.5,w-1,h-1);
@@ -382,28 +348,33 @@ export class Renderer {
 
   drawLegend(ctx,simulation,width=1000){
     const configs={
-      thermal:{title:'TEMPERATURA',left:'10°C',right:'80°C+',colors:['#1450dc','#22d3ee','#28c85a','#facc15','#f97316','#e62323']},
+      thermal:{title:'TEMPERATURA · FOCO 25–40°C',left:'',right:'',colors:[]},
       airflow:{title:'FLUXO DE AR',left:'baixo',right:'alto',colors:['#0f2742','#0ea5e9','#bae6fd']},
       pressure:{title:'PRESSÃO RELATIVA',left:'negativa',right:'positiva',colors:['#2563eb','#64748b','#ef4444']},
       fluid:{title:'ÁGUA / REDE',left:'fria',right:'quente',colors:['#2563eb','#22d3ee','#2dd4bf','#facc15','#f97316']},
-      hvac:{title:'DUTOS HVAC',left:'insuflação fria',right:'retorno quente',colors:['#1450dc','#22d3ee','#28c85a','#facc15','#f97316']},
+      cooling:{title:'CLIMATIZAÇÃO',left:'baixa capacidade',right:'alta capacidade',colors:['#38bdf8','#a78bfa','#34d399','#f59e0b','#f472b6']},
     };
     const c=configs[this.mode];if(!c)return;
-    const thermal=this.mode==='thermal',scale=thermal?this.thermalScale(simulation.world):null;
-    const x=14,y=thermal&&width<560?122:18,w=thermal?192:168,h=10,g=ctx.createLinearGradient(x,y,x+w,y);
+    const thermal=this.mode==='thermal';
+    const x=14,y=thermal&&width<560?122:18,w=thermal?Math.max(120,Math.min(270,width-36)):168,h=10,g=ctx.createLinearGradient(x,y,x+w,y);
     if(thermal){
-      for(let i=0;i<=12;i++){const n=i/12;g.addColorStop(n,'rgb('+rgbHeat(scale.min+n*(scale.max-scale.min),scale.min,scale.max).join(',')+')');}
+      for(const stop of THERMAL_STOPS){const position=thermalLegendPosition(stop.temp);g.addColorStop(position,'rgb('+stop.color.join(',')+')');}
     }else c.colors.forEach((color,i)=>g.addColorStop(i/(c.colors.length-1),color));
-    const cardHeight=thermal?58:50;
+    const cardHeight=thermal?72:50;
     ctx.fillStyle='rgba(2,6,23,.91)';ctx.fillRect(x-8,y-11,w+16,cardHeight);ctx.strokeStyle='rgba(100,116,139,.65)';ctx.strokeRect(x-7.5,y-10.5,w+15,cardHeight-1);
     ctx.fillStyle='#cbd5e1';ctx.font='800 9px system-ui';ctx.fillText(c.title,x,y-2);
     ctx.fillStyle=g;ctx.fillRect(x,y+5,w,h);
     if(thermal){
-      const targets=[...new Set((this.level?.objectives||[]).filter(o=>['machineTemperature','zoneTemperature','maxAirTemperature'].includes(o.type)).map(o=>o.max).filter(t=>t>=scale.min&&t<=scale.max))].sort((a,b)=>a-b).slice(0,4);
-      targets.forEach(t=>{const tx=x+(t-scale.min)/(scale.max-scale.min)*w;ctx.strokeStyle='#fff7ae';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(tx,y+3);ctx.lineTo(tx,y+18);ctx.stroke();});
-      ctx.fillStyle='#cbd5e1';ctx.font='9px system-ui';ctx.fillText(scale.min+'°C',x,y+30);const right=scale.max+'°C';ctx.fillText(right,x+w-ctx.measureText(right).width,y+30);
-      ctx.fillStyle='#fde68a';ctx.font='8px system-ui';ctx.fillText('Alvos da missão',x,y+43);
-      if(targets.length){ctx.fillStyle='#fff7ae';ctx.textAlign='right';ctx.fillText(targets.map(t=>t+'°').join(' · '),x+w,y+43);ctx.textAlign='left';}
+      const targets=[...new Set((this.level?.objectives||[]).filter(o=>['machineTemperature','zoneTemperature','maxAirTemperature'].includes(o.type)).map(o=>o.max).filter(Number.isFinite))].sort((a,b)=>a-b);
+      const failures=[...new Set((this.level?.failures||[]).map(f=>f.temperature).filter(Number.isFinite))].sort((a,b)=>a-b);
+      for(const t of targets){const tx=x+thermalLegendPosition(t)*w;ctx.strokeStyle='#fff7ae';ctx.lineWidth=1.3;ctx.beginPath();ctx.moveTo(tx,y+3);ctx.lineTo(tx,y+18);ctx.stroke();}
+      for(const t of failures){const tx=x+thermalLegendPosition(t)*w;ctx.strokeStyle='#fecaca';ctx.setLineDash([2,2]);ctx.beginPath();ctx.moveTo(tx,y+3);ctx.lineTo(tx,y+18);ctx.stroke();ctx.setLineDash([]);}
+      ctx.fillStyle='#cbd5e1';ctx.font='7px system-ui';ctx.textAlign='center';
+      const labels=w<225?[25,30,35,40,80]:[15,25,30,35,40,80];
+      for(const t of labels){const pos=thermalLegendPosition(t);ctx.fillText(t===80?'80°+':t+'°',x+pos*w,y+29);}
+      const target=targets[0]??this.zones?.find(z=>Number.isFinite(z.target))?.target??40,targetX=clamp(x+thermalLegendPosition(target)*w,x+32,x+w-32);
+      ctx.fillStyle='#fde68a';ctx.font='8px system-ui';ctx.textAlign=targetX>x+w*.7?'right':'left';ctx.fillText('▼ '+target+'° META',targetX,y+42);ctx.textAlign='left';
+      if(failures.length){const t=failures[0],tx=clamp(x+thermalLegendPosition(t)*w,x+30,x+w-30);ctx.fillStyle='#fca5a5';ctx.font='8px system-ui';ctx.textAlign=tx>x+w*.72?'right':'left';ctx.fillText('▲ '+t+'° FALHA',tx,y+55);ctx.textAlign='left';}
     }else{
       ctx.fillStyle='#cbd5e1';ctx.font='10px system-ui';ctx.fillText(c.left,x,y+31);ctx.fillText(c.right,x+w-ctx.measureText(c.right).width,y+31);
     }

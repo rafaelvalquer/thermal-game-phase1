@@ -20,6 +20,13 @@ export class AirDiagnostics {
       minPressure:Number.isFinite(minPressure)?minPressure:0,
       maxDivergence,
     };
+    for(const [type,label] of [['fan','Fan'],['exhaust','Exhaust']]){
+      const equipment=g.world.entities.filter(e=>e.type===type&&e.enabled);
+      this.values[type==='fan'?'fanCount':'exhaustCount']=equipment.length;
+      this.values['total'+label+'FreeFlow']=equipment.reduce((s,e)=>s+e.qFree,0);
+      this.values['total'+label+'ActualFlow']=equipment.reduce((s,e)=>s+e.currentFlow,0);
+      this.values['average'+label+'OperatingPoint']=equipment.length?equipment.reduce((s,e)=>s+e.flowEfficiency,0)/equipment.length:0;
+    }
     g.world.airDiagnostics=this.values;
     return this.values;
   }

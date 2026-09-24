@@ -4,20 +4,20 @@ import { MetricsPanel } from './MetricsPanel.js';
 import { ObjectivePanel } from './ObjectivePanel.js';
 import { Minimap } from './Minimap.js';
 import { MissionDebriefing } from './MissionDebriefing.js';
+import { DataCenterDashboard } from './DataCenterDashboard.js';
 
 const MODE_HELP={
   normal:'Operação · zonas, equipamentos e efeitos físicos',
-  thermal:'Térmico · cores representam temperatura',
+  thermal:'Térmico · 30°C atenção · 35°C quente · 40°C vermelho; confira a meta da fase',
   airflow:'Airflow · streamlines mostram trajetórias contínuas do campo de velocidade',
   pressure:'Pressão · azul negativa, vermelho positiva, cinza próximo de 0 Pa',
   fluid:'Fluido · temperatura, sentido e status de cada circuito',
-  hvac:'HVAC · dutos embutidos, temperatura, pressão e direção da vazão',
+  cooling:'Climatização · redes, capacidade, saídas e vazão de ar frio',
 };
-const HVAC_DUCT_TOOLS=new Set(['smallDuct','mediumDuct','largeDuct']);
 const DUCT_HINT=g=>{
-  if(HVAC_DUCT_TOOLS.has(g.build.selected))return (g.build.ductInsulated?'Isolado':'Sem isolamento')+' · I alterna · lado retorno inferido pelo vent';
-  if(g.build.selected&&['fan','exhaust','pump','supplyVent','returnVent'].includes(g.build.selected))return 'Direção: '+['→','↓','←','↑'][g.build.rotation]+' · R gira';
-  if(g.renderer.selectedEntity?.type==='ductDamper')return 'Abertura: '+Math.round(g.renderer.selectedEntity.opening*100)+'% · U abre · J fecha';
+  if(g.build.selected==='coolingUnit')return 'Modelo '+g.build.coolingUnitModel+' · M altera o modelo';
+  if(g.build.selected==='duct')return 'Arraste para ligar dutos e criar ramificações · I alterna isolamento';
+  if(g.build.selected&&['fan','exhaust','pump','supplyVent','coolingUnit'].includes(g.build.selected))return 'Direção: '+['→','↓','←','↑'][g.build.rotation]+' · R gira';
   return '';
 };
 
@@ -30,7 +30,15 @@ export class UIManager {
     this.objectives=new ObjectivePanel(document.querySelector('#objectives'));
     this.minimap=new Minimap(document.querySelector('#minimap'),game);
     this.debriefing=new MissionDebriefing(game,campaign,()=>window.__thermalShowCampaign?.(),level=>window.__thermalStartLevel?.(level));
+    this.datacenterDashboard=game.datacenter?new DataCenterDashboard(document.querySelector('#datacenterDashboard'),game.datacenter,message=>game.toast(message)):null;
+    this.datacenterDashboardTimer=0;
     this.graph=document.querySelector('#history');this.graphCtx=this.graph.getContext('2d');
+    if(game.level.thermalSystems?.simpleCooling){
+      document.querySelector('[data-mode="pressure"]')?.classList.add('hidden');
+      if(game.level.thermalSystems.waterCooling)document.querySelector('[data-mode="fluid"]')?.classList.remove('hidden');
+      else document.querySelector('[data-mode="fluid"]')?.classList.add('hidden');
+      document.querySelector('[data-mode="cooling"]')?.classList.remove('hidden');
+    }else document.querySelector('[data-mode="cooling"]')?.classList.add('hidden');
     this.bind();game.build.onChange=()=>{this.toolbar.render();if(game.build.selected)game.renderer.selectedEntity=null;};
   }
 
@@ -38,7 +46,6 @@ export class UIManager {
     document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{
       this.game.renderer.mode=b.dataset.mode;
       document.querySelectorAll('[data-mode]').forEach(x=>x.classList.toggle('active',x===b));
-      document.querySelector('[data-thermal-scale]')?.classList.toggle('hidden',b.dataset.mode!=='thermal');
       const help=document.querySelector('#modeHelp');if(help)help.textContent=MODE_HELP[b.dataset.mode];
       const airflowModes=document.querySelector('#airflowModes');if(airflowModes)airflowModes.classList.toggle('hidden',b.dataset.mode!=='airflow');
     });
@@ -50,16 +57,11 @@ export class UIManager {
     });
     document.querySelector('#pauseBtn').onclick=()=>this.game.sim.togglePause();
     document.querySelectorAll('[data-speed]').forEach(b=>b.onclick=()=>this.game.setSpeed(Number(b.dataset.speed)));
-    document.querySelector('#resetBtn').onclick=()=>window.__thermalStartLevel?.(this.game.level);
+    document.querySelector('#resetBtn').onclick=()=>window.__thermalStartLevel?.(this.game.level,this.game.datacenter?{fresh:true}:undefined);
     document.querySelector('#exitBtn').onclick=()=>window.__thermalShowCampaign?.();
     document.querySelectorAll('[data-panel-toggle]').forEach(button=>button.onclick=()=>{
       const panel=document.querySelector('#'+button.dataset.panelToggle),expanded=button.getAttribute('aria-expanded')==='true';
       button.setAttribute('aria-expanded',String(!expanded));panel.classList.toggle('mobile-open',!expanded);
-    });
-    document.querySelector('[data-thermal-scale]')?.addEventListener('click',event=>{
-      const renderer=this.game.renderer;renderer.thermalScaleMode=renderer.thermalScaleMode==='fixed'?'auto':'fixed';
-      event.currentTarget.textContent=renderer.thermalScaleMode==='fixed'?'Escala fixa':'Escala automática';
-      event.currentTarget.setAttribute('aria-pressed',String(renderer.thermalScaleMode==='fixed'));
     });
   }
 
@@ -72,7 +74,8 @@ export class UIManager {
   update(dt=0){
     const g=this.game,s=g.sim;
     this.metrics.update(s,g.build,g.level);this.objectives.update(s);this.inspector.update(g.world);this.minimap.update(dt);
-    document.querySelector('#clock').textContent=this.formatTime(s.elapsed);
+    if(this.datacenterDashboard){this.datacenterDashboardTimer+=dt;if(this.datacenterDashboardTimer>=.35){this.datacenterDashboardTimer=0;this.datacenterDashboard.update();}}
+    document.querySelector('#clock').textContent=g.datacenter?g.datacenter.clock.format():this.formatTime(s.elapsed);
     document.querySelector('#missionText').textContent=s.mission.message;
     document.querySelector('#pauseBtn').textContent=s.paused?'▶ Continuar':'Ⅱ Pausar';
     document.querySelector('#speedLabel').textContent=s.speed+'×';
@@ -84,32 +87,28 @@ export class UIManager {
   updateAlerts(){
     const root=document.querySelector('#alerts');if(!root)return;
     const s=this.game.sim,m=s.metrics,alerts=[],limit=this.game.level.powerLimit;
-    if(m.maxTemp>=80)alerts.push(['critical','OVERHEAT','Equipamento em faixa crítica']);
-    else if(m.maxTemp>50)alerts.push(['warn','HOTSPOT','Temperatura elevada detectada']);
+    const maxAirTemp=m.maxAirTemp??m.maxTemp??0,maxMachineTemp=m.maxMachineTemp??0;
+    if(maxAirTemp>=80)alerts.push(['critical','AR CRÍTICO','Ar ambiente em faixa crítica: '+maxAirTemp.toFixed(1)+' °C']);
+    else if(maxAirTemp>50)alerts.push(['warn','AR QUENTE','Temperatura do ar elevada: '+maxAirTemp.toFixed(1)+' °C']);
+    if(maxMachineTemp>=80)alerts.push(['critical','MÁQUINA SUPERAQUECIDA','Equipamento em faixa crítica: '+maxMachineTemp.toFixed(1)+' °C']);
+    else if(maxMachineTemp>50)alerts.push(['warn','MÁQUINA QUENTE','Temperatura do equipamento elevada: '+maxMachineTemp.toFixed(1)+' °C']);
+    const slaIssue=this.game.datacenter?.state.contracts.find(contract=>contract.dailyViolation||contract.lastSlaViolationDay===this.game.datacenter.clock.day);
+    if(slaIssue)alerts.push(['critical','SLA VIOLADO',slaIssue.clientName+' · disponibilidade ou temperatura fora do contrato.']);
     if(m.powerDraw>limit)alerts.push(['critical','POWER LIMIT','Limite de '+(limit/1000).toFixed(1)+' kW excedido']);
     const air=s.world.airDiagnostics;
     if(air?.maxDivergence>1.5)alerts.push(['warn','AIR SOLVER','Divergência elevada: '+air.maxDivergence.toFixed(2)]);
 
-    const networks=s.fluid.networks||[];
+    const networks=s.fluid?.networks||[];
     const badNetwork=networks.find(n=>n.entities.some(e=>e.type==='pump')&&!n.closed);
     if(badNetwork)alerts.push(['warn','FLUID '+badNetwork.status,badNetwork.id+' sem circulação válida']);
     else if(networks.some(n=>n.closed&&n.flowRate<.05))alerts.push(['warn','LOW FLOW','Circuito hidráulico com vazão insuficiente']);
 
-    const hvac=s.hvac;
-    const hvacIssue=hvac?.handlers.find(handler=>!['READY','OFF'].includes(handler.status));
-    if(hvacIssue)alerts.push(['warn','HVAC '+hvacIssue.status,hvacIssue.name+' sem operação HVAC nominal']);
-    if(hvac?.networks.some(network=>network.status==='READY'&&network.flowRate<.05))alerts.push(['warn','LOW HVAC FLOW','Rede HVAC conectada sem vazão suficiente']);
-    if(hvac?.networks.some(network=>network.deadEnds?.length))alerts.push(['warn','DUCT DEAD END','Há trechos de duto sem saída conectada']);
-    if(hvac?.networks.some(network=>network.pressure>180))alerts.push(['warn','DUCT PRESSURE HIGH','A rede está operando com perda de carga elevada']);
-    const pressurizedZone=[...(s.world.hvacZonePressure||new Map())].find(([,pressure])=>Math.abs(pressure)>35);
-    if(pressurizedZone)alerts.push(['warn','ROOM PRESSURE',pressurizedZone[1]>0?'Zona '+pressurizedZone[0]+' com pressão positiva elevada':'Zona '+pressurizedZone[0]+' com pressão negativa elevada']);
-    if(hvac?.handlers.some(handler=>handler.currentFlow>0&&handler.supplyTemperature>20))alerts.push(['warn','SUPPLY AIR TOO WARM','Insuflação acima de 20°C']);
-    const paired=hvac?.handlers.filter(handler=>handler.currentFlow>0)||[];
-    if(paired.some(handler=>Math.abs(handler.flowImbalance||0)>.2))alerts.push(['warn','RETURN / SUPPLY IMBALANCE','Vazões de retorno e insuflação diferem']);
-    const hotCondenser=hvac?.condensers.find(condenser=>condenser.indoor&&condenser.heatRejected>0);
-    if(hotCondenser)alerts.push(['warn','CONDENSER HEAT RECIRCULATION','Condensadora rejeitando calor dentro da instalação']);
-    if(hvac?.handlers.some(handler=>handler.status==='OVERLOAD'))alerts.push(['warn','AIR HANDLER OVERLOAD','Demanda de resfriamento supera capacidade disponível']);
-    if(hvac?.condensers.some(condenser=>condenser.status==='HIGH LOAD'||condenser.status==='HIGH HEAD'))alerts.push(['warn','CONDENSER OVERLOAD','Condensadora próxima do limite de rejeição térmica']);
+
+    const cooling=s.cooling;
+    if(cooling?.units.some(unit=>unit.status==='OVERLOAD'))alerts.push(['warn','REFRIGERAÇÃO SOBRECARREGADA','Adicione capacidade ou reduza a carga térmica.']);
+    if(cooling?.units.some(unit=>unit.indoor&&unit.heatRejected>0))alerts.push(['warn','CALOR NA SALA','Uma condensadora interna devolve calor ao ambiente onde está instalada.']);
+    if(cooling?.networks.some(network=>network.status==='MULTIPLE COOLING UNITS'))alerts.push(['warn','REDE COMPARTILHADA','Uma rede de dutos não pode atender duas condensadoras.']);
+    if(cooling?.units.some(unit=>unit.enabled&&unit.status==='DISCONNECTED'))alerts.push(['warn','SEM SAÍDA DE FRIO','Conecte a condensadora a dutos e a uma saída de ar gelado.']);
 
     if(s.mission.lastEventMessage)alerts.push(['warn','MISSION EVENT',s.mission.lastEventMessage]);
     root.innerHTML=alerts.length?alerts.slice(0,3).map(a=>'<div class="alert '+a[0]+'"><b>'+a[1]+'</b><span>'+a[2]+'</span></div>').join(''):'<div class="alert ok"><b>SYSTEM NOMINAL</b><span>Nenhum alerta operacional</span></div>';

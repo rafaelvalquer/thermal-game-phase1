@@ -1,20 +1,15 @@
 import { Entity } from './Entity.js';
 
-const SIZES={
-  smallDuct:{area:.08,diameter:.28,resistance:15,cost:80},
-  mediumDuct:{area:.18,diameter:.48,resistance:5,cost:140},
-  largeDuct:{area:.35,diameter:.7,resistance:1.8,cost:230},
-};
+const DUCT={area:.25,diameter:.56,resistance:3.8};
 
 export class AirDuct extends Entity {
-  constructor(x,y,{size='mediumDuct',embedded=false,temperature=25,insulated=false}={}){
-    const spec=SIZES[size]||SIZES.mediumDuct;
-    super(size,x,y);
-    this.size=size;this.crossSectionArea=spec.area;this.hydraulicDiameter=spec.diameter;
-    this.roughness=.00015;this.baseResistance=spec.resistance;this.resistance=spec.resistance;
+  constructor(x,y,{embedded=false,temperature=25,insulated=false,flowWeight=1}={}){
+    super('duct',x,y);
+    this.size='duct';this.crossSectionArea=DUCT.area;this.hydraulicDiameter=DUCT.diameter;
+    this.roughness=.00015;this.baseResistance=DUCT.resistance;this.resistance=DUCT.resistance;
     this.flowRate=0;this.airTemperature=temperature;this.pressure=0;this.pressureLoss=0;this.velocity=0;this.thermalPower=0;
     this.upstreamId=null;this.downstreamId=null;this.embedded=embedded;
     this.insulated=insulated;this.leakRate=0;this.humidity=0;this.condensationRisk=false;
-    this.networkId=null;this.networkRole=null;this.networkStatus='DISCONNECTED';this.direction={x:0,y:0};
+    this.networkId=null;this.networkRole=null;this.networkStatus='DISCONNECTED';this.direction={x:0,y:0};this.flowWeight=flowWeight;
   }
 }

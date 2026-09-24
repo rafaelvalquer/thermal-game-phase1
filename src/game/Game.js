@@ -9,15 +9,19 @@ import { UIManager } from '../ui/UIManager.js';
 import { GameLoop } from './GameLoop.js';
 import { clamp } from '../utils/MathUtils.js';
 import { extendPipePath } from '../building/PipePath.js';
-import { DUCT_TOOLS, HVAC_PATH_TOOLS } from '../building/PlacementValidator.js';
+import { DUCT_TOOLS } from '../building/PlacementValidator.js';
+import { DataCenterManager } from '../datacenter/DataCenterManager.js';
 
 export class Game {
   constructor(canvas,level,campaign){
-    this.canvas=canvas;this.level=level;this.campaign=campaign;
-    this.levelManager=new LevelManager();this.world=this.levelManager.load(level);
-    this.sim=new Simulation(this.world,level);
-    this.build=new BuildSystem(this.world,this.sim,{budget:level.budget,inventory:level.inventory});
-    this.camera=new Camera();this.renderer=new Renderer(canvas,this.camera);this.renderer.buildSystem=this.build;this.renderer.zones=level.zones||[];this.renderer.level=level;
+    this.canvas=canvas;this.level=level.datacenterSandbox?{...level,powerLimit:level.datacenter.powerCapacityKW*1000}:level;this.campaign=campaign;
+    this.levelManager=new LevelManager();this.world=this.levelManager.load(this.level);
+    this.datacenter=this.level.datacenterSandbox?new DataCenterManager(this.world,this.level):null;
+    if(this.datacenter)this.level.powerLimit=this.datacenter.powerGrid.capacityKW*1000;
+    this.sim=new Simulation(this.world,this.level);
+    this.build=new BuildSystem(this.world,this.sim,{budget:this.datacenter?.cash??this.level.budget,inventory:this.level.inventory});
+    this.datacenter?.attach(this.build,this.sim);
+    this.camera=new Camera();this.renderer=new Renderer(canvas,this.camera);this.renderer.buildSystem=this.build;this.renderer.zones=this.level.zones||[];this.renderer.level=this.level;
     this.assetsReady=this.renderer.preloadSprites();
     this.input=new InputManager(canvas);this.mouse=new MouseController(canvas,this.camera,this.renderer.tile);this.hover={x:0,y:0};
     this.setupInput();this.sim.initialize();this.ui=new UIManager(this,campaign);this.setSpeed(1);this.centerCamera();
@@ -29,17 +33,17 @@ export class Game {
     this.pipeDrag=null;
     this.renderer.pipePreview=()=>this.pipeDrag?.path||null;
     this.mouse.onMove=grid=>{this.hover=grid;this.renderer.hover=grid;if(this.pipeDrag)this.pipeDrag.path=extendPipePath(this.pipeDrag.path,grid);};
-    this.mouse.onPrimaryDown=grid=>{if(this.build.selected==='pipe'||HVAC_PATH_TOOLS.has(this.build.selected))this.pipeDrag={path:[{x:grid.x,y:grid.y}],tool:this.build.selected};};
+    this.mouse.onPrimaryDown=grid=>{if(this.build.selected==='pipe'||DUCT_TOOLS.has(this.build.selected))this.pipeDrag={path:[{x:grid.x,y:grid.y}],tool:this.build.selected};};
     this.mouse.onPrimary=grid=>{
       if(!this.world.inBounds(grid.x,grid.y))return;
-      if(this.build.selected==='pipe'||HVAC_PATH_TOOLS.has(this.build.selected))return;
+      if(this.build.selected==='pipe'||DUCT_TOOLS.has(this.build.selected))return;
       if(this.build.selected){const r=this.build.place(grid.x,grid.y);if(!r.ok)this.toast(r.reason);}
       else this.ui?.inspectAt(grid.x,grid.y);
     };
     this.mouse.onPrimaryUp=grid=>{
       if(!this.pipeDrag)return;
       this.pipeDrag.path=extendPipePath(this.pipeDrag.path,grid);
-      const result=this.pipeDrag.tool==='pipe'?this.build.placePipePath(this.pipeDrag.path):this.build.placeHVACPath(this.pipeDrag.path);
+      const result=this.pipeDrag.tool==='pipe'?this.build.placePipePath(this.pipeDrag.path):this.build.placeDuctPath(this.pipeDrag.path);
       this.pipeDrag=null;
       if(result.failed)this.toast(`${result.placed} trechos instalados; ${result.failed} posição(ões) ignorada(s)`);
     };
@@ -48,14 +52,12 @@ export class Game {
       if(window.__thermalLab!==this)return;
       if(e.repeat)return;
       if(e.code==='Space'){e.preventDefault();this.sim.togglePause();}
-      if(e.code==='KeyR'){if(this.renderer.selectedEntity?.type==='airHandler'){this.renderer.selectedEntity.rotate();this.toast('Portas da AHAir Handler giradas');}else this.build.rotate();}
+      if(e.code==='KeyR')this.build.rotate();
       if(e.code==='KeyI'&&DUCT_TOOLS.has(this.build.selected))this.toast('Isolamento: '+(this.build.toggleDuctInsulation()?'ativado':'padrão'));
-      if((e.code==='KeyU'||e.code==='KeyJ')&&this.renderer.selectedEntity?.type==='ductDamper'){
-        const damper=this.renderer.selectedEntity;damper.setOpening(damper.opening+(e.code==='KeyU' ? .25 : -.25));
-      }
+      if(e.code==='KeyM'&&this.build.selected==='coolingUnit'){const model=this.build.cycleCoolingUnitModel();this.toast('Modelo '+model.label+' · '+(model.ratedCoolingCapacity/1000)+' kW · $'+model.cost);}
       if(e.code==='F3'){e.preventDefault();this.renderer.debug=!this.renderer.debug;}
       if(e.code==='Escape'){this.pipeDrag=null;this.build.select(null);}
-      if(['Digit1','Digit2','Digit4'].includes(e.code))this.setSpeed(Number(e.code.at(-1)));
+      if(['Digit1','Digit2','Digit4','Digit8'].includes(e.code))this.setSpeed(Number(e.code.at(-1)));
     });
   }
 
@@ -76,7 +78,7 @@ export class Game {
     if(this.input.down('KeyA'))this.camera.move(-speed,0);
     if(this.input.down('KeyD'))this.camera.move(speed,0);
     const r=this.canvas.getBoundingClientRect();this.camera.constrain(r.width,r.height);
-    this.sim.update(dt);this.ui?.update(dt);
+    this.sim.update(dt);this.ui?.update(dt);this.datacenter?.updateAutoSave(dt);
   }
 
   render(){this.renderer.draw(this.world,this.sim);}
