@@ -8,6 +8,7 @@ export class CoolingUnit extends Entity {
   }={}){
     super('coolingUnit',x,y);
     this.name=name;this.direction={...direction};this.ratedCoolingCapacity=ratedCoolingCapacity;this.coolingCapacity=ratedCoolingCapacity;
+    this.footprintLength=tier==='industrial'?2:1;
     this.maxAirFlow=maxAirFlow;this.targetSupplyTemperature=targetSupplyTemperature;this.cop=cop;this.fanPower=fanPower;
     this.enabled=enabled;this.tier=tier;this.networkId=null;this.currentAirFlow=0;this.currentCooling=0;
     this.electricalPower=0;this.rejectedHeat=0;this.loadRatio=0;this.availableCapacity=ratedCoolingCapacity;

@@ -9,6 +9,7 @@ import { CoolingDistributionSolver } from '../../src/simulation/cooling/CoolingD
 import { PlacementValidator } from '../../src/building/PlacementValidator.js';
 import { CoolingSystem } from '../../src/simulation/cooling/CoolingSystem.js';
 import { AirflowSystem } from '../../src/simulation/AirflowSystem.js';
+import { ServerRack } from '../../src/entities/ServerRack.js';
 
 function addLine(world,{id,x=1,y=2,ducts=[{x:x+1,y},{x:x+2,y}],vent={x:x+3,y},weight=1,tier={}}={}){
   const unit=new CoolingUnit(x,y,{...tier});unit.missionId=id;world.addEntity(unit);
@@ -28,13 +29,22 @@ test('independent cooling units keep their own full capacity and separate networ
   assert.deepEqual(networks.map(network=>network.sourceUnit.ratedCoolingCapacity),[25000,25000]);
 });
 
-test('duct graph reports missing source, missing outlet, and multiple sources',()=>{
+test('industrial two-tile condenser connects through its rear cell while keeping its outlet clear',()=>{
+  const world=new World(9,6),unit=new CoolingUnit(4,2,{tier:'industrial',ratedCoolingCapacity:50000,maxAirFlow:5,direction:{x:1,y:0}});
+  world.addEntity(unit);world.addUtility(new AirDuct(3,2,{size:'duct'}));world.addUtility(new AirDuct(2,2,{size:'duct'}));world.addEntity(new SupplyVent(1,2));
+  assert.equal(world.entityAt(5,2),unit);
+  assert.equal(world.entityAt(6,2),undefined,'the discharge cell remains outside the footprint');
+  const network=new CoolingNetworkBuilder(world).build()[0];
+  assert.equal(network.status,'READY');assert.equal(network.sourceUnit,unit);assert.equal(network.paths.length,1);
+});
+
+test('duct graph reports missing source and outlet, and accepts multiple sources',()=>{
   const world=new World(8,8);
   world.addUtility(new AirDuct(2,1,{size:'duct'}));world.addEntity(new SupplyVent(3,1));
   world.addUtility(new AirDuct(2,3,{size:'duct'}));world.addEntity(new CoolingUnit(1,3));
   world.addUtility(new AirDuct(2,5,{size:'duct'}));world.addEntity(new CoolingUnit(1,5));world.addEntity(new CoolingUnit(3,5));world.addEntity(new SupplyVent(2,6));
   const status=new CoolingNetworkBuilder(world).build().map(network=>network.status);
-  assert.deepEqual(status,['NO COOLING UNIT','NO OUTLET','MULTIPLE COOLING UNITS']);
+  assert.deepEqual(status,['NO COOLING UNIT','NO OUTLET','READY']);
 });
 
 test('duct length and bends reduce branch efficiency',()=>{
@@ -55,6 +65,31 @@ test('outlet weights split one unit airflow proportionally',()=>{
   assert.ok(Math.abs(high.flowRate-1.8)<1e-9);
 });
 
+test('automatic outlet allocation prioritizes hotter rack groups and falls back to equal shares',()=>{
+  const network={status:'READY',paths:[
+    {vent:{flowMode:'auto',flowWeight:1},autoWeight:8,efficiency:1},
+    {vent:{flowMode:'auto',flowWeight:1},autoWeight:1,efficiency:1},
+  ]},solver=new CoolingDistributionSolver();
+  const [hot,cool]=solver.solve(network,2.4);
+  assert.equal(hot.flowRate,2.1333333333333333);
+  assert.equal(cool.flowRate,.26666666666666666);
+  network.paths.forEach(path=>path.autoWeight=1);
+  const [first,second]=solver.solve(network,2.4);
+  assert.equal(first.flowRate,1.2);assert.equal(second.flowRate,1.2);
+});
+
+test('cooling system routes more automatic airflow to the outlet serving racks above SLA',()=>{
+  const world=new World(12,8),unit=new CoolingUnit(0,0),hotVent=new SupplyVent(2,1,{direction:{x:0,y:1}}),coolVent=new SupplyVent(8,1,{direction:{x:0,y:1}});
+  const hotRack=new ServerRack(2,3,{slaTemperature:30}),coolRack=new ServerRack(8,3,{slaTemperature:30});
+  world.addEntity(unit);world.addEntity(hotVent);world.addEntity(coolVent);world.addEntity(hotRack);world.addEntity(coolRack);
+  world.setTemperature(2,2,50);world.setTemperature(8,2,30);
+  const network={id:'auto-test',sourceUnit:unit,sourceUnits:[unit],ducts:[],vents:[hotVent,coolVent],status:'READY',paths:[
+    {vent:hotVent,path:[],efficiency:1,unit},{vent:coolVent,path:[],efficiency:1,unit},
+  ]},metrics={},system=new CoolingSystem(world,new AirflowSystem(world,metrics),metrics);system.builder.build=()=>[network];
+  system.update(1);
+  assert.ok(hotVent.flowRate>coolVent.flowRate);
+});
+
 test('branch efficiency is counted once when dividing cooling between outlets',()=>{
   const world=new World(10,8);world.zones=[{id:'room',x:3,y:1,width:7,height:6}];
   for(let y=1;y<7;y++)for(let x=3;x<10;x++)world.setTemperature(x,y,32);
@@ -73,20 +108,20 @@ test('branch efficiency is counted once when dividing cooling between outlets',(
   assert.ok(Math.abs(network.paths[0].cooling/network.paths[1].cooling-2)<1e-8);
 });
 
-test('placing a duct that joins two cooling units is rejected',()=>{
+test('placing a duct can join two cooling units',()=>{
   const world=new World(8,5);
   world.addEntity(new CoolingUnit(1,2));world.addUtility(new AirDuct(2,2,{size:'duct'}));
   world.addEntity(new CoolingUnit(5,2));world.addUtility(new AirDuct(4,2,{size:'duct'}));
   const validator=new PlacementValidator(world);
-  assert.equal(validator.canPlace('duct',3,2),false);
+  assert.equal(validator.canPlace('duct',3,2),true);
   assert.equal(validator.canPlace('duct',3,1),true);
 });
 
-test('placing a second unit on an owned duct network and one outlet across two networks is rejected',()=>{
+test('placing a second unit on an owned duct network is allowed while ambiguous outlets are rejected',()=>{
   const world=new World(8,8),unit=new CoolingUnit(1,2);world.addEntity(unit);world.addUtility(new AirDuct(2,2,{size:'duct'}));
   world.thermalSystems={simpleCooling:true};
   const validator=new PlacementValidator(world);
-  assert.equal(validator.canPlace('coolingUnit',3,2),false);
+  assert.equal(validator.canPlace('coolingUnit',3,2),true);
   assert.equal(validator.canPlace('coolingUnit',5,5),true);
   world.addUtility(new AirDuct(2,4,{size:'duct'}));
   assert.equal(validator.canPlace('supplyVent',2,3),false);

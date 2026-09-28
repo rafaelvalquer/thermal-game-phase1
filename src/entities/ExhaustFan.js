@@ -5,11 +5,11 @@ export class ExhaustFan extends Entity {
   constructor(x,y,direction={x:1,y:0}){
     super('exhaust',x,y);
     this.direction=direction;
-    this.qFree=3.2;
+    this.qFree=4;
     this.pressureShutoff=220;
     this.captureRadius=AIR.exhaustCaptureRadius;
     this.captureStrength=AIR.exhaustCaptureStrength;
-    this.status='NO OUTLET';
+    this.status='IDLE';
     this.heatRejectedPower=0;
     this.efficiency=.68;
     this.faceArea=.72;

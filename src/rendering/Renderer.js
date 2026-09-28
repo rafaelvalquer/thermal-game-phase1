@@ -9,18 +9,20 @@ import { ThermalDistortionBuffer } from './thermal/ThermalDistortionBuffer.js';
 import { HeatHazeRenderer } from './thermal/HeatHazeRenderer.js';
 import { VisualSettings } from './VisualSettings.js';
 import { FLUID_TYPES, waterCss, THERMAL_STOPS } from './VisualTheme.js';
-import { BUILD_CATALOG } from '../building/BuildCatalog.js';
+import { BUILD_CATALOG, STRUCTURE_TOOLS } from '../building/BuildCatalog.js';
 import { clamp } from '../utils/MathUtils.js';
+import { entityFootprintCells } from '../entities/EntityFootprint.js';
 import { DUCT_TOOLS } from '../building/PlacementValidator.js';
 import { CoolingDuctRenderer } from './cooling/CoolingDuctRenderer.js';
 import { CoolingFlowRenderer } from './cooling/CoolingFlowRenderer.js';
 import { CoolingOverlayRenderer } from './cooling/CoolingOverlayRenderer.js';
 import { CoolingUnitRenderer } from './cooling/CoolingUnitRenderer.js';
+import { CoolingAirExchange } from '../simulation/cooling/CoolingAirExchange.js';
 
 export class Renderer {
   constructor(canvas,camera,{tilePixels=14}={}){
     this.canvas=canvas;this.ctx=canvas.getContext('2d');this.camera=camera;this.tile=tilePixels;
-    this.mode='normal';this.debug=false;this.hover=null;this.buildSystem=null;this.selectedEntity=null;this.level=null;
+    this.mode='normal';this.debug=false;this.hover=null;this.buildSystem=null;this.selectedEntity=null;this.highlightedContractId=null;this.level=null;
     this.tileRenderer=new TileRenderer();this.heatmap=new HeatmapRenderer();this.airflow=new AirflowRenderer();this.pressure=new PressureRenderer();
     this.entities=new EntityRenderer();this.effects=new EffectsRenderer();
     this.coolingDucts=new CoolingDuctRenderer();this.coolingFlow=new CoolingFlowRenderer();this.coolingOverlay=new CoolingOverlayRenderer();this.coolingUnits=new CoolingUnitRenderer();
@@ -34,28 +36,31 @@ export class Renderer {
 
   draw(world,simulation){
     this.resize();
-    const ctx=this.ctx,time=VisualSettings.reduceMotion?0:performance.now()/1000;
+    const ctx=this.ctx,time=VisualSettings.reduceMotion?0:(simulation.visualTime??0),uiTime=VisualSettings.reduceMotion?0:performance.now()/1000;
     const width=this.canvas.width/this.dpr,height=this.canvas.height/this.dpr;
 
     ctx.setTransform(this.dpr,0,0,this.dpr,0,0);
+    ctx.imageSmoothingEnabled=false;
     ctx.clearRect(0,0,width,height);
     const bg=ctx.createLinearGradient(0,0,0,height);
-    bg.addColorStop(0,'#07111f');bg.addColorStop(1,'#020617');
+    bg.addColorStop(0,'#253239');bg.addColorStop(1,'#10191e');
     ctx.fillStyle=bg;ctx.fillRect(0,0,width,height);
 
-    const renderDirect=this.mode==='thermal';
+    const renderDirect=this.mode==='thermal'||!VisualSettings.heatHaze;
+    const bounds={x:this.camera.x,y:this.camera.y,width:width/this.camera.zoom,height:height/this.camera.zoom};
     if(renderDirect||this.distortionBuffer.ensure(width,height,this.dpr)){
       const scene=renderDirect?ctx:this.distortionBuffer.context();
       scene.save();
       scene.scale(this.camera.zoom,this.camera.zoom);
       scene.translate(-this.camera.x,-this.camera.y);
-      this.tileRenderer.draw(scene,world,this.tile,this.zones||[],this.mode);
+      scene.imageSmoothingEnabled=false;
+      this.tileRenderer.draw(scene,world,this.tile,this.zones||[],this.mode,bounds);
       if(this.mode==='thermal')this.heatmap.draw(scene,world,this.tile);
-      this.entities.draw(scene,world,this.tile,this.mode,time,{selectedEntity:this.selectedEntity});
+      this.entities.draw(scene,world,this.tile,this.mode,time,{selectedEntity:this.selectedEntity,bounds,zoom:this.camera.zoom});
       this.coolingDucts.draw(scene,world,this.tile,this.mode,this.camera.zoom);
-      this.effects.draw(scene,world,this.tile,this.mode,time);
-      if(this.buildSystem?.selected)this.drawBuildPreview(scene,world,time);
-      this.drawRecentPlacement(scene,time);
+      this.effects.draw(scene,world,this.tile,this.mode,time,bounds);
+      if(this.buildSystem?.selected)this.drawBuildPreview(scene,world,uiTime);
+      this.drawRecentPlacement(scene,uiTime);
       scene.restore();
 
       if(!renderDirect){
@@ -73,21 +78,24 @@ export class Renderer {
     if(this.mode==='fluid')this.drawFluidNetwork(ctx,world,time);
     if(this.mode==='cooling'&&simulation.cooling){
       this.coolingOverlay.draw(ctx,world,this.tile,time,this.camera.zoom,this.selectedEntity);
-      this.coolingFlow.draw(ctx,simulation.cooling.networks,this.tile,time,this.camera.zoom);
+      this.coolingFlow.draw(ctx,simulation.cooling.networks,this.tile,time,this.camera.zoom,this.selectedEntity);
       for(const unit of simulation.cooling.units)this.coolingUnits.draw(ctx,unit,this.tile,this.camera.zoom);
     }
     if(this.mode==='airflow'){
-      this.airflow.draw(ctx,world,this.tile,time,this.camera.zoom);
+      this.airflow.draw(ctx,world,this.tile,time,this.camera.zoom,bounds);
       this.drawFocusedAirflow(ctx,world,time);
     }
     this.drawFailureAlerts(ctx,world,simulation,time);
     this.drawEventHighlight(ctx,world,simulation,time);
+    this.drawContractRackHighlights(ctx,world,time);
     this.drawSelection(ctx);
+    this.drawTechnicianRoute(ctx,world);
+    if(this.selectedEntity?.type==='supplyVent')this.drawVentCoverage(ctx,world,this.selectedEntity);
     if(this.selectedEntity?.type==='exchanger'){
       const machine=world.entities.find(e=>e.id===this.selectedEntity.machineId)||world.entities.find(e=>e.isHeatMachine&&Math.abs(e.x-this.selectedEntity.x)+Math.abs(e.y-this.selectedEntity.y)===1);
       if(machine)this.outlineEntity(ctx,machine,'#fb923c',time,1.2);
     }
-    this.drawHover(ctx,world,time);
+    this.drawHover(ctx,world,uiTime);
     if(this.debug)this.drawDebug(ctx,world);
     ctx.restore();
 
@@ -103,9 +111,11 @@ export class Renderer {
     const p=this.hover,tool=this.buildSystem.selected;if(!p||(!world.inBounds(p.x,p.y)&&tool!=='pipe'&&!DUCT_TOOLS.has(tool)))return;
     const pipePath=tool==='pipe'?this.pipePreview?.():null;
     const utilityPath=DUCT_TOOLS.has(tool)?this.pipePreview?.():null;
+    const structurePath=STRUCTURE_TOOLS.has(tool)?this.pipePreview?.():null;
     if(utilityPath?.length&&DUCT_TOOLS.has(tool)){
       const plan=this.buildSystem.utilityPlacement.planPath(tool,utilityPath,{inventory:this.buildSystem.inventory[tool]??0,budget:this.buildSystem.budget,cost:BUILD_CATALOG[tool].cost});
       for(const point of plan.entries){
+        if(point.connect)continue;
         this.coolingDucts.preview(ctx,point.x,point.y,this.tile,tool,point.valid,this.camera.zoom,{embedded:point.embedded});
       }
       return;
@@ -123,7 +133,25 @@ export class Renderer {
       }
       return;
     }
-    const valid=this.buildSystem.validator.canPlace(tool,p.x,p.y)&&this.buildSystem.canAfford(tool),c=BUILD_CATALOG[tool];
+    if(structurePath?.length){
+      let remaining=this.buildSystem.inventory[tool]??0,budget=this.buildSystem.budget;
+      const material=world.registry.get(BUILD_CATALOG[tool].material),cost=BUILD_CATALOG[tool].cost;
+      for(const point of structurePath){
+        const valid=remaining>0&&budget>=cost&&this.buildSystem.canPlace(tool,point.x,point.y);
+        if(world.inBounds(point.x,point.y)){
+          ctx.save();ctx.globalAlpha=valid?.5:.2;
+          this.tileRenderer.material(ctx,material,point.x,point.y,point.x*this.tile,point.y*this.tile,this.tile);
+          ctx.restore();
+        }
+        ctx.save();ctx.fillStyle=valid?'rgba(34,197,94,.1)':'rgba(239,68,68,.14)';ctx.strokeStyle=valid?'#4ade80':'#f87171';
+        ctx.lineWidth=Math.max(1,1.6/this.camera.zoom);
+        ctx.fillRect(point.x*this.tile,point.y*this.tile,this.tile,this.tile);
+        ctx.strokeRect(point.x*this.tile+1,point.y*this.tile+1,this.tile-2,this.tile-2);ctx.restore();
+        if(valid){remaining--;budget-=cost;}
+      }
+      return;
+    }
+    const valid=this.buildSystem.canPlace(tool,p.x,p.y)&&this.buildSystem.canAfford(tool),c=BUILD_CATALOG[tool];
     if(c?.kind==='material'){
       ctx.save();ctx.globalAlpha=valid?.48:.24;
       this.tileRenderer.material(ctx,world.registry.get(c.material),p.x,p.y,p.x*this.tile,p.y*this.tile,this.tile);
@@ -131,14 +159,48 @@ export class Renderer {
     }else if(DUCT_TOOLS.has(tool)){
       this.coolingDucts.preview(ctx,p.x,p.y,this.tile,tool,valid,this.camera.zoom,{embedded:!world.isAir(p.x,p.y)});
     }
-    else this.entities.drawPreview(ctx,world,tool,p.x,p.y,this.buildSystem.direction(),this.tile,this.mode,time,valid);
+    else this.entities.drawPreview(ctx,world,tool,p.x,p.y,this.buildSystem.direction(),this.tile,this.mode,time,valid,tool==='coolingUnit'?this.buildSystem.coolingUnitModel:null);
+
+    if(tool==='supplyVent')this.drawVentCoverage(ctx,world,{x:p.x,y:p.y,direction:this.buildSystem.direction()},{preview:true});
 
     if(tool==='exchanger'){
       const machine=world.entities.find(e=>e.isHeatMachine&&Math.abs(e.x-p.x)+Math.abs(e.y-p.y)===1);
       if(machine)this.outlineEntity(ctx,machine,'#fb923c',time,1.2);
     }
     ctx.save();ctx.fillStyle=valid?'rgba(34,197,94,.1)':'rgba(239,68,68,.14)';ctx.strokeStyle=valid?'#4ade80':'#f87171';
-    ctx.lineWidth=Math.max(1,1.6/this.camera.zoom);ctx.fillRect(p.x*this.tile,p.y*this.tile,this.tile,this.tile);ctx.strokeRect(p.x*this.tile+1,p.y*this.tile+1,this.tile-2,this.tile-2);ctx.restore();
+    ctx.lineWidth=Math.max(1,1.6/this.camera.zoom);
+    for(const cell of this.buildSystem.placementCells(tool,p.x,p.y)){
+      ctx.fillRect(cell.x*this.tile,cell.y*this.tile,this.tile,this.tile);
+      ctx.strokeRect(cell.x*this.tile+1,cell.y*this.tile+1,this.tile-2,this.tile-2);
+    }
+    ctx.restore();
+  }
+
+  drawVentCoverage(ctx,world,vent,{preview=false}={}){
+    const exchange=world.coolingSystem?.exchange||new CoolingAirExchange(world,null),cells=exchange.supplyCells(vent),served=exchange.serviceRacks(vent),intakes=new Set(served.map(item=>world.index(item.x,item.y)));
+    if(!cells.length)return;
+    ctx.save();ctx.globalAlpha=preview ? .55 : .72;
+    for(const cell of cells){
+      const x=cell.x*this.tile,y=cell.y*this.tile,index=world.index(cell.x,cell.y),target=intakes.has(index);
+      ctx.fillStyle=target?'rgba(34,211,238,.34)':'rgba(56,189,248,.12)';ctx.strokeStyle=target?'#67e8f9':'rgba(125,211,252,.55)';ctx.lineWidth=Math.max(1,1.3/this.camera.zoom);
+      ctx.fillRect(x+1,y+1,this.tile-2,this.tile-2);ctx.strokeRect(x+1,y+1,this.tile-2,this.tile-2);
+    }
+    for(const item of served){
+      const x=(item.x+.5)*this.tile,y=(item.y+.5)*this.tile;
+      ctx.fillStyle='#cffafe';ctx.strokeStyle='#0891b2';ctx.lineWidth=Math.max(1,1.5/this.camera.zoom);
+      ctx.beginPath();ctx.arc(x,y,this.tile*.16,0,Math.PI*2);ctx.fill();ctx.stroke();
+    }
+    const d=vent.direction||{x:0,y:1};
+    for(let step=1;step<=3;step++){
+      const x=vent.x+d.x*step,y=vent.y+d.y*step;
+      if(!world.inBounds(x,y))break;
+      if(world.isAir(x,y))continue;
+      const px=(x+.5)*this.tile,py=(y+.5)*this.tile,size=this.tile*.28;
+      ctx.globalAlpha=.9;ctx.fillStyle='rgba(127,29,29,.72)';ctx.strokeStyle='#fb7185';ctx.lineWidth=Math.max(1.2,1.5/this.camera.zoom);
+      ctx.fillRect(x*this.tile+1,y*this.tile+1,this.tile-2,this.tile-2);ctx.strokeRect(x*this.tile+1,y*this.tile+1,this.tile-2,this.tile-2);
+      ctx.beginPath();ctx.moveTo(px-size,py-size);ctx.lineTo(px+size,py+size);ctx.moveTo(px+size,py-size);ctx.lineTo(px-size,py+size);ctx.stroke();break;
+    }
+    ctx.restore();
   }
 
 
@@ -156,6 +218,11 @@ export class Renderer {
     ctx.save();ctx.strokeStyle=color;ctx.globalAlpha=pulse;ctx.shadowColor=color;ctx.shadowBlur=this.tile*.4;
     ctx.lineWidth=Math.max(1.3,2/this.camera.zoom)*scale;ctx.setLineDash([this.tile*.15,this.tile*.09]);
     ctx.strokeRect(x-this.tile*.1,y-this.tile*.1,this.tile*1.2,this.tile*1.2);ctx.restore();
+  }
+
+  drawContractRackHighlights(ctx,world,time){
+    if(!this.highlightedContractId)return;
+    for(const rack of world.entities)if(rack.type==='serverRack'&&rack.contractId===this.highlightedContractId)this.outlineEntity(ctx,rack,'#38bdf8',time,1.55);
   }
 
   drawFailureAlerts(ctx,world,simulation,time){
@@ -229,61 +296,91 @@ export class Renderer {
     ctx.restore();
   }
 
-  drawFluidNetwork(ctx,world,time){
+  drawFluidNetwork(ctx,world,time,selected=this.selectedEntity,zoom=this.camera.zoom||1){
     const fluid=world.entities.filter(e=>FLUID_TYPES.has(e.type));
+    const selectingFluid=Boolean(selected&&FLUID_TYPES.has(selected.type)),selectedNetwork=selectingFluid?selected.networkId:null;
     ctx.save();ctx.lineCap='round';ctx.lineJoin='round';
 
     for(const a of fluid)for(const b of fluid){
       if(a.id>=b.id||Math.abs(a.x-b.x)+Math.abs(a.y-b.y)!==1)continue;
       const ax=(a.x+.5)*this.tile,ay=(a.y+.5)*this.tile,bx=(b.x+.5)*this.tile,by=(b.y+.5)*this.tile;
       const valid=a.circuitClosed&&b.circuitClosed&&a.networkId===b.networkId;
-      const t=((a.waterTemperature||25)+(b.waterTemperature||25))/2;
+      const t=((a.waterTemperature??25)+(b.waterTemperature??25))/2;
+      const focused=!selectingFluid||(selectedNetwork?(a.networkId===selectedNetwork||b.networkId===selectedNetwork):(a===selected||b===selected));
 
+      ctx.globalAlpha=focused?1:.14;
       ctx.strokeStyle=valid?'rgba(15,23,42,.9)':'rgba(69,26,3,.88)';
       ctx.lineWidth=this.tile*.45;ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();
-      ctx.strokeStyle=valid?waterCss(t,.95):'rgba(245,158,11,.65)';
+      ctx.strokeStyle=valid?waterCss(t,.95):'rgba(251,113,133,.88)';
       ctx.lineWidth=this.tile*.22;ctx.stroke();
 
-      let from=null,to=null;
-      if(a.downstreamId===b.id){from=a;to=b;}
-      else if(b.downstreamId===a.id){from=b;to=a;}
+      const flowLink=(a.flowLinks||[]).find(link=>(link.from===a&&link.to===b)||(link.from===b&&link.to===a));
+      let from=flowLink?.from||null,to=flowLink?.to||null,edgeFlow=flowLink?.flowRate||0;
+      if(!flowLink&&a.downstreamId===b.id){from=a;to=b;edgeFlow=a.flowRate||0;}
+      else if(!flowLink&&b.downstreamId===a.id){from=b;to=a;edgeFlow=b.flowRate||0;}
 
-      if(valid&&from&&from.flowRate>.02){
-        const phase=(time*(.72+from.flowRate*.2)+from.id*.137)%1;
+      if(valid&&from&&edgeFlow>.02){
         const fx=(from.x+.5)*this.tile,fy=(from.y+.5)*this.tile,tx=(to.x+.5)*this.tile,ty=(to.y+.5)*this.tile;
-        const px=fx+(tx-fx)*phase,py=fy+(ty-fy)*phase;
-        const angle=Math.atan2(ty-fy,tx-fx),size=Math.max(2,this.tile*.12);
-        ctx.fillStyle='rgba(240,249,255,.96)';
-        ctx.save();ctx.translate(px,py);ctx.rotate(angle);ctx.beginPath();ctx.moveTo(size,0);ctx.lineTo(-size*.7,-size*.55);ctx.lineTo(-size*.7,size*.55);ctx.closePath();ctx.fill();ctx.restore();
+        const angle=Math.atan2(ty-fy,tx-fx),size=Math.max(4.5,this.tile*.2)/Math.max(.25,zoom),count=Math.max(2,Math.min(5,Math.ceil(edgeFlow*1.35))),speed=.65+Math.min(2.2,edgeFlow*.65);
+        ctx.fillStyle=waterCss(t,.98);
+        for(let particle=0;particle<count;particle++){
+          const phase=(time*speed+from.id*.137+particle/count)%1,px=fx+(tx-fx)*phase,py=fy+(ty-fy)*phase;
+          ctx.save();ctx.translate(px,py);ctx.rotate(angle);ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=size*.8;
+          ctx.beginPath();ctx.moveTo(size,0);ctx.lineTo(-size*.72,-size*.62);ctx.lineTo(-size*.48,0);ctx.lineTo(-size*.72,size*.62);ctx.closePath();ctx.fill();
+          ctx.shadowBlur=0;ctx.strokeStyle='rgba(224,242,254,.95)';ctx.lineWidth=Math.max(.8,size*.16);ctx.stroke();
+          ctx.globalAlpha*=.58;ctx.strokeStyle=ctx.fillStyle;ctx.lineWidth=Math.max(1,size*.22);ctx.beginPath();ctx.moveTo(-size*.88,0);ctx.lineTo(-size*1.65,0);ctx.stroke();ctx.restore();
+        }
       }
+      ctx.globalAlpha=1;
     }
     for(const e of fluid){
       const neighbors=[[1,0],[-1,0],[0,1],[0,-1]].filter(([dx,dy])=>{const n=world.entityAt(e.x+dx,e.y+dy);return n&&FLUID_TYPES.has(n.type);});
-      const needsAttention=(e.type==='pump'&&(!e.circuitClosed||(e.flowRate||0)<.02))||(e.type==='pipe'&&neighbors.length<2);
+      const focused=!selectingFluid||(selectedNetwork?e.networkId===selectedNetwork:e===selected);
+      const fault=e.networkStatus&&e.networkStatus!=='CLOSED';
+      const isOpenEnd=neighbors.length<2;
+      const isJunction=neighbors.length>2;
+      const needsAttention=(e.type==='pump'&&(!e.circuitClosed||(e.flowRate||0)<.02))||((e.type==='pipe'||e.type==='radiator'||e.type==='exchanger'||e.type==='tank')&&(isOpenEnd||(isJunction&&!e.circuitClosed)));
       if(!needsAttention)continue;
       const x=(e.x+.5)*this.tile,y=(e.y+.5)*this.tile-this.tile*.28;
-      ctx.fillStyle='#7c2d12';ctx.strokeStyle='#fbbf24';ctx.lineWidth=Math.max(1,1/this.camera.zoom);
+      ctx.globalAlpha=focused?1:.16;ctx.fillStyle='#7f1d1d';ctx.strokeStyle=fault?'#fb7185':'#fbbf24';ctx.lineWidth=Math.max(1,1/zoom);
       ctx.beginPath();ctx.arc(x,y,this.tile*.18,0,Math.PI*2);ctx.fill();ctx.stroke();
       ctx.fillStyle='#fff7ed';ctx.font='900 '+Math.max(7,this.tile*.22)+'px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('!',x,y);
     }
-    ctx.restore();
+    ctx.globalAlpha=1;ctx.restore();
   }
 
   drawSelection(ctx){
     const e=this.selectedEntity;if(!e)return;
-    const x=e.x*this.tile,y=e.y*this.tile,pulse=VisualSettings.reduceMotion ? .7 : .5+.5*Math.sin(performance.now()/180);
+    const cells=entityFootprintCells(e),minX=Math.min(...cells.map(cell=>cell.x)),maxX=Math.max(...cells.map(cell=>cell.x)),minY=Math.min(...cells.map(cell=>cell.y)),maxY=Math.max(...cells.map(cell=>cell.y)),x=minX*this.tile,y=minY*this.tile,w=(maxX-minX+1)*this.tile,h=(maxY-minY+1)*this.tile,pulse=VisualSettings.reduceMotion ? .7 : .5+.5*Math.sin(performance.now()/180);
     ctx.save();ctx.strokeStyle='rgba(250,204,21,'+(.55+pulse*.35)+')';ctx.lineWidth=Math.max(1.2,2/this.camera.zoom);
-    ctx.setLineDash([this.tile*.18,this.tile*.12]);ctx.strokeRect(x-this.tile*.12,y-this.tile*.12,this.tile*1.24,this.tile*1.24);ctx.setLineDash([]);ctx.restore();
+    ctx.setLineDash([this.tile*.18,this.tile*.12]);ctx.strokeRect(x-this.tile*.12,y-this.tile*.12,w+this.tile*.24,h+this.tile*.24);ctx.setLineDash([]);ctx.restore();
+  }
+
+  drawTechnicianRoute(ctx,world){
+    const worker=this.selectedEntity;
+    if(worker?.type!=='technician'||worker.action!=='moving'||worker.targetRackId==null)return false;
+    const rack=world.entities.find(entity=>entity.type==='serverRack'&&entity.id===worker.targetRackId);
+    if(!rack)return false;
+    const tile=this.tile,progress=Math.max(0,Math.min(1,worker.moveProgress||0));
+    const current={x:((worker.fromX??worker.x)+((worker.toX??worker.x)-(worker.fromX??worker.x))*progress+.5)*tile,y:((worker.fromY??worker.y)+((worker.toY??worker.y)-(worker.fromY??worker.y))*progress+.5)*tile};
+    const points=[current,...(worker.path||[]).slice(worker.pathIndex||0).map(point=>({x:(point.x+.5)*tile,y:(point.y+.5)*tile}))];
+    if(!points.length)return false;
+    ctx.save();ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='rgba(34,211,238,.95)';ctx.lineWidth=Math.max(2.2,2.6/(this.camera.zoom||1));ctx.setLineDash([tile*.22,tile*.14]);ctx.beginPath();ctx.moveTo(points[0].x,points[0].y);for(const point of points.slice(1))ctx.lineTo(point.x,point.y);ctx.stroke();ctx.setLineDash([]);
+    const goal=points.at(-1);ctx.fillStyle='#67e8f9';ctx.strokeStyle='#082f49';ctx.lineWidth=Math.max(1,1/(this.camera.zoom||1));ctx.beginPath();ctx.arc(goal.x,goal.y,Math.max(3,tile*.13),0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.strokeStyle='rgba(251,146,60,.96)';ctx.lineWidth=Math.max(2,2/(this.camera.zoom||1));ctx.setLineDash([tile*.13,tile*.1]);ctx.strokeRect(rack.x*tile+1,rack.y*tile+1,tile-2,tile-2);ctx.setLineDash([]);ctx.restore();return true;
   }
 
   drawHover(ctx,world,time){
     if(!this.hover||!world.inBounds(this.hover.x,this.hover.y))return;
     const x=this.hover.x,y=this.hover.y,selected=this.buildSystem?.selected;
-    const valid=selected?this.buildSystem.validator.canPlace(selected,x,y)&&this.buildSystem.canAfford(selected):true,pulse=VisualSettings.reduceMotion ? .7 : .5+.5*Math.sin(time*5);
+    if(STRUCTURE_TOOLS.has(selected)&&this.pipePreview?.()?.length)return;
+    const valid=selected?this.buildSystem.canPlace(selected,x,y)&&this.buildSystem.canAfford(selected):true,pulse=VisualSettings.reduceMotion ? .7 : .5+.5*Math.sin(time*5);
     ctx.save();ctx.fillStyle=selected?(valid?'rgba(34,197,94,.09)':'rgba(239,68,68,.12)'):'rgba(248,250,252,.025)';
-    ctx.fillRect(x*this.tile,y*this.tile,this.tile,this.tile);
-    ctx.strokeStyle=selected?(valid?'#4ade80':'#f87171'):'#f8fafc';ctx.globalAlpha=.72+pulse*.25;ctx.lineWidth=Math.max(1,2/this.camera.zoom);ctx.strokeRect(x*this.tile+1,y*this.tile+1,this.tile-2,this.tile-2);ctx.globalAlpha=1;
-    if(selected&&['fan','exhaust','pump','supplyVent','coolingUnit'].includes(selected)){
+    const previewCells=selected?this.buildSystem.placementCells(selected,x,y):[{x,y}];
+    for(const cell of previewCells)ctx.fillRect(cell.x*this.tile,cell.y*this.tile,this.tile,this.tile);
+    ctx.strokeStyle=selected?(valid?'#4ade80':'#f87171'):'#f8fafc';ctx.globalAlpha=.72+pulse*.25;ctx.lineWidth=Math.max(1,2/this.camera.zoom);
+    for(const cell of previewCells)ctx.strokeRect(cell.x*this.tile+1,cell.y*this.tile+1,this.tile-2,this.tile-2);ctx.globalAlpha=1;
+    if(selected&&['fan','exhaust','pump','supplyVent','coolingUnit','industrialCoolingUnit'].includes(selected)){
       const d=this.buildSystem.direction(),cx=(x+.5)*this.tile,cy=(y+.5)*this.tile;
       const distance=selected==='pump'?this.tile*1.4:this.tile*4;
       const spread=selected==='pump'?this.tile*.28:this.tile*.9;

@@ -5,12 +5,13 @@ import { World } from '../../src/world/World.js';
 import { Machine } from '../../src/entities/Machine.js';
 import { ExhaustFan } from '../../src/entities/ExhaustFan.js';
 
-test('Inspector distinguishes flow efficiency from motor efficiency and displays outlet state',()=>{
+test('Inspector distinguishes flow efficiency from motor efficiency and explains the implicit outlet',()=>{
   const world=new World(8,8),exhaust=world.addEntity(new ExhaustFan(4,4)),root={innerHTML:'',querySelector:()=>null};
-  exhaust.flowEfficiency=.83;exhaust.status='NO OUTLET';
+  exhaust.flowEfficiency=.83;exhaust.status='READY';
   const inspector=new Inspector(root);inspector.setTarget({kind:'entity',entity:exhaust});inspector.update(world);
   assert.match(root.innerHTML,/Eficiência fluxo/);assert.match(root.innerHTML,/83%/);
-  assert.match(root.innerHTML,/NO OUTLET/);assert.match(root.innerHTML,/Calor rejeitado/);
+  assert.match(root.innerHTML,/READY/);assert.match(root.innerHTML,/Calor rejeitado/);
+  assert.match(root.innerHTML,/Duto virtual ao exterior ativo/);
 });
 
 test('Inspector displays machine generation, cooling and signed balance',()=>{

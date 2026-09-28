@@ -13,7 +13,7 @@ export class HeatHazeSourceDetector {
 
   entityTemperature(e){
     if(e.isHeatMachine)return e.temperature;
-    if(e.type==='radiator')return e.waterTemperature;
+    if(e.type==='radiator'&&(e.thermalPower||0)>100&&e.waterTemperature>=(e.airInTemperature||0))return e.waterTemperature;
     if(e.type==='coolingUnit'&&e.indoor&&e.heatRejected>0)return this.localAirTemperature(e.world,e)+Math.min(80,e.heatRejected/450);
     return null;
   }
@@ -28,13 +28,13 @@ export class HeatHazeSourceDetector {
     return count?sum/count:world.environment.temperature;
   }
 
-  airflowDirection(world,x,y){
+  airflowDirection(world,x,y,base={x:0,y:-1}){
     const cx=Math.max(0,Math.min(world.width-1,Math.floor(x)));
     const cy=Math.max(0,Math.min(world.height-1,Math.floor(y)));
     const i=world.index(cx,cy),vx=world.airX[i]||0,vy=world.airY[i]||0;
     const speed=Math.hypot(vx,vy);
     const influence=clamp(speed/4,0,1);
-    const hx=vx*.22*influence,hy=-1+vy*.18*influence;
+    const hx=base.x+vx*.22*influence,hy=base.y+vy*.18*influence;
     const mag=Math.hypot(hx,hy)||1;
     return {x:hx/mag,y:hy/mag,speed};
   }
@@ -57,17 +57,20 @@ export class HeatHazeSourceDetector {
       const air=this.localAirTemperature(world,e),delta=temperature-air;
       if(delta<=2)continue;
       const radius=this.entityRadius(e);
+      const hotFace=e.type==='serverRack'?(e.airExhaustDirection||{x:0,y:1}):null;
+      const sourceHeat=e.type==='radiator'?Math.min(1,Math.abs(e.thermalPower||0)/18000)
+        :e.type==='serverRack'?Math.min(1,(e.heatGenerationPower||0)/22000):1;
       const region={
         id:'entity:'+e.id,
         kind:e.type,
-        x:e.x+.5,
-        y:e.y+.45,
+        x:e.x+.5+(hotFace?.x||0),
+        y:e.y+.5+(hotFace?.y||0),
         radiusX:radius.x,
         radiusY:radius.y,
         temperature,
         deltaT:delta,
-        intensity:clamp(delta/60,0,1),
-        direction:this.airflowDirection(world,e.x+.5,e.y+.5),
+        intensity:clamp(delta/60,0,1)*(.25+.75*sourceHeat),
+        direction:hotFace?this.airflowDirection(world,e.x+.5+hotFace.x,e.y+.5+hotFace.y,hotFace):this.airflowDirection(world,e.x+.5,e.y+.5),
       };
       if(this.visible(region,bounds))regions.push(region);
     }

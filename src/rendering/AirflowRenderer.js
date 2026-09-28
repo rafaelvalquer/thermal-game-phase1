@@ -4,6 +4,13 @@ import { StreamlineRenderer } from './air/StreamlineRenderer.js';
 import { AirflowParticleRenderer } from './air/AirflowParticleRenderer.js';
 import { clamp } from '../utils/MathUtils.js';
 
+const airflowColor=(world,index,alpha)=>{
+  const temp=world.temperatureAtIndex(index),ambient=world.environment.temperature;
+  if(temp>ambient+1)return 'rgba(251,146,60,'+alpha+')';
+  if(temp<ambient-1)return 'rgba(103,232,249,'+alpha+')';
+  return 'rgba(125,211,252,'+alpha+')';
+};
+
 export class AirflowRenderer {
   constructor(){
     this.submode=VisualSettings.airflowMode||'streamlines';
@@ -16,12 +23,12 @@ export class AirflowRenderer {
     if(['vectors','streamlines','particles'].includes(mode))this.submode=mode;
   }
 
-  draw(ctx,world,tile,time=0,zoom=1){
+  draw(ctx,world,tile,time=0,zoom=1,bounds=null){
     if(this.submode==='vectors')return this.drawVectors(ctx,world,tile,time,zoom);
     if(this.submode==='particles')return this.particles.draw(ctx,world,tile,time,zoom);
-    const density=clamp(VisualSettings.streamlineDensity*(.62+zoom*.38),.5,1.35);
-    const lines=this.cache.get(world,density,time*1000);
-    this.streamlines.draw(ctx,lines,tile,time,zoom);
+    const density=Math.round(clamp(VisualSettings.streamlineDensity*(.62+zoom*.38),.5,1.35)*4)/4;
+    const lines=this.cache.get(world,density);
+    this.streamlines.draw(ctx,lines,tile,time,zoom,bounds);
   }
 
   drawVectors(ctx,world,tile,time=0,zoom=1){
@@ -38,15 +45,16 @@ export class AirflowRenderer {
       const sx=cx-nx*len*.28+nx*phase*tile*.35,sy=cy-ny*len*.28+ny*phase*tile*.35;
       const ex=sx+nx*len,ey=sy+ny*len;
       const alpha=Math.min(.9,.22+speed*.13);
-      ctx.strokeStyle='rgba(125,211,252,'+alpha+')';
+      const color=airflowColor(world,i,alpha);
+      ctx.strokeStyle=color;
       ctx.lineWidth=Math.max(.7,tile*(.055+Math.min(.05,speed*.009))*clamp(.85+zoom*.15,.75,1.5));
       ctx.beginPath();ctx.moveTo(sx,sy);ctx.quadraticCurveTo((sx+ex)/2-ny*tile*.08,(sy+ey)/2+nx*tile*.08,ex,ey);ctx.stroke();
       const ah=Math.max(2,tile*.16);
-      ctx.fillStyle='rgba(186,230,253,'+alpha+')';
+      ctx.fillStyle=color;
       ctx.beginPath();ctx.moveTo(ex,ey);ctx.lineTo(ex-nx*ah-ny*ah*.55,ey-ny*ah+nx*ah*.55);ctx.lineTo(ex-nx*ah+ny*ah*.55,ey-ny*ah-nx*ah*.55);ctx.closePath();ctx.fill();
     }
     ctx.restore();
   }
 
-  diagnostics(time=0){return this.cache.diagnostics(time*1000);}
+  diagnostics(){return this.cache.diagnostics();}
 }

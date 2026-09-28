@@ -1,7 +1,8 @@
+import { isPowered } from '../PowerState.js';
 import { AIR } from './AirConstants.js';
 
 export class ExhaustCaptureSystem {
-  constructor(grid){this.grid=grid;}
+  constructor(grid){this.grid=grid;this.cellCache=new WeakMap();}
 
   // Supercover sampling also checks both sides of a corner.
   visible(x,y,tx,ty){
@@ -16,32 +17,23 @@ export class ExhaustCaptureSystem {
   }
 
   cells(e){
+    const signature=[this.grid.topologyVersion,this.grid.world.airTopologyVersion,e.x,e.y,e.direction.x,e.direction.y,e.captureRadius].join(':');
+    const cached=this.cellCache.get(e);if(cached?.signature===signature)return cached.cells;
     const cells=[],r=e.captureRadius,d=e.direction;
     for(let dy=-Math.ceil(r);dy<=r;dy++)for(let dx=-Math.ceil(r);dx<=r;dx++){
-      const distance=Math.hypot(dx,dy),x=e.x+dx,y=e.y+dy;
-      if(distance>r||dx*d.x+dy*d.y>0||!this.visible(x,y,e.x,e.y))continue;
-      cells.push({x,y,dx,dy,distance,weight:1/(1+distance*1.25)});
+      const x=e.x+dx,y=e.y+dy,depth=-(dx*d.x+dy*d.y),lateral=Math.abs(dx*d.y-dy*d.x);
+      if(depth<0||depth>r||lateral>.35+depth*.65||!this.visible(x,y,e.x,e.y))continue;
+      const distance=Math.hypot(depth,lateral);
+      cells.push({x,y,dx,dy,depth,lateral,distance,weight:(1/(1+distance*1.1))*(.8+.2*depth/Math.max(r,1))});
     }
-    return cells;
+    this.cellCache.set(e,{signature,cells});return cells;
   }
 
   isExhaustConnectedToOutside(e){
-    const g=this.grid,d=e.direction,w=g.world;
-    if(!g.isAir(e.x,e.y))return false;
-    this.updateExterior();
-    for(let step=1;step<=2;step++){
-      const x=e.x+d.x*step,y=e.y+d.y*step;
-      if(!g.inCell(x,y))return true;
-      if(!g.isAir(x,y))return false;
-      // Campaign openings are explicit; both the opening and its exterior side
-      // must remain unobstructed and the discharge must point out of the room.
-      for(const room of w.airRooms||[]){
-        const inside=(px,py)=>px>room.x&&py>room.y&&px<room.x+room.w-1&&py<room.y+room.h-1;
-        const beyond=(px,py)=>px<room.x||py<room.y||px>room.x+room.w-1||py>room.y+room.h-1;
-        if(inside(e.x-d.x,e.y-d.y)&&beyond(x+d.x,y+d.y)&&g.isAir(x+d.x,y+d.y)&&this.exterior[g.cellIndex(x+d.x,y+d.y)])return true;
-      }
-    }
-    return false;
+    // Exhaust fans have an implicit discharge duct to the building exterior.
+    // Walls still constrain the captured intake area, but do not obstruct this
+    // off-map outlet path.
+    return this.grid.isAir(e.x,e.y);
   }
 
   updateExterior(){
@@ -65,7 +57,7 @@ export class ExhaustCaptureSystem {
   apply(dt){
     const g=this.grid;
     for(const e of g.world.entitiesByType('exhaust')){
-      if(!e.enabled)continue;
+      if(!isPowered(e))continue;
       for(const c of this.cells(e)){
         if(!c.distance)continue;
         const impulse=e.captureStrength*c.weight*dt;

@@ -1,3 +1,4 @@
+import { isPowered } from '../PowerState.js';
 export class AirDiagnostics {
   constructor(grid){this.grid=grid;this.values={};}
 
@@ -21,7 +22,7 @@ export class AirDiagnostics {
       maxDivergence,
     };
     for(const [type,label] of [['fan','Fan'],['exhaust','Exhaust']]){
-      const equipment=g.world.entities.filter(e=>e.type===type&&e.enabled);
+      const equipment=g.world.entities.filter(e=>e.type===type&&isPowered(e));
       this.values[type==='fan'?'fanCount':'exhaustCount']=equipment.length;
       this.values['total'+label+'FreeFlow']=equipment.reduce((s,e)=>s+e.qFree,0);
       this.values['total'+label+'ActualFlow']=equipment.reduce((s,e)=>s+e.currentFlow,0);

@@ -1,3 +1,4 @@
+import { technicianAction } from './TechnicianVisualState.js';
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
 export function entityAnimationOffset(id){
   const value=String(id??'entity');let hash=2166136261;
@@ -8,18 +9,21 @@ export function entityAnimationOffset(id){
 export class SpriteAnimator {
   constructor({reduceMotion=()=>false}={}){this.reduceMotion=reduceMotion;}
   fpsFor(entity,definition){
-    if(entity?.enabled===false)return 0;
+    if(entity?.enabled===false||entity?.powerBlocked||entity?.started===false||['OFF','POWER_OFF','CANCELLED'].includes(entity?.status))return 0;
     switch(entity?.type){
-      case 'pump':return entity.enabled===false||!(entity.flowRate>0)?0:clamp(2+entity.flowRate*4,2,12);
+      case 'pump':return entity.circuitClosed===false||!(entity.flowRate>0)?0:clamp(2+entity.flowRate*4,2,12);
       case 'fan':case 'exhaust':return entity.enabled===false?0:clamp((entity.currentVelocity||0)*2,0,14);
-      case 'tank':return 1.4;
+      case 'tank':return entity.flowRate>0?1.4:0;
       case 'radiator':return (entity.thermalPower||0)>100?clamp(2+(entity.fanBoost||0)*2,2,8):0;
       case 'exchanger':return Math.abs(entity.thermalPower||0)>100?3:0;
       case 'furnace':return entity.enabled===false?0:5;
       case 'serverRack':return entity.enabled===false?0:clamp(1+(entity.loadMultiplier||0)*2,1,8);
       case 'machine':return entity.enabled===false?0:1.5;
       case 'sensor':return 1;
+      case 'battery':return entity.operationState==='CHARGING'||entity.operationState==='DISCHARGING'?3:0;
+      case 'technician':return {working:3,walking:5,idle:0}[technicianAction(entity)];
       case 'coolingUnit':return (entity.currentAirFlow||0)>0?clamp(2+(entity.loadRatio||0)*4,2,8):0;
+      case 'supplyVent':return (entity.flowRate||0)>.02?clamp(1+(entity.flowRate||0)*2,1,5):0;
       default:return definition.fps||0;
     }
   }

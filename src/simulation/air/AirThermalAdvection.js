@@ -1,7 +1,18 @@
 import { AIR, AIR_FACE_AREA } from './AirConstants.js';
 
 export class AirThermalAdvection {
-  constructor(grid,metrics){this.grid=grid;this.metrics=metrics;}
+  constructor(grid,metrics){
+    this.grid=grid;this.metrics=metrics;
+    this.exteriorUFaces=new Set();this.exteriorVFaces=new Set();
+    this.exteriorOpeningFaces=(grid.world.airExteriorOpenings||[]).map(({x,y,direction})=>{
+      if(direction.x){
+        const index=grid.uIndex(direction.x>0?x+1:x,y);this.exteriorUFaces.add(index);
+        return {x,y,kind:'u',index,sign:direction.x};
+      }
+      const index=grid.vIndex(x,direction.y>0?y+1:y);this.exteriorVFaces.add(index);
+      return {x,y,kind:'v',index,sign:direction.y};
+    });
+  }
 
   advect(dt){
     if(dt<=0)return;
@@ -21,16 +32,16 @@ export class AirThermalAdvection {
     w.nextEnergy.set(w.energy);
 
     for(let y=0;y<g.height;y++)for(let x=1;x<g.width;x++){
-      if(g.blockedU(x,y))continue;
-      const u=g.u[g.uIndex(x,y)];
+      const face=g.uIndex(x,y);if(g.blockedU(x,y)||this.exteriorUFaces.has(face))continue;
+      const u=g.u[face];
       if(Math.abs(u)<AIR.minRenderableVelocity)continue;
       const left={x:x-1,y},right={x,y};
       this.exchangeAcrossFace(left,right,u,dt,AIR_FACE_AREA);
     }
 
     for(let y=1;y<g.height;y++)for(let x=0;x<g.width;x++){
-      if(g.blockedV(x,y))continue;
-      const v=g.v[g.vIndex(x,y)];
+      const face=g.vIndex(x,y);if(g.blockedV(x,y)||this.exteriorVFaces.has(face))continue;
+      const v=g.v[face];
       if(Math.abs(v)<AIR.minRenderableVelocity)continue;
       const top={x,y:y-1},bottom={x,y};
       this.exchangeAcrossFace(top,bottom,v,dt,AIR_FACE_AREA);
@@ -45,6 +56,10 @@ export class AirThermalAdvection {
     for(let x=0;x<g.width;x++){
       this.exchangeOutdoor(x,0,-g.v[g.vIndex(x,0)],dt);
       this.exchangeOutdoor(x,g.height-1,g.v[g.vIndex(x,g.height)],dt);
+    }
+    for(const face of this.exteriorOpeningFaces){
+      const velocity=face.kind==='u'?g.u[face.index]:g.v[face.index];
+      this.exchangeOutdoor(face.x,face.y,velocity*face.sign,dt);
     }
 
     w.energy.set(w.nextEnergy);

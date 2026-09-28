@@ -4,8 +4,10 @@ import { World } from '../../src/world/World.js';
 import { CoolingUnit } from '../../src/entities/CoolingUnit.js';
 import { AirDuct } from '../../src/entities/AirDuct.js';
 import { SupplyVent } from '../../src/entities/SupplyVent.js';
+import { ServerRack } from '../../src/entities/ServerRack.js';
 import { AirflowSystem } from '../../src/simulation/AirflowSystem.js';
 import { CoolingSystem } from '../../src/simulation/cooling/CoolingSystem.js';
+import { CoolingAirExchange } from '../../src/simulation/cooling/CoolingAirExchange.js';
 import { CoolingHeatRejection } from '../../src/simulation/cooling/CoolingHeatRejection.js';
 import { EnergySystem } from '../../src/simulation/EnergySystem.js';
 import { FailureSystem } from '../../src/campaign/FailureSystem.js';
@@ -80,6 +82,15 @@ test('pressure projection preserves a visible directional condenser jet for stre
   assert.ok(world.airX[world.index(4,3)]>.08,'outlet should carry airflow downstream');
 });
 
+test('industrial condenser jet starts beyond its two-tile housing',()=>{
+  const world=new World(12,8),unit=new CoolingUnit(2,3,{tier:'industrial',ratedCoolingCapacity:50000,maxAirFlow:5,direction:{x:1,y:0}});
+  unit.indoor=true;unit.heatRejected=20000;world.addEntity(unit);
+  const airflow=new AirflowSystem(world,{});
+  for(let step=0;step<3;step++)airflow.updateVelocity(.05);
+  assert.equal(world.entityAt(3,3),unit,'the second tile belongs to the condenser');
+  assert.ok(world.airX[world.index(4,3)]>.08,'the hot jet begins beyond the second tile');
+});
+
 test('rejected heat with no accessible indoor air is exported to the environment',()=>{
   const world=new World(5,5),unit=new CoolingUnit(2,2);unit.indoor=true;world.addEntity(unit);
   world.fill('concrete',25);
@@ -100,6 +111,44 @@ test('cold air enters the room physically and outdoor heat rejection conserves e
   assert.ok(Math.abs(s.metrics.energyBalance)<1e-5);
   assert.ok(s.world.environment.energyReceived>0);
   assert.ok(s.energy.totalInternalEnergy()<before);
+});
+
+test('a supply vent spreads bounded cooling down its aisle without crossing walls',()=>{
+  const world=new World(7,7);world.fill('air',30);world.setMaterial(3,3,'concrete');
+  const vent=new SupplyVent(3,1,{direction:{x:0,y:1}});vent.flowRate=1.2;vent.airTemperature=14;
+  const exchange=new CoolingAirExchange(world,null),before=world.totalTileEnergy();
+  const removed=-exchange.transferMassEnergy(vent,1,5000);
+  assert.ok(removed>0&&removed<=5000,'outlet cooling must respect the unit capacity allocated to this branch');
+  assert.ok(world.temperatureAt(2,2)<30&&world.temperatureAt(3,2)<30&&world.temperatureAt(4,2)<30,'one outlet should cool several reachable cells ahead of its discharge');
+  assert.equal(world.temperatureAt(3,3),30,'the wall-blocked cell should remain unchanged');
+  assert.ok(Math.abs((before-world.totalTileEnergy())-removed)<1e-6,'the reported cooling must match the energy removed from the room');
+});
+
+test('a directed supply vent cools up to three nearby rack intakes and prioritizes hot inlets',()=>{
+  const world=new World(10,8),vent=new SupplyVent(4,1,{direction:{x:0,y:1}}),exchange=new CoolingAirExchange(world,null);
+  const racks=[new ServerRack(3,3,{slaTemperature:30}),new ServerRack(4,3,{slaTemperature:30}),new ServerRack(5,3,{slaTemperature:30}),new ServerRack(7,3,{slaTemperature:30})];
+  racks.forEach(rack=>world.addEntity(rack));
+  for(const x of [3,4,5])world.setTemperature(x,2, x===4?55:38);
+  world.setTemperature(6,2,55);
+  let served=exchange.serviceRacks(vent);
+  assert.equal(served.length,3);
+  assert.ok(!served.some(item=>item.rack===racks[3]),'an intake outside the jet width is not served');
+  assert.equal(served[0].rack,racks[1],'the hotter, closer intake is prioritized');
+  vent.flowRate=1.2;vent.airTemperature=10;
+  const before=racks.slice(0,3).map((_,index)=>world.temperatureAt(3+index,2));
+  exchange.transferMassEnergy(vent,2,100000);
+  const after=racks.slice(0,3).map((_,index)=>world.temperatureAt(3+index,2));
+  assert.ok(after.every((value,index)=>value<before[index]),'all three served rack intake cells receive cold air');
+  assert.ok(exchange.coolingDemand(vent)>0);
+});
+
+test('a wall blocks a rack intake from the directed supply area while reachable adjacent racks remain served',()=>{
+  const world=new World(10,8),vent=new SupplyVent(4,1,{direction:{x:0,y:1}}),racks=[new ServerRack(3,3),new ServerRack(4,3),new ServerRack(5,3)];
+  racks.forEach(rack=>world.addEntity(rack));world.setMaterial(4,2,'concrete');
+  const exchange=new CoolingAirExchange(world,null),served=exchange.serviceRacks(vent);
+  assert.equal(served.length,2);
+  assert.ok(served.every(item=>item.rack!==racks[1]));
+  assert.ok(!exchange.supplyCells(vent).some(cell=>cell.x===4&&cell.y===2));
 });
 
 test('rotating a cold-air outlet applies airflow momentum in its selected direction',()=>{

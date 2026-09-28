@@ -15,7 +15,7 @@ export const AIR={
   maxVelocity:14,
   minRenderableVelocity:0.03,
   fanSourceSpread:2,
-  exhaustCaptureRadius:3.5,
+  exhaustCaptureRadius:4,
   exhaustCaptureStrength:0.8,
 };
 

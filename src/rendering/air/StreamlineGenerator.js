@@ -20,12 +20,10 @@ export class StreamlineGenerator {
     const x0=clamp(Math.floor(fx),0,world.width-1),y0=clamp(Math.floor(fy),0,world.height-1);
     const x1=clamp(x0+1,0,world.width-1),y1=clamp(y0+1,0,world.height-1);
     const tx=clamp(fx-x0,0,1),ty=clamp(fy-y0,0,1);
-    const sample=(field)=>{
-      const a=field[world.index(x0,y0)]*(1-tx)+field[world.index(x1,y0)]*tx;
-      const b=field[world.index(x0,y1)]*(1-tx)+field[world.index(x1,y1)]*tx;
-      return a*(1-ty)+b*ty;
-    };
-    const vx=sample(world.airX),vy=sample(world.airY);
+    const a=y0*world.width+x0,b=y0*world.width+x1,c=y1*world.width+x0,d=y1*world.width+x1;
+    const wa=(1-tx)*(1-ty),wb=tx*(1-ty),wc=(1-tx)*ty,wd=tx*ty;
+    const vx=world.airX[a]*wa+world.airX[b]*wb+world.airX[c]*wc+world.airX[d]*wd;
+    const vy=world.airY[a]*wa+world.airY[b]*wb+world.airY[c]*wc+world.airY[d]*wd;
     return {x:vx,y:vy,speed:Math.hypot(vx,vy)};
   }
 
@@ -85,8 +83,11 @@ export class StreamlineGenerator {
   integrateBackward(world,seed){return this.integrate(world,seed,-1);}
 
   generate(world,seed){
-    const backward=this.integrateBackward(world,seed);
     const forward=this.integrateForward(world,seed);
+    // Equipment seeds represent an outlet (or exhaust inlet) and should show
+    // where air travels from that point, rather than drawing upstream too.
+    const directional=!!seed.sourceType;
+    const backward=directional?{points:[],loop:false}:this.integrateBackward(world,seed);
     if(!forward.points.length&&!backward.points.length)return null;
 
     const back=backward.points.slice(1).reverse();
@@ -96,6 +97,7 @@ export class StreamlineGenerator {
     for(const p of points){speedSum+=p.speed||0;maxSpeed=Math.max(maxSpeed,p.speed||0);}
     return {
       seed,
+      sourceType:seed.sourceType||'ambient',
       points,
       loop:forward.loop||backward.loop,
       averageSpeed:speedSum/points.length,

@@ -4,6 +4,7 @@ import { FluidSystem } from './FluidSystem.js';
 import { EnergySystem } from './EnergySystem.js';
 import { MissionRuntime } from '../campaign/MissionRuntime.js';
 import { CoolingSystem } from './cooling/CoolingSystem.js';
+import { BatteryDispatchSystem } from './BatteryDispatchSystem.js';
 
 export class Simulation {
   constructor(world,level){
@@ -19,8 +20,10 @@ export class Simulation {
     this.fluid=this.waterCooling?new FluidSystem(world,this.metrics):null;
     this.cooling=this.simpleCooling?new CoolingSystem(world,this.airflow,this.metrics):null;
     this.energySystem=new EnergySystem(world,this.metrics);
+    this.batteryDispatch=new BatteryDispatchSystem(world,this.metrics);world.batteryDispatch=this.batteryDispatch;
     this.mission=new MissionRuntime(world,level,this.metrics);
-    this.history=[];this.historyTimer=0;
+    this.technicians=world.technicianSystem||null;
+    this.history=[];this.historyTimer=0;this.visualTime=0;
   }
 
   initialize(){this.energySystem.initialize();}
@@ -29,12 +32,25 @@ export class Simulation {
 
   update(dt){
     if(this.paused||this.mission.state!=='running')return;
-    dt*=this.speed;
+    let remaining=dt*this.speed;
+    while(remaining>0&&!this.paused){
+      const untilMidnight=this.datacenter?.clock?(86400-this.datacenter.clock.daySeconds)/360:Infinity;
+      const step=Math.min(remaining,untilMidnight);
+      this.step(step);
+      remaining=Math.max(0,remaining-step);
+    }
+  }
+
+  step(dt){
+    this.visualTime+=dt;
     const calendarDt=this.datacenter?dt*360:dt;
     this.elapsed+=calendarDt;this.mission.preUpdate(this.elapsed);
     const externalBefore=this.metrics.externalEnergy,generatedBefore=this.metrics.generatedHeat;
 
     this.world.datacenter?.update(calendarDt);
+    this.technicians?.update(dt);
+    this.lastPhysicsDt=dt;
+    this.world.datacenter?.protectPower?.(dt,calendarDt);
     this.cooling?.update(dt);
     this.airflow.updateVelocity(dt);
     this.thermal.update(dt,this.elapsed);
@@ -42,13 +58,15 @@ export class Simulation {
     this.fluid?.update(dt);
     this.airflow.advectHeat(dt);
     this.airflow.applyExhaust(dt);
+    if(!this.datacenter)this.batteryDispatch.dispatch(this.level.powerLimit,dt);
     this.energySystem.update(dt,{billingDt:calendarDt});
     this.metrics.externalRejectedPower=(this.metrics.externalEnergy-externalBefore)/dt;
     this.metrics.generatedHeatPower=(this.metrics.generatedHeat-generatedBefore)/dt;
     this.metrics.machineCoolingPower=this.world.entities.filter(e=>e.isHeatMachine).reduce((sum,e)=>sum+e.coolingPower,0);
     for(const e of this.world.entities.filter(e=>e.isHeatMachine))e.thermalBalance=e.coolingPower-e.heatGenerationPower;
 
-    this.sampleSensors();this.updateMetrics();this.world.datacenter?.afterThermalStep(calendarDt);this.mission.update(dt,this.elapsed);this.captureHistory(dt);
+    this.sampleSensors();this.updateMetrics();this.world.datacenter?.afterThermalStep(calendarDt,dt);this.mission.update(dt,this.elapsed);this.captureHistory(dt);
+    if(!this.world.datacenter&&this.technicians){const day=Math.floor(this.elapsed/86400);if(day>this.technicians.payrollDay){const wage=this.technicians.settleDay(day);if(wage){this.technicians.build.budget-=wage;this.technicians.build.onChange?.();}}}
   }
 
   sampleSensors(){for(const s of this.world.entitiesByType('sensor'))if(this.world.inBounds(s.x,s.y))s.sample(this.world.temperatureAt(s.x,s.y));}

@@ -1,10 +1,11 @@
+import { isPowered, powerEquipment } from './PowerState.js';
 export class EnergySystem {
   constructor(world,metrics){this.world=world;this.metrics=metrics;this.baseline=0;this.constructionDelta=0;}
   initialize(){this.baseline=this.totalInternalEnergy();}
 
   totalInternalEnergy(){
     let total=this.world.totalTileEnergy();
-    for(const e of this.world.entities){
+    for(const e of powerEquipment(this.world)){
       if(e.isHeatMachine||['pipe','pump','tank','radiator','exchanger'].includes(e.type))total+=e.energy||0;
     }
     return total;
@@ -14,8 +15,8 @@ export class EnergySystem {
 
   update(dt,{billingDt=dt}={}){
     let power=0;
-    for(const e of this.world.entities){
-      if(!e.enabled||!e.power)continue;
+    for(const e of powerEquipment(this.world)){
+      if(!isPowered(e)||!e.power)continue;
       power+=e.power;
       const waste=e.power*(e.wasteHeatFraction??0)*dt;
       if(waste>0){
@@ -24,6 +25,9 @@ export class EnergySystem {
         this.metrics.generatedHeat+=waste;
       }
     }
+    power=this.world.batteryDispatch
+      ?this.world.batteryDispatch.currentGridPowerW({breakerOpen:Boolean(this.world.datacenter?.powerGrid?.breakerOpen)})
+      :power;
     this.metrics.powerDraw=power;
     this.metrics.powerEnergy+=power*billingDt;
     const current=this.totalInternalEnergy();

@@ -1,5 +1,7 @@
 import './style.css';
 import './datacenter.css';
+import './industrial.css';
+import './staff.css';
 import { Game } from './game/Game.js';
 import { CampaignManager } from './campaign/CampaignManager.js';
 import { CampaignScreen } from './ui/CampaignScreen.js';
@@ -14,6 +16,7 @@ const gameShell=(level)=>{
     '<header class="topbar">',
       '<div class="brand"><div class="brand-mark"><span>Δ</span><small>T</small></div><div><h1>'+ (isDatacenter?'DATA CENTER SIMULATOR':'THERMAL LAB')+'</h1><p>'+ (isDatacenter?'OPERAÇÃO CONTÍNUA · SANDBOX':'FASE '+String(level.number).padStart(2,'0')+' · '+level.name.toUpperCase())+'</p></div></div>',
       '<div class="mission-box '+(isDatacenter?'sandbox-mission':'')+'"><span class="eyebrow">'+level.tagline.toUpperCase()+'</span><strong id="missionText">Carregando missão...</strong><span id="rotateHint"></span></div>',
+      '<div class="top-telemetry"><div class="budget-chip"><span>ORÇAMENTO</span><strong id="budgetValue">'+(isDatacenter?'R$ ':'$ ')+Number(level.budget||0).toLocaleString('pt-BR')+'</strong></div><div class="top-chart temperature-chart"><div class="top-chart-head"><span>TEMPERATURA</span><small><i class="max-dot"></i> máx <i class="avg-dot"></i> média <i class="safe-dot"></i> alvo</small></div><canvas id="history" aria-label="Gráfico do histórico de temperatura"></canvas></div><div class="top-chart power-chart"><div class="top-chart-head"><span>ENERGIA USADA</span><small><i class="limit-dot"></i> limite · <b id="powerSummary">0 / '+(level.powerLimit/1000).toFixed(1)+' kW</b></small></div><canvas id="powerHistory" aria-label="Gráfico do consumo elétrico em kW e limite tracejado"></canvas></div></div>',
       '<div class="sim-controls"><span id="clock">'+(isDatacenter?'Ano 1 · Mês 1 · Dia 1 · 00:00':'00:00')+'</span><button id="pauseBtn">Ⅱ Pausar</button><div class="speed-group">'+speeds.map(speed=>'<button data-speed="'+speed+'">'+speed+'×</button>').join('')+'</div><span id="speedLabel">1×</span><button id="exitBtn" title="Voltar ao menu">⌂</button></div>',
     '</header>',
     '<aside id="toolsPanel" class="left-panel panel">',
@@ -30,14 +33,14 @@ const gameShell=(level)=>{
     '</main>',
     '<aside id="rightPanel" class="right-panel panel">',
       '<div class="panel-head"><span>TELEMETRIA</span><small>tempo real</small><button class="mobile-panel-toggle" data-panel-toggle="toolsPanel" aria-controls="toolsPanel" aria-expanded="false">Construção</button></div>',
-      '<div id="datacenterDashboard" class="datacenter-dashboard '+(isDatacenter?'':'hidden')+'"></div><div id="metrics" class="metrics"></div><div id="alerts" class="alerts"></div>',
+      '<div id="datacenterDashboard" class="datacenter-dashboard '+(isDatacenter?'':'hidden')+'"></div><div id="staffPanel" class="staff-panel"></div><div id="metrics" class="metrics"></div><div id="alerts" class="alerts"></div>',
       '<div id="objectives" class="objectives"></div>',
-      '<div class="chart-card"><div class="chart-title"><span>Temperatura</span><small><i class="max-dot"></i> máx. <i class="avg-dot"></i> média <i class="safe-dot"></i> alvo</small></div><canvas id="history"></canvas></div>',
       '<div class="minimap-card"><div class="chart-title"><span>Minimap</span><small>Fases 4+</small></div><canvas id="minimap"></canvas></div>',
       '<div class="panel-head inspector-head"><span>INSPECTOR</span><small>tile / entidade</small></div><div id="inspector" class="inspector"></div>',
       '<button id="resetBtn" class="reset">↻ '+(isDatacenter?'Reiniciar sandbox':'Reiniciar missão')+'</button>',
     '</aside>',
   '</div>',
+  '<div id="dailyReport" class="daily-report-layer" hidden></div>',
   '<div id="endModal" class="end-modal"></div>',
 ].join('');
 };

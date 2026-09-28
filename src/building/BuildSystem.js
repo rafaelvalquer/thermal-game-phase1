@@ -1,6 +1,6 @@
-import { BUILD_CATALOG } from './BuildCatalog.js';
+import { BUILD_CATALOG, STRUCTURE_TOOLS } from './BuildCatalog.js';
 import { PlacementValidator } from './PlacementValidator.js';
-import { Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, TemperatureSensor, AirDuct, CoolingUnit, ServerRack, SupplyVent } from '../entities/index.js';
+import { Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, TemperatureSensor, AirDuct, CoolingUnit, ServerRack, SupplyVent, PowerBattery } from '../entities/index.js';
 import { DUCT_TOOLS } from './PlacementValidator.js';
 import { UtilityPlacementSystem } from './UtilityPlacementSystem.js';
 import { DEFAULT_BUDGET } from '../utils/Constants.js';
@@ -15,7 +15,7 @@ const DIRS=[{x:1,y:0},{x:0,y:1},{x:-1,y:0},{x:0,y:-1}];
 
 export class BuildSystem {
   constructor(world,simulation,{budget=DEFAULT_BUDGET,inventory=null}={}){
-    this.world=world;this.simulation=simulation;this.validator=new PlacementValidator(world);this.utilityPlacement=new UtilityPlacementSystem(world,this.validator);this.ductPlacement=this.utilityPlacement;this.selected=null;this.rotation=0;this.budget=budget;
+    this.world=world;this.simulation=simulation;this.validator=new PlacementValidator(world);this.utilityPlacement=new UtilityPlacementSystem(world,this.validator);this.ductPlacement=this.utilityPlacement;this.selected=null;this.rotation=0;this.rackRotation=3;this.budget=budget;
     const systems=this.world.thermalSystems;
     const hiddenTools=systems?.allBuildTools?[]:systems?.simpleCooling?[
       ...(!systems.waterCooling?['pipe','pump','tank','radiator','exchanger']:[]),
@@ -24,29 +24,34 @@ export class BuildSystem {
         'duct','coolingUnit','supplyVent',
         ...(!systems.waterCooling?['pipe','pump','tank','radiator','exchanger']:[]),
       ]:[];
-    this.catalog=Object.fromEntries(Object.entries(BUILD_CATALOG).filter(([k])=>!hiddenTools.includes(k)&&(k!=='serverRack'||Boolean(this.world.datacenterConfig))));
+    const industrialAvailable=Boolean(systems?.allBuildTools||this.world.datacenterConfig?.allBuildTools);
+    this.catalog=Object.fromEntries(Object.entries(BUILD_CATALOG).filter(([k])=>!hiddenTools.includes(k)&&(k!=='serverRack'||Boolean(this.world.datacenterConfig))&&(k!=='industrialCoolingUnit'||industrialAvailable)));
     const defaults=Object.fromEntries(Object.entries(this.catalog).map(([k,v])=>[k,v.inventory]));
     this.unlimitedInventory=Boolean(this.world.datacenterConfig?.unlimitedBuildInventory);
     if(this.unlimitedInventory)this.inventory=Object.fromEntries(Object.keys(defaults).map(k=>[k,Infinity]));
-    else if(inventory){this.inventory=Object.fromEntries(Object.keys(defaults).map(k=>[k,k==='demolish'?Infinity:0]));Object.assign(this.inventory,inventory);}
+    else if(inventory){this.inventory=Object.fromEntries(Object.keys(defaults).map(k=>[k,['demolish','battery'].includes(k)?Infinity:0]));Object.assign(this.inventory,inventory);this.inventory.battery=Infinity;}
     else this.inventory=defaults;
     this.initialInventory={...this.inventory};this.placedEntities=new Map();this.placedMaterials=new Map();
     this.ductInsulated=false;this.coolingUnitModel=this.world.thermalSystems?.coolingUnitModel||'commercial';
     this.onChange=()=>{};
   }
   select(tool){this.selected=tool;this.onChange();}
-  rotate(){this.rotation=(this.rotation+1)%4;this.onChange();}
-  direction(){return DIRS[this.rotation];}
+  rotate(){if(this.selected==='serverRack')this.rackRotation=(this.rackRotation+1)%4;else this.rotation=(this.rotation+1)%4;this.onChange();}
+  direction(){return DIRS[this.selected==='serverRack'?this.rackRotation:this.rotation];}
   toggleDuctInsulation(){this.ductInsulated=!this.ductInsulated;this.onChange();return this.ductInsulated;}
   cycleCoolingUnitModel(){const tiers=Object.keys(COOLING_UNIT_MODELS),index=tiers.indexOf(this.coolingUnitModel);this.coolingUnitModel=tiers[(index+1)%tiers.length];this.onChange();return COOLING_UNIT_MODELS[this.coolingUnitModel];}
+  coolingConfig(tool){return tool==='industrialCoolingUnit'?COOLING_UNIT_MODELS.industrial:tool==='coolingUnit'?COOLING_UNIT_MODELS[this.coolingUnitModel]:null;}
+  isIndustrialCooling(tool){return tool==='industrialCoolingUnit'||tool==='coolingUnit'&&this.coolingUnitModel==='industrial';}
+  placementCells(tool,x,y){const length=this.isIndustrialCooling(tool)?2:1,d=this.direction();return Array.from({length},(_,offset)=>({x:x+d.x*offset,y:y+d.y*offset}));}
+  canPlace(tool,x,y){const footprintLength=this.isIndustrialCooling(tool)?2:1;return this.validator.canPlace(tool,x,y,{direction:this.direction(),footprintLength});}
   canAfford(tool){const c=this.catalog[tool];return c&&this.budget>=(tool==='coolingUnit'?COOLING_UNIT_MODELS[this.coolingUnitModel].cost:c.cost)&&(this.inventory[tool]??0)>0;}
 
-  place(x,y){
-    const tool=this.selected;if(!tool||!this.catalog[tool]||!this.validator.canPlace(tool,x,y))return {ok:false,reason:'Posição inválida ou criaria uma ramificação hidráulica'};
+  place(x,y,{refreshCooling=true}={}){
+    const tool=this.selected;if(!tool||!this.catalog[tool]||!this.canPlace(tool,x,y))return {ok:false,reason:'Posição inválida ou excede as conexões permitidas'};
     if(tool==='demolish')return this.demolish(x,y);
     if(!this.canAfford(tool))return {ok:false,reason:'Sem orçamento, estoque ou ferramenta bloqueada'};
     if(tool==='serverRack'&&!this.world.datacenter?.nextRackPlacement())return {ok:false,reason:'Aceite um contrato para instalar os racks solicitados.'};
-    const before=this.simulation.totalInternalEnergy(),base=this.catalog[tool],c=tool==='coolingUnit'?{...base,...COOLING_UNIT_MODELS[this.coolingUnitModel]}:base;let entity=null;
+    const before=this.simulation.totalInternalEnergy(),base=this.catalog[tool],coolingConfig=this.coolingConfig(tool),c=coolingConfig?{...base,...coolingConfig}:base;let entity=null;
     if(c.kind==='material')this.world.setMaterial(x,y,c.material);
     else if(DUCT_TOOLS.has(tool)){
       entity=new AirDuct(x,y,{size:tool,embedded:!this.world.isAir(x,y),insulated:tool==='duct'?true:this.ductInsulated});
@@ -62,8 +67,10 @@ export class BuildSystem {
       if(tool==='radiator')entity=new Radiator(x,y);
       if(tool==='exchanger')entity=new HeatExchanger(x,y);
       if(tool==='sensor')entity=new TemperatureSensor(x,y);
-      if(tool==='coolingUnit'){
-        entity=new CoolingUnit(x,y,{...COOLING_UNIT_MODELS[this.coolingUnitModel],tier:this.coolingUnitModel,direction:{...dir}});
+      if(tool==='battery')entity=new PowerBattery(x,y);
+      if(tool==='coolingUnit'||tool==='industrialCoolingUnit'){
+        const model=tool==='industrialCoolingUnit'?'industrial':this.coolingUnitModel;
+        entity=new CoolingUnit(x,y,{...COOLING_UNIT_MODELS[model],tier:model,direction:{...dir}});
         const usedIds=new Set(this.world.entitiesByType('coolingUnit').map(unit=>unit.missionId).filter(Boolean));
         let sequence=this.world.coolingUnitSequence||0;
         do{sequence++;}while(usedIds.has('ac-'+sequence));
@@ -72,7 +79,7 @@ export class BuildSystem {
       if(tool==='serverRack'){
         const assignment=this.world.datacenter?.nextRackPlacement();
         if(!assignment)return {ok:false,reason:'Aceite um contrato para instalar os racks solicitados.'};
-        entity=new ServerRack(x,y,{...assignment,name:assignment.clientName+' #'+String(assignment.rackNumber).padStart(2,'0'),heatOutput:assignment.maxPowerKW*980,startAt:0});
+        entity=new ServerRack(x,y,{...assignment,name:assignment.clientName+' #'+String(assignment.rackNumber).padStart(2,'0'),heatOutput:assignment.maxPowerKW*980,startAt:0,airIntakeDirection:{...dir},airExhaustDirection:{x:-dir.x,y:-dir.y}});
       }
       if(tool==='supplyVent')entity=new SupplyVent(x,y,{direction:{...dir}});
       if(entity){this.world.addEntity(entity);if(tool==='serverRack')this.world.datacenter?.onRackPlaced(entity);}
@@ -81,6 +88,7 @@ export class BuildSystem {
     else if(c.kind==='material')this.placedMaterials.set(this.world.index(x,y),{tool,cost:c.cost});
     this.lastPlacement={x,y,at:globalThis.performance?.now?.()??Date.now()};
     this.budget-=c.cost;if(Number.isFinite(this.inventory[tool]))this.inventory[tool]--;
+    if(refreshCooling&&(DUCT_TOOLS.has(tool)||['supplyVent','coolingUnit','industrialCoolingUnit'].includes(tool)))this.simulation.cooling?.rebuild();
     this.simulation.registerConstruction(before);this.onChange();return {ok:true,entity};
   }
 
@@ -91,11 +99,13 @@ export class BuildSystem {
       if((e.isHeatMachine&&!e.contractId)||e.isPassiveHeatSource)return {ok:false,reason:'Equipamento da missão não pode ser removido'};
       if(e.type==='serverRack')this.world.datacenter?.onRackRemoved(e);
       this.world.removeEntity(e);
+      if(['supplyVent','coolingUnit'].includes(e.type))this.simulation.cooling?.rebuild();
       const placed=this.placedEntities.get(e.id);
       if(placed){this.placedEntities.delete(e.id);this.recover(placed);}
     }else if(this.world.utilityAt(x,y)){
       const utility=this.world.utilityAt(x,y),placed=this.placedEntities.get(utility.id);
       this.world.removeUtility(utility);
+      if(DUCT_TOOLS.has(utility.type))this.simulation.cooling?.rebuild();
       if(placed){this.placedEntities.delete(utility.id);this.recover(placed);}
     }else if(!this.world.isAir(x,y)){
       const index=this.world.index(x,y),placed=this.placedMaterials.get(index);
@@ -118,14 +128,26 @@ export class BuildSystem {
     return {placed,failed};
   }
 
+  placeStructurePath(path){
+    let placed=0,failed=0;const seen=new Set();
+    for(const {x,y} of path){
+      const key=`${x},${y}`;if(seen.has(key))continue;seen.add(key);
+      if(!STRUCTURE_TOOLS.has(this.selected)){failed++;continue;}
+      if(this.place(x,y).ok)placed++;else failed++;
+    }
+    return {placed,failed};
+  }
+
   placeDuctPath(path){
     const tool=this.selected,cost=this.catalog[tool]?.cost??0;
     const plan=this.utilityPlacement.planPath(tool,path,{inventory:this.inventory[tool]??0,budget:this.budget,cost});
     let placed=0,failed=0;
     for(const point of plan.entries){
+      if(point.connect)continue;
       if(!point.valid){failed++;continue;}
-      if(this.place(point.x,point.y).ok)placed++;else failed++;
+      if(this.place(point.x,point.y,{refreshCooling:false}).ok)placed++;else failed++;
     }
+    if(placed)this.simulation.cooling?.rebuild();
     return {placed,failed};
   }
 

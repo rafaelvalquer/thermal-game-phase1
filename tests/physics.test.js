@@ -13,6 +13,8 @@ import { WaterTank } from '../src/entities/WaterTank.js';
 import { Pump } from '../src/entities/Pump.js';
 import { Pipe } from '../src/entities/Pipe.js';
 import { Machine } from '../src/entities/Machine.js';
+import { ServerRack } from '../src/entities/ServerRack.js';
+import { WATER_CP } from '../src/utils/Constants.js';
 
 const metrics=()=>({generatedHeat:0,externalEnergy:0,powerDraw:0,powerEnergy:0,energyBalance:0});
 const close=(a,b,tol=1e-5)=>assert.ok(Math.abs(a-b)<=tol*Math.max(1,Math.abs(a),Math.abs(b)),String(a)+' != '+String(b));
@@ -35,6 +37,15 @@ const addClosedLoop=(world,{machine=false,tank=false}={})=>{
     world.addEntity(heatMachine);
   }
   return {pump,p1,hx,p2,radiator,p3,p4,p5,machine:heatMachine,fluid};
+};
+
+const addParallelHydraulicLoop=world=>{
+  const pump=new Pump(1,3,{x:1,y:0}),outlet=new Pipe(2,3),split=new Pipe(3,3),merge=new Pipe(7,3);
+  const upper=[[3,2],[4,2],[5,2],[6,2],[7,2]].map(([x,y])=>new Pipe(x,y));
+  const lower=[[3,4],[4,4],[5,4],[6,4],[7,4]].map(([x,y])=>new Pipe(x,y));
+  const returnPath=[[8,3],[9,3],[9,4],[9,5],[9,6],[8,6],[7,6],[6,6],[5,6],[4,6],[3,6],[2,6],[1,6],[1,5],[1,4]].map(([x,y])=>new Pipe(x,y));
+  const fluid=[pump,outlet,split,...upper, ...lower,merge,...returnPath];fluid.forEach(entity=>world.addEntity(entity));
+  return {pump,outlet,split,upper,lower,merge,returnPath,fluid};
 };
 
 const totalThermalEnergy=(world)=>world.totalTileEnergy()+world.entities.reduce((sum,e)=>{
@@ -86,7 +97,7 @@ test('closed hydraulic loop creates directed flow from pump outlet',()=>{
   assert.equal(loop.pump.networkStatus,'CLOSED');
   assert.equal(loop.pump.downstreamId,loop.p1.id);
   assert.deepEqual(loop.pump.flowVector,{x:1,y:0});
-  assert.equal(loop.fluid.every(e=>e.circuitClosed&&e.flowRate===loop.pump.flowRate),true);
+  assert.equal(loop.fluid.every(e=>e.circuitClosed&&Math.abs(e.flowRate-loop.pump.flowRate)<1e-10),true);
 });
 
 test('pump direction must point at its downstream connection',()=>{
@@ -104,6 +115,158 @@ test('heat exchanger does not cool machine without valid flow',()=>{
   for(let i=0;i<50;i++)sys.update(.05);
   close(machine.energy,before,1e-12);
   assert.equal(hx.thermalPower,0);
+});
+
+test('a single closed network with multiple pumps remains invalid',()=>{
+  const world=new World(6,6),loop=addClosedLoop(world);world.removeEntity(loop.p1);
+  const secondPump=new Pump(2,1,{x:0,y:1});world.addEntity(secondPump);
+  const system=new FluidSystem(world,metrics());system.update(.05);
+  assert.equal(system.networks[0].status,'MULTIPLE_PUMPS');
+  assert.equal(loop.pump.flowRate,0);assert.equal(secondPump.flowRate,0);
+});
+
+test('closed T branches split pump flow by path resistance and mix on return without energy loss',()=>{
+  const world=new World(12,9),loop=addParallelHydraulicLoop(world),system=new FluidSystem(world,metrics());
+  const network=system.buildNetworks()[0];system.solveNetwork(network);
+  assert.equal(network.status,'CLOSED');
+  assert.equal(loop.split.circuitClosed,true);assert.equal(loop.merge.circuitClosed,true);
+  assert.equal(loop.split.networkStatus,'CLOSED','valid T junctions are part of the hydraulic system');
+  const splitFlows=network.links.filter(link=>link.from===loop.split).map(link=>link.flowRate);
+  assert.equal(splitFlows.length,2);
+  close(splitFlows[0],splitFlows[1],1e-8);
+  close(splitFlows[0]+splitFlows[1],loop.pump.flowRate,1e-8);
+  assert.ok(loop.pump.flowRate<=3.5);
+
+  loop.upper[1].resistance=8;
+  system.solveNetwork(network);
+  const unequal=network.links.filter(link=>link.from===loop.split).map(link=>({link,flow:link.flowRate}));
+  assert.equal(unequal.length,2);
+  const upperFlow=unequal.find(item=>item.link.to===loop.upper[0]).flow;
+  const lowerFlow=unequal.find(item=>item.link.to===loop.lower[0]).flow;
+  assert.ok(upperFlow<lowerFlow,'the higher-resistance route receives less water');
+  close(upperFlow+lowerFlow,loop.pump.flowRate,1e-8);
+
+  const branchInlets=network.links.filter(link=>link.to===loop.merge);
+  assert.equal(branchInlets.length,2);
+  branchInlets[0].from.energy=branchInlets[0].from.waterMass*WATER_CP*60;
+  branchInlets[1].from.energy=branchInlets[1].from.waterMass*WATER_CP*20;
+  const mixed=branchInlets.reduce((sum,link)=>sum+link.flowRate*link.from.waterTemperature,0)/branchInlets.reduce((sum,link)=>sum+link.flowRate,0);
+  const before=totalThermalEnergy(world);
+  system.transport(network,.02);
+  close(loop.merge.inletTemperature,mixed,1e-8);
+  close(totalThermalEnergy(world),before,1e-10);
+});
+
+test('hydraulic branch flow never exceeds the existing pump maximum',()=>{
+  const world=new World(6,6),loop=addClosedLoop(world);for(const entity of loop.fluid)entity.resistance=.01;
+  const system=new FluidSystem(world,metrics());system.update(.05);
+  assert.equal(loop.pump.flowRate,3.5);
+  assert.ok(loop.fluid.every(entity=>entity.flowRate<=3.5+1e-10));
+});
+
+test('an open-ended branch remains an invalid circuit with no flow',()=>{
+  const world=new World(12,9),loop=addParallelHydraulicLoop(world);
+  const dangling=new Pipe(4,7);world.addEntity(dangling);
+  const system=new FluidSystem(world,metrics());system.update(.05);
+  const network=system.networks.find(item=>item.entities.includes(loop.pump));
+  assert.equal(network.status,'OPEN_CIRCUIT');
+  assert.equal(loop.pump.flowRate,0);
+  assert.equal(dangling.flowRate,0);
+});
+
+test('sparse hydraulic solver keeps long closed circuits operational',()=>{
+  const world=new World(40,30),pump=world.addEntity(new Pump(1,1,{x:1,y:0}));
+  for(let x=2;x<40;x++)world.addEntity(new Pipe(x,1));
+  for(let y=2;y<30;y++)world.addEntity(new Pipe(39,y));
+  for(let x=38;x>=1;x--)world.addEntity(new Pipe(x,29));
+  for(let y=28;y>=2;y--)world.addEntity(new Pipe(1,y));
+  const system=new FluidSystem(world,metrics());system.update(.01);
+  assert.equal(system.networks[0].status,'CLOSED');
+  assert.ok(pump.flowRate>0);
+  assert.equal(system.networks[0].links.length,system.networks[0].entities.length);
+});
+
+test('water exchanger transfers more heat directly from an adjacent rack with the stronger UA',()=>{
+  const transferAt=ua=>{
+    const w=new World(7,7),loop=addClosedLoop(w),rack=new ServerRack(4,1,{temperature:65,heatOutput:0,startAt:0});
+    w.addEntity(rack);loop.hx.ua=ua;
+    const sys=new FluidSystem(w,metrics());sys.networks=sys.buildNetworks();for(const network of sys.networks)sys.solveNetwork(network);
+    const before=totalThermalEnergy(w),rackEnergy=rack.energy,waterEnergy=loop.hx.energy;
+    sys.exchangeMachines(.05);
+    const rackHeatRemoved=rackEnergy-rack.energy;
+    assert.ok(rackHeatRemoved>0);assert.ok(loop.hx.energy>waterEnergy);close(totalThermalEnergy(w),before,1e-10);
+    return rackHeatRemoved;
+  };
+  assert.ok(transferAt(2250)>transferAt(1500));
+});
+
+test('a circulating exchanger captures nearby hot-aisle air into water without creating energy',()=>{
+  const w=new World(7,7),loop=addClosedLoop(w);
+  w.setTemperature(4,1,55);w.setTemperature(3,0,45);
+  const sys=new FluidSystem(w,metrics());
+  sys.networks=sys.buildNetworks();for(const network of sys.networks)sys.solveNetwork(network);
+  const before=totalThermalEnergy(w),hotBefore=w.temperatureAt(4,1),secondBefore=w.temperatureAt(3,0),waterBefore=loop.hx.waterTemperature;
+  sys.exchangeMachines(.05);
+  assert.ok(loop.hx.airCoolingPower>0);
+  assert.ok(w.temperatureAt(4,1)<hotBefore&&w.temperatureAt(3,0)<secondBefore);
+  assert.ok(loop.hx.waterTemperature>waterBefore);
+  close(totalThermalEnergy(w),before,1e-10);
+});
+
+test('stronger water exchanger UA removes more heat from nearby hot aisle air',()=>{
+  const transferAt=airUA=>{
+    const w=new World(7,7),loop=addClosedLoop(w);loop.hx.airUA=airUA;
+    w.setTemperature(4,1,55);w.setTemperature(3,0,45);
+    const sys=new FluidSystem(w,metrics());sys.networks=sys.buildNetworks();for(const network of sys.networks)sys.solveNetwork(network);
+    const before=totalThermalEnergy(w);sys.exchangeMachines(.05);
+    assert.ok(loop.hx.airCoolingPower>0);close(totalThermalEnergy(w),before,1e-10);
+    return loop.hx.airCoolingPower;
+  };
+  assert.ok(transferAt(2250)>transferAt(1500));
+});
+
+test('rack exhaust heat reaches circulating water through the hot aisle',()=>{
+  const w=new World(7,7),loop=addClosedLoop(w),rack=new ServerRack(4,2,{temperature:65,heatOutput:0,startAt:0,airExhaustDirection:{x:0,y:-1}});
+  w.addEntity(rack);
+  const thermal=new ThermalSystem(w,metrics()),fluid=new FluidSystem(w,metrics());
+  fluid.networks=fluid.buildNetworks();for(const network of fluid.networks)fluid.solveNetwork(network);
+  const before=totalThermalEnergy(w),waterBefore=loop.hx.energy;
+  thermal.exchangeServerRack(rack,.05);
+  assert.ok(w.temperatureAt(4,1)>25);
+  fluid.exchangeMachines(.05);
+  assert.ok(loop.hx.airCoolingPower>0);
+  assert.ok(loop.hx.energy>waterBefore);
+  close(totalThermalEnergy(w),before,1e-10);
+});
+
+test('zero-time fluid diagnostics never report invalid thermal power',()=>{
+  const w=new World(7,7),loop=addClosedLoop(w,{machine:true});
+  const sys=new FluidSystem(w,metrics());sys.update(0);
+  assert.equal(loop.hx.thermalPower,0);
+  assert.equal(loop.radiator.thermalPower,0);
+});
+
+test('exchanger air pickup cannot cross a wall or run without water circulation',()=>{
+  const w=new World(7,7),loop=addClosedLoop(w);
+  w.setMaterial(4,1,'concrete');w.setTemperature(5,1,60);
+  const sys=new FluidSystem(w,metrics()),before=w.temperatureAt(5,1);
+  sys.update(.05);
+  assert.equal(loop.hx.airCoolingPower,0);close(w.temperatureAt(5,1),before);
+  w.setMaterial(4,1,'air');w.setTemperature(4,1,60);loop.pump.enabled=false;
+  sys.update(.05);
+  assert.equal(loop.hx.airCoolingPower,0);
+});
+
+test('hot water does not reheat adjacent racks or hot-aisle air through a cooling exchanger',()=>{
+  const w=new World(7,7),loop=addClosedLoop(w,{machine:true});
+  loop.hx.energy=loop.hx.waterMass*4186*70;
+  loop.machine.energy=loop.machine.mass*loop.machine.heatCapacity*40;
+  w.setTemperature(3,0,40);
+  const sys=new FluidSystem(w,metrics());sys.networks=sys.buildNetworks();for(const network of sys.networks)sys.solveNetwork(network);
+  const machineBefore=loop.machine.energy,airBefore=w.temperatureAt(3,0);
+  sys.exchangeMachines(.05);
+  assert.equal(loop.hx.thermalPower,0);
+  close(loop.machine.energy,machineBefore);close(w.temperatureAt(3,0),airBefore);
 });
 
 test('radiator spreads heat over surrounding air and conserves energy',()=>{
@@ -129,10 +292,12 @@ test('tank has gameplay-scale thermal mass instead of near-infinite one-ton buff
   assert.equal(tank.waterMass,120);
 });
 
-test('placement validator prevents T-junctions in simple-loop fluid model',()=>{
+test('placement validator allows T-junctions but rejects a fourth pipe connection',()=>{
   const w=new World(5,5);w.addEntity(new Pipe(1,2));w.addEntity(new Pipe(2,2));w.addEntity(new Pipe(3,2));
   const validator=new PlacementValidator(w);
-  assert.equal(validator.canPlace('pipe',2,1),false);
+  assert.equal(validator.canPlace('pipe',2,1),true);
+  w.addEntity(new Pipe(2,1));
+  assert.equal(validator.canPlace('pipe',2,3),false);
 });
 
 test('machine heat travels through closed loop to radiator and room air',()=>{

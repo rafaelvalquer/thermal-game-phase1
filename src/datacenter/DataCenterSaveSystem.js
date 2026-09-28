@@ -1,4 +1,5 @@
 import { createLevelEntity } from '../campaign/LevelManager.js';
+import { HeatExchanger } from '../entities/HeatExchanger.js';
 
 const STORAGE_KEY='thermal-lab-datacenter-sandbox-v1';
 const EXCLUDED_KEYS=new Set(['id','world']);
@@ -11,12 +12,12 @@ const storageDefault=()=>{
 function copySerializable(value,depth=0){
   if(value===null||typeof value==='string'||typeof value==='boolean')return value;
   if(typeof value==='number')return Number.isFinite(value)?value:null;
-  if(depth>5)return undefined;
+  if(value===undefined||depth>8)return undefined;
   if(Array.isArray(value))return value.map(item=>copySerializable(item,depth+1)).filter(item=>item!==undefined);
   if(Object.getPrototypeOf(value)!==Object.prototype)return undefined;
   const result={};
   for(const [key,item] of Object.entries(value)){
-    if(EXCLUDED_KEYS.has(key))continue;
+    if(key==='world')continue;
     const copy=copySerializable(item,depth+1);if(copy!==undefined)result[key]=copy;
   }
   return result;
@@ -62,8 +63,22 @@ export class DataCenterSaveSystem {
     world.material.set(snapshot.world.materials);world.energy.set(snapshot.world.energy);
     world.entities.length=0;world.utilityLayer.clear();
     for(const definition of snapshot.world.entities||[]){
-      const entity=createLevelEntity({type:definition.type,x:definition.x,y:definition.y,...definition.properties});
-      if(!entity)continue;Object.assign(entity,definition.properties||{});world.addEntity(entity);
+      const properties={...(definition.properties||{})};
+      if(definition.type==='serverRack'&&properties.thermalViolationSeconds!==undefined&&!properties.thermalViolationTimebase){
+        properties.thermalViolationSeconds=Math.max(0,Number(properties.thermalViolationSeconds)||0)/360;
+        properties.thermalViolationTimebase='simulation';
+      }
+      if(definition.type==='technician'&&properties.action==null){
+        properties.action='patrolling';properties.targetRackId=null;properties.boostRemaining=0;
+        properties.staffBoostRemaining=0;properties.workProgress=0;properties.boostedEntityId=null;
+      }
+      if(definition.type==='exchanger'&&(Number(properties.thermalTransferRevision)||0)<HeatExchanger.PERFORMANCE_REVISION){
+        properties.ua=HeatExchanger.WATER_UA;
+        properties.airUA=HeatExchanger.AIR_UA;
+        properties.thermalTransferRevision=HeatExchanger.PERFORMANCE_REVISION;
+      }
+      const entity=createLevelEntity({type:definition.type,x:definition.x,y:definition.y,...properties});
+      if(!entity)continue;Object.assign(entity,properties);entity.normalizeAirflowDirections?.();world.addEntity(entity);
     }
     for(const definition of snapshot.world.utilities||[]){
       const entity=createLevelEntity({type:definition.type,x:definition.x,y:definition.y,...definition.properties});
@@ -77,7 +92,7 @@ export class DataCenterSaveSystem {
     build.budget=snapshot.build.budget;
     build.inventory=build.unlimitedInventory
       ?Object.fromEntries(Object.keys(build.catalog).map(key=>[key,Infinity]))
-      :Object.fromEntries(Object.entries(snapshot.build.inventory||{}).map(([key,value])=>[key,value===null?Infinity:value]));
+      :Object.fromEntries(Object.keys(build.catalog).map(key=>[key,key==='battery'?Infinity:(snapshot.build.inventory?.[key]===null?Infinity:snapshot.build.inventory?.[key]??0)]));
     build.initialInventory={...build.inventory};
     build.placedEntities.clear();
     for(const item of snapshot.build.placedEntities||[]){

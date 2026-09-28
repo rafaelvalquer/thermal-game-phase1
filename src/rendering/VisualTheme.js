@@ -47,6 +47,7 @@ export const dirGlyph = (direction) => direction.x>0?'→':direction.x<0?'←':d
 export const entityLabel = (type) => ({
   machine:'Máquina industrial',
   serverRack:'Rack de servidores',
+  battery:'Banco de baterias',
   furnace:'Forno industrial',
   passiveHeat:'Fonte térmica passiva',
   fan:'Ventilador',

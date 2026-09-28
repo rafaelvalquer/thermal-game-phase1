@@ -1,18 +1,22 @@
 export const BUILD_CATALOG = {
-  wall:       { label:'Parede', icon:'▦', cost:35, inventory:50, kind:'material', material:'concrete', category:'Estrutura', description:'Concreto estrutural. Armazena calor e conduz lentamente.' },
-  insulation: { label:'Isolante', icon:'▧', cost:25, inventory:20, kind:'material', material:'insulation', category:'Estrutura', description:'Barreira de baixa condutividade para reduzir transferência térmica.' },
-  copper:     { label:'Cobre', icon:'▤', cost:80, inventory:10, kind:'material', material:'copper', category:'Estrutura', description:'Condutor térmico de alta eficiência para espalhar calor.' },
+  wall:       { label:'Parede', icon:'▦', cost:35, inventory:50, kind:'material', material:'concrete', category:'Estrutura', description:'Concreto estrutural. Armazena calor e conduz lentamente. Arraste para construir vários blocos.' },
+  insulation: { label:'Isolante', icon:'▧', cost:25, inventory:20, kind:'material', material:'insulation', category:'Estrutura', description:'Barreira de baixa condutividade para reduzir transferência térmica. Arraste para construir vários blocos.' },
+  copper:     { label:'Cobre', icon:'▤', cost:80, inventory:10, kind:'material', material:'copper', category:'Estrutura', description:'Condutor térmico de alta eficiência para espalhar calor. Arraste para construir vários blocos.' },
   fan:        { label:'Ventilador', icon:'✣', cost:100, inventory:4, kind:'entity', category:'Ar', power:'300 W', description:'Move o ar pela sala. Paredes, distância e obstáculos alteram o fluxo real.' },
   exhaust:    { label:'Exaustor', icon:'◉', cost:300, inventory:2, kind:'entity', category:'Ar', power:'500 W', description:'Fan de maior pressão que remove calor conforme a vazão física realmente obtida.' },
   pipe:       { label:'Tubo', icon:'━', cost:10, inventory:40, kind:'entity', category:'Água', description:'Transporta água e energia no sentido definido pela bomba. Redes devem formar um loop sem ramificações.' },
   pump:       { label:'Bomba', icon:'⟳', cost:600, inventory:1, kind:'entity', category:'Água', power:'800 W', description:'Define o sentido da circulação. Pressione R para girar a saída; somente circuitos fechados geram vazão.' },
   tank:       { label:'Tanque', icon:'▰', cost:500, inventory:1, kind:'entity', category:'Água', description:'Reserva térmica de 120 kg de água. Amortece picos sem esconder a evolução da temperatura.' },
   radiator:   { label:'Radiador', icon:'▥', cost:700, inventory:2, kind:'entity', category:'Água', description:'Retira calor da água e aquece uma área 3×3 do ar. Ventilação aumenta a potência de rejeição.' },
-  exchanger:  { label:'Trocador', icon:'HX', cost:450, inventory:3, kind:'entity', category:'Água', description:'Transfere calor da máquina adjacente para a água somente quando existe circulação.' },
+  exchanger:  { label:'Trocador', icon:'HX', cost:450, inventory:3, kind:'entity', category:'Água', description:'Capta calor de máquina adjacente e do ar quente próximo quando a água está mais fria. Exige circulação e radiador para rejeitar o calor.' },
   sensor:     { label:'Sensor', icon:'°', cost:75, inventory:5, kind:'entity', category:'Controle', description:'Mede temperatura atual, média e máxima do tile.' },
   coolingUnit:{ label:'Condensadora', icon:'AC', cost:8000, inventory:1, kind:'entity', category:'Climatização', power:'varia pelo modelo', description:'Unidade completa de ar-condicionado. Leva ar frio pelos dutos e rejeita calor no local instalado; prefira uma área externa.' },
+  battery:    { label:'Banco de baterias', icon:'▣', cost:8000, inventory:Infinity, kind:'entity', category:'Energia', capacity:'50 kWh · 10 kW', description:'Armazena excedentes da rede e descarrega automaticamente nos picos. 50 kWh, carga e descarga de 10 kW, eficiência total de ciclo de 90%.' },
+  industrialCoolingUnit:{ label:'Condensadora Industrial', icon:'AC+', cost:14000, inventory:1, kind:'entity', category:'Climatização', capacity:'50 kW · 5 m³/s', description:'Modelo industrial de 50 kW e 5 m³/s. Ocupa 2 tiles alinhados à direção da descarga; pressione R para orientar.' },
   serverRack: { label:'Rack de cliente', icon:'▤', cost:0, inventory:Infinity, kind:'entity', category:'Clientes', power:'contrato', description:'Instale os racks contratados na sala de servidores. A carga e o calor variam com o perfil do cliente.' },
   duct:       { label:'Duto', icon:'═', cost:50, inventory:80, kind:'utility', category:'Climatização', description:'Transporta ar frio. Arraste para criar linhas e ramificações; dutos longos perdem eficiência e atravessam paredes.' },
-  supplyVent: { label:'Saída de ar gelado', icon:'↓', cost:200, inventory:4, kind:'entity', category:'Climatização', description:'Libera ar frio no ambiente; R orienta o jato para a área atendida.' },
+  supplyVent: { label:'Saída de ar gelado', icon:'↓', cost:200, inventory:4, kind:'entity', category:'Climatização', description:'Distribui o frio por até 2 tiles alcançáveis à frente do jato; paredes bloqueiam a troca. R orienta a descarga.' },
   demolish:   { label:'Remover', icon:'⌫', cost:0, inventory:Infinity, kind:'tool', category:'Ferramenta', description:'Remove equipamentos e materiais construídos.' },
 };
+
+export const STRUCTURE_TOOLS=new Set(['wall','insulation','copper']);

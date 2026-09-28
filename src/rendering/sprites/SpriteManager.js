@@ -18,7 +18,7 @@ export class SpriteManager {
       const finish=ok=>{
         if(settled)return;settled=true;
         const dimensionsValid=Number(image.naturalWidth||image.width)>=definition.frameWidth*definition.frames&&
-          Number(image.naturalHeight||image.height)>=definition.frameHeight;
+          Number(image.naturalHeight||image.height)>=definition.frameHeight*(definition.rows||1);
         if(ok&&dimensionsValid)this.images.set(definition.id,image);
         else{this.failed.add(definition.id);ok=false;}
         resolve(ok);
@@ -28,8 +28,8 @@ export class SpriteManager {
     });
   }
   get(id){return this.images.get(id)||null;}
-  draw(ctx,id,frame,x,y,width,height){
-    const image=this.get(id),rect=this.atlas.sourceRect(id,frame);if(!image||!rect)return false;
+  draw(ctx,id,frame,x,y,width,height,state='running'){
+    const image=this.get(id),rect=this.atlas.sourceRect(id,frame,state);if(!image||!rect)return false;
     ctx.drawImage(image,rect.x,rect.y,rect.width,rect.height,x,y,width,height);return true;
   }
   get stats(){return {loaded:this.images.size,failed:this.failed.size,available:Object.keys(this.atlas.definitions).length};}

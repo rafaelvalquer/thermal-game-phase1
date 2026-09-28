@@ -1,33 +1,120 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
-
-const out=resolve('public/assets/sprites');
-const sources={
-  pump:['fluid/pump.svg','<circle cx="32" cy="34" r="20" fill="#0b1725" stroke="#70d7ee" stroke-width="2"/><circle cx="32" cy="34" r="15" fill="url(#steel)" stroke="#647b91"/><g transform="rotate({angle} 32 34)" fill="#46c8e8"><path d="M32 34c-11-4-8-10-2-14 4 5 5 9 2 14m0 0c4-11 10-8 14-2-5 4-9 5-14 2m0 0c11 4 8 10 2 14-4-5-5-9-2-14m0 0c-4 11-10 8-14 2 5-4 9-5 14-2"/></g><circle cx="32" cy="34" r="4" fill="#d9faff"/><path d="M12 20h7m26 0h7M12 48h7m26 0h7" stroke="#9aafc4" stroke-width="3" stroke-linecap="round"/><circle cx="48" cy="16" r="2.4" fill="#4ade80"/>' ],
-  tank:['fluid/tank.svg','<ellipse cx="32" cy="17" rx="18" ry="6" fill="#8395a8"/><path d="M14 17v29c0 4 8 8 18 8s18-4 18-8V17" fill="url(#steel)" stroke="#a4b8c9" stroke-width="2"/><ellipse cx="32" cy="17" rx="18" ry="6" fill="#26384b" stroke="#c4d2de" stroke-width="2"/><path d="M17 35h30v11c-6 5-24 5-30 0z" fill="#137da1" opacity=".88"/><path d="M17 {wave}q5 -2 10 0t10 0t10 0" fill="none" stroke="#77e5f5" stroke-width="2"/><path d="M21 22v23" stroke="#e2e8f0" opacity=".35" stroke-width="3"/><rect x="45" y="27" width="4" height="9" rx="2" fill="#34d399"/>' ],
-  radiator:['fluid/radiator.svg','<rect x="9" y="17" width="46" height="32" rx="5" fill="url(#steel)" stroke="#91a7bb" stroke-width="2"/><path d="M13 23h38M13 43h38" stroke="#334b61" stroke-width="3"/><g stroke="#66d5e9" stroke-width="2">{fins}</g><circle cx="32" cy="33" r="8" fill="#0c1a29" stroke="#c0d3df" stroke-width="2"/><g transform="rotate({angle} 32 33)" fill="#38bdf8"><path d="M32 33q-8-11 0-12 7 7 0 12m0 0q11-8 12 0-7 7-12 0m0 0q8 11 0 12-7-7 0-12m0 0q-11 8-12 0 7-7 12 0"/></g><circle cx="32" cy="33" r="2.5" fill="#dffaff"/>' ],
-  heat_exchanger:['fluid/heat_exchanger.svg','<rect x="8" y="17" width="48" height="33" rx="5" fill="url(#steel)" stroke="#b4c3d1" stroke-width="2"/><path d="M14 24h36M14 31h36M14 38h36M14 45h36" stroke="#425c73" stroke-width="2"/><path d="M15 24h{glow} M49 45h{glow}" stroke="#fb923c" stroke-width="3" stroke-linecap="round"/><path d="M14 12v6m36-6v6M14 50v5m36-5v5" stroke="#67d9ed" stroke-width="3"/><circle cx="13" cy="12" r="3" fill="#38bdf8"/><circle cx="51" cy="12" r="3" fill="#fb923c"/>' ],
-  fan:['airflow/fan.svg','<rect x="7" y="8" width="50" height="48" rx="9" fill="url(#steel)" stroke="#72d9eb" stroke-width="2"/><circle cx="32" cy="32" r="21" fill="#071320" stroke="#54738b" stroke-width="2"/><g transform="rotate({angle} 32 32)" fill="#31c3df"><path d="M32 32q-8-15 0-17 9 9 0 17m0 0q15-8 17 0-9 9-17 0m0 0q8 15 0 17-9-9 0-17m0 0q-15 8-17 0 9-9 17 0"/></g><circle cx="32" cy="32" r="4" fill="#defaff"/><path d="M13 13l5 5m28 28 5 5m0-38-5 5m-28 28-5 5" stroke="#c1d2df" stroke-width="2"/>' ],
-  exhaust:['airflow/exhaust.svg','<rect x="7" y="8" width="50" height="48" rx="9" fill="url(#steel)" stroke="#fb8a60" stroke-width="2"/><circle cx="32" cy="32" r="21" fill="#071320" stroke="#754b45" stroke-width="2"/><g transform="rotate({angle} 32 32)" fill="#fb754f"><path d="M32 32q-8-15 0-17 9 9 0 17m0 0q15-8 17 0-9 9-17 0m0 0q8 15 0 17-9-9 0-17m0 0q-15 8-17 0 9-9 17 0"/></g><circle cx="32" cy="32" r="4" fill="#fff0e8"/><path d="M32 5v8m27 19h-8M32 59v-8M5 32h8" stroke="#ffb184" stroke-width="2"/>' ],
-  machine:['machines/machine.svg','<path d="M15 53V16l6-6h26l5 6v37z" fill="url(#steel)" stroke="#9eafbf" stroke-width="2"/><path d="M21 18h22v10H21z" fill="#071522" stroke="#334b61"/><rect x="24" y="21" width="16" height="3" rx="1.5" fill="#39bddb"/><path d="M21 34h22M21 40h22M21 46h22" stroke="#52697e" stroke-width="3"/><circle cx="45" cy="21" r="2" fill="{led}"/><path d="M18 54h31" stroke="#52697e" stroke-width="3"/>',2],
-  server_rack:['machines/server_rack.svg','<path d="M14 54V10h36v44z" fill="url(#steel)" stroke="#91a5b9" stroke-width="2"/><path d="M19 15h26v10H19zm0 14h26v10H19zm0 14h26v7H19z" fill="#071522" stroke="#344a60"/><g fill="#38d6b0">{leds}</g><path d="M17 11v42" stroke="#d2dee8" opacity=".5" stroke-width="2"/>' ],
-  furnace:['machines/furnace.svg','<path d="M11 51V16l7-7h28l7 7v35z" fill="url(#steel)" stroke="#bf7552" stroke-width="2"/><rect x="18" y="19" width="28" height="25" rx="3" fill="#1d100f" stroke="#71402c" stroke-width="2"/><path d="M32 41c-10-7-3-11-3-17 7 5 6 8 7 10 5-5 7-2 6 2-1 5-5 7-10 5z" fill="#fb7c32" opacity="{fire}"/><path d="M30 39q-3-5 2-9 4 5 3 9" fill="#ffdc77"/><path d="M16 52h36" stroke="#f69a59" stroke-width="3"/><circle cx="45" cy="14" r="2" fill="#fb923c"/>' ],
-  sensor:['sensors/sensor.svg','<circle cx="32" cy="29" r="19" fill="url(#steel)" stroke="#a4b8c8" stroke-width="2"/><circle cx="32" cy="28" r="11" fill="#091522" stroke="#38566e"/><circle cx="32" cy="28" r="5" fill="{led}"/><path d="M32 48v6m-9 0h18" stroke="#8ba2b5" stroke-width="3" stroke-linecap="round"/><path d="M26 28h12" stroke="#dffaff" opacity=".75" stroke-width="1.5"/>',2],
-  condenser:['cooling/condenser.svg','<rect x="8" y="12" width="48" height="42" rx="6" fill="url(#steel)" stroke="#fb9565" stroke-width="2"/><circle cx="32" cy="32" r="16" fill="#101824" stroke="#a65c43" stroke-width="2"/><g transform="rotate({angle} 32 32)" fill="#fb754f"><path d="M32 32q-7-11 0-13 8 7 0 13m0 0q11-7 13 0-7 8-13 0m0 0q7 11 0 13-8-7 0-13m0 0q-11 7-13 0 7-8 13 0"/></g><circle cx="32" cy="32" r="3" fill="#ffded0"/><path d="M14 18h5m26 0h5M14 47h5m26 0h5" stroke="#ffd0b4" stroke-width="2"/><circle cx="49" cy="18" r="2" fill="#4ade80"/>' ],
-  passive_heat:['machines/passive_heat.svg','<path d="M13 51V17l6-7h26l6 7v34z" fill="url(#steel)" stroke="#f5b942" stroke-width="2"/><rect x="20" y="21" width="24" height="19" rx="3" fill="#101924" stroke="#765a31"/><path d="M23 35l5-8 5 8 4-6 5 6" fill="none" stroke="#fb923c" stroke-width="2.5" stroke-linejoin="round"/><circle cx="24" cy="45" r="2" fill="#fbbf24"/><circle cx="32" cy="45" r="2" fill="#f97316"/><circle cx="40" cy="45" r="2" fill="#ef4444"/><path d="M16 53h32" stroke="#6d7f8f" stroke-width="3"/>',1],
-  supplyVent:['cooling/supply_vent.svg','<rect x="8" y="13" width="48" height="39" rx="6" fill="url(#steel)" stroke="#38bdf8" stroke-width="2"/><path d="M15 21h34M15 27h34M15 33h34M15 39h34M15 45h34" stroke="#9bdcf3" stroke-width="2.4" stroke-linecap="round"/><path d="M32 51v8m-5-5 5 5 5-5" fill="none" stroke="#38bdf8" stroke-width="2"/>',1],
-};
-
-function art(type,template,frame){
-  const values={angle:frame*120,wave:[35,36,34][frame%3],glow:[7,20,36][frame%3],led:['#38d6b0','#74f7d4','#2c9c8a'][frame%3],fire:[.64,.95,.76][frame%3],
-    fins:Array.from({length:6},(_,i)=>`<path d="M${17+i*6} 22v22"/>`).join(''),
-    leds:Array.from({length:10},(_,i)=>{const x=40+(i%2)*4,y=18+Math.floor(i/2)*6,bright=(i+frame*3)%4!==0;return `<rect x="${x}" y="${y}" width="2.4" height="2.4" rx=".8" fill="${bright?'#42e2b3':'#245746'}"/>`;}).join('')};
-  return template.replace(/\{(\w+)\}/g,(_,key)=>values[key]??'');
+import { mkdir,writeFile } from 'node:fs/promises';
+import { dirname,resolve } from 'node:path';
+import { INDUSTRIAL_PALETTE as P } from '../src/rendering/IndustrialPalette.js';
+import { SPRITES } from '../src/rendering/sprites/SpriteManifest.js';
+// Author on a 32px grid. All primitives resolve to integer rectangles; no filters,
+// gradients or rotated vector shapes are used in the delivered sheets.
+function artwork(type,frame,off,width=32,sheetRow=0){
+  const pixels=new Map();
+  const rect=(x,y,w,h,c)=>{for(let yy=y;yy<y+h;yy++)for(let xx=x;xx<x+w;xx++)if(xx>=0&&xx<width&&yy>=0&&yy<32)pixels.set(xx+','+yy,c);};
+  const dot=(x,y,c)=>rect(x,y,1,1,c);
+  const line=(x0,y0,x1,y1,c)=>{let dx=Math.abs(x1-x0),sx=x0<x1?1:-1,dy=-Math.abs(y1-y0),sy=y0<y1?1:-1,err=dx+dy;for(;;){dot(x0,y0,c);if(x0===x1&&y0===y1)break;const e=2*err;if(e>=dy){err+=dy;x0+=sx;}if(e<=dx){err+=dx;y0+=sy;}}};
+  const disc=(cx,cy,r,c)=>{for(let y=-r;y<=r;y++)for(let x=-r;x<=r;x++)if(x*x+y*y<=r*r)dot(cx+x,cy+y,c);};
+  const bolt=(x,y)=>{rect(x,y,2,2,P.shadow);dot(x,y,P.light);};
+  const panel=(x,y,w,h)=>{rect(x+2,y+h,w,2,P.ink);rect(x,y,w,h,P.ink);rect(x+1,y+1,w-2,h-2,P.steel);rect(x+1,y+1,w-2,2,P.light);rect(x+w-3,y+3,2,h-4,P.dark);rect(x+2,y+h-3,w-5,1,P.mid);};
+  const slats=(x,y,w,count,c=P.mid)=>{for(let i=0;i<count;i++){rect(x,y+i*3,w,2,P.ink);rect(x,y+i*3,w,1,c);}};
+  const led=(x,y,n=0)=>rect(x,y,2,1,off?P.shadow:(frame+n)%4===0?P.shine:P.green);
+  const rotor=(cx,cy,r)=>{disc(cx,cy,r+1,P.light);disc(cx,cy,r,P.dark);disc(cx,cy,r-1,P.ink);for(let blade=0;blade<4;blade++){const a=(off?0:frame*Math.PI/12)+blade*Math.PI/2;for(let d=2;d<r;d++){const x=Math.round(cx+Math.cos(a)*d),y=Math.round(cy+Math.sin(a)*d);rect(x,y,2,2,P.mid);}}disc(cx,cy,2,P.steel);dot(cx,cy,P.shine);};
+  const ports=()=>{rect(0,14,5,5,P.ink);rect(0,15,6,3,P.copper);rect(2,13,2,7,P.mid);rect(width-5,14,5,5,P.ink);rect(width-6,15,6,3,P.copper);rect(width-4,13,2,7,P.mid);};
+  if(type==='serverRack'){
+    panel(6,2,20,27);rect(8,5,16,21,P.ink);rect(8,4,16,2,P.mid);
+    for(let row=0;row<4;row++){const y=8+row*4;rect(9,y,14,3,P.steel);rect(10,y,7,1,P.mid);rect(10,y+2,9,1,P.shadow);led(20,y+1,row);dot(18,y+1,P.yellow);}
+    rect(5,27,3,3,P.ink);rect(24,27,3,3,P.ink);bolt(7,3);bolt(23,3);
+  }else if(type==='technician'){
+    const action=Math.floor(sheetRow/4),direction=sheetRow%4,walk=action===0,work=action===1;
+    const stride=walk?[0,1,0,-1][frame]:0,reach=work?[0,1,2,1][frame]:0;
+    const skin=P.copperLight,helmet=P.yellow;
+    // Feet share a baseline in all views. Each view is authored upright.
+    if(direction===0||direction===2){
+      rect(10,21,12,8,P.ink);rect(11,22,4,6,P.dark);rect(17,22,4,6,P.steel);
+      rect(10-stride,27,6,3,P.ink);rect(17+stride,27,6,3,P.ink);
+      rect(11-stride,27,4,1,P.mid);rect(18+stride,27,4,1,P.mid);
+      rect(9,12,14,11,P.ink);rect(10,13,12,9,P.steel);rect(11,13,10,2,P.mid);
+      rect(10,20,12,3,P.shadow);rect(14,21,3,1,P.yellow);
+      rect(7,14+stride,3,7,P.dark);rect(22,14-stride,3,7,P.dark);
+      rect(7,20+stride-reach,3,3,P.light);rect(22,20-stride-reach,3,3,P.light);
+      if(direction===2){
+        rect(12,9,8,5,skin);rect(12,10,1,3,P.copper);dot(14,11,P.ink);dot(18,11,P.ink);rect(15,13,3,1,P.copper);
+        rect(15,15,1,5,P.ink);rect(11,16,3,2,P.water);rect(18,16,3,2,P.light);
+        rect(20,21,3,4,P.copper);rect(21,20,1,3,P.light);
+      }else{
+        rect(12,9,8,4,P.dark);rect(13,12,6,2,skin);
+        rect(11,16,10,2,P.yellow);rect(12,18,8,1,P.mid);
+        rect(9,21,3,4,P.copper);rect(10,20,1,3,P.light);
+      }
+      rect(10,3,12,7,P.ink);rect(11,4,10,6,helmet);rect(12,4,8,2,P.shine);rect(15,4,2,5,P.copperLight);
+      rect(9,9,14,2,direction===2?helmet:P.copper);rect(10,9,12,1,P.yellow);
+      if(work){const tx=direction===2?24:6,ty=17-reach;rect(tx,ty,2,7,P.mid);rect(tx-1,ty,4,2,P.light);dot(tx,ty,P.ink);}
+    }else if(direction===1){
+      rect(12-stride,22,4,7,P.dark);rect(17+stride,22,4,7,P.steel);rect(12-stride,28,6,2,P.ink);rect(17+stride,28,7,2,P.ink);
+      rect(11,12,11,11,P.ink);rect(12,13,9,8,P.steel);rect(13,14,5,2,P.mid);rect(12,21,10,2,P.shadow);
+      rect(14,10,7,4,skin);rect(20,10,3,2,skin);dot(20,10,P.ink);rect(13,10,2,3,P.dark);
+      rect(11,3,11,7,P.ink);rect(12,4,9,6,helmet);rect(13,4,7,2,P.shine);rect(12,9,13,2,helmet);
+      rect(14,15,4,6,P.dark);rect(15,16,2,4,P.mid);
+      rect(17,work?18-reach:20-stride,work?7:3,3,P.light);
+      rect(12,21,4,4,P.copper);rect(13,20,1,3,P.light);
+      if(work){rect(24,14-reach,2,9,P.mid);rect(23,14-reach,4,2,P.light);dot(24,14-reach,P.ink);}
+    }else{
+      rect(11-stride,22,4,7,P.steel);rect(16+stride,22,4,7,P.dark);rect(8-stride,28,7,2,P.ink);rect(14+stride,28,6,2,P.ink);
+      rect(10,12,11,11,P.ink);rect(11,13,9,8,P.steel);rect(12,14,6,2,P.mid);rect(10,21,10,2,P.shadow);
+      rect(11,10,7,4,skin);rect(8,10,3,2,skin);dot(11,10,P.ink);rect(17,10,2,3,P.dark);
+      rect(10,3,11,7,P.ink);rect(11,4,9,6,helmet);rect(12,4,7,2,P.shine);rect(7,9,13,2,helmet);
+      rect(14,15,4,6,P.dark);rect(15,16,2,4,P.mid);rect(11,16,2,2,P.water);
+      rect(work?7:12,work?18-reach:20+stride,work?8:3,3,P.light);
+      rect(18,21,3,3,P.dark);dot(19,21,P.yellow);
+      if(work){rect(5,14-reach,2,9,P.mid);rect(4,14-reach,4,2,P.light);dot(5,14-reach,P.ink);}
+    }
+  }else if(type==='machine'){
+    panel(4,6,24,22);rect(7,9,12,8,P.ink);rect(8,10,10,5,off?P.dark:P.water);if(!off){line(9,13,11,12,P.cyan);line(11,12,13,14,P.cyan);line(13,14,16,11,P.cyan);}led(22,10);rect(22,14,2,2,P.yellow);slats(8,20,16,2);bolt(5,7);bolt(25,25);
+  }else if(type==='furnace'){
+    panel(4,8,24,21);rect(8,2,6,7,P.ink);rect(9,2,4,6,P.mid);rect(7,12,18,12,P.ink);rect(8,13,16,10,off?P.shadow:'#673e30');
+    if(!off)for(let x=9;x<24;x+=2){const h=3+(x*5+frame*3)%7;rect(x,23-h,2,h,P.copper);rect(x,24-Math.max(2,h-3),1,Math.max(2,h-3),P.yellow);}
+    rect(8,25,16,2,P.dark);for(let x=8;x<24;x+=4)rect(x,25,2,2,P.yellow);bolt(5,9);bolt(25,9);
+  }else if(type==='fan'||type==='exhaust'){
+    panel(3,3,26,26);rotor(16,16,10);for(const [x,y] of [[4,4],[25,4],[4,25],[25,25]])bolt(x,y);
+    if(type==='exhaust'){rect(7,6,18,1,P.yellow);rect(7,26,18,1,P.yellow);for(let x=8;x<26;x+=4)rect(x,7,1,18,P.steel);}
+  }else if(type==='pump'){
+    ports();rect(6,23,21,5,P.ink);rect(7,23,19,2,P.mid);panel(7,8,12,15);rotor(13,16,5);rect(20,10,7,13,P.steel);slats(21,11,5,4);rect(20,9,6,2,P.copper);led(21,24);
+  }else if(type==='tank'){
+    ports();panel(6,4,20,23);rect(8,2,16,3,P.mid);rect(11,0,8,3,P.dark);rect(8,7,16,17,P.water);rect(9,8,2,15,P.cyan);const wave=off?11:10+frame%2;rect(8,7,16,wave-7,P.shadow);rect(8,wave,16,1,P.light);rect(22,9,1,13,P.light);for(let y=10;y<22;y+=3)rect(20,y,3,1,P.mid);rect(8,27,3,3,P.ink);rect(21,27,3,3,P.ink);
+  }else if(type==='radiator'){
+    ports();panel(5,4,22,24);for(let x=7;x<26;x+=3){rect(x,7,2,17,P.ink);rect(x,7,1,17,P.mid);}rotor(16,16,7);rect(7,5,17,1,P.copper);rect(7,25,17,1,P.copperLight);
+  }else if(type==='exchanger'){
+    ports();panel(5,6,22,21);for(let y=9;y<24;y+=3){rect(8,y,16,2,P.ink);rect(8,y,16,1,P.mid);}rect(7,8,2,16,P.copper);rect(23,8,2,16,P.water);for(let y=10;y<24;y+=6){rect(9,y,14,1,P.copperLight);if(!off)dot(10+(frame*3)%12,y,P.cyan);}bolt(6,7);bolt(24,25);
+  }else if(type==='sensor'){
+    rect(14,22,4,7,P.mid);rect(10,28,12,2,P.ink);panel(7,5,18,18);rect(10,9,12,9,P.ink);rect(11,10,10,6,off?P.dark:P.water);if(!off){rect(13,12,2,3,P.cyan);rect(17,11,2,4,P.cyan);}led(12,20);bolt(8,6);
+  }else if(type==='battery'){
+    panel(5,3,22,26);rect(11,1,10,3,P.mid);rect(8,7,16,7,P.ink);rect(9,8,14,5,off?P.dark:P.water);rect(10,9,3,3,off?P.mid:P.cyan);rect(14,9,3,3,off?P.mid:P.cyan);rect(18,9,3,3,off?P.mid:P.cyan);
+    rect(9,16,14,8,P.ink);rect(10,17,12,6,P.shadow);rect(11,18,10,4,P.steel);rect(15,18,2,3,P.yellow);rect(14,20,4,1,P.copperLight);
+    for(let i=0;i<4;i++){rect(8,25+i%2,3,2,P.mid);rect(21,25+i%2,3,2,P.mid);}led(24,5,frame);bolt(6,4);bolt(25,26);
+  }else if(type.startsWith('cooling')){
+    const compact=type==='coolingCompact',industrial=type==='coolingIndustrial';
+    panel(2,5,width-4,23);ports();
+    if(compact){slats(5,9,6,5);rotor(21,16,7);rect(5,25,22,1,P.cyan);}
+    else if(industrial){slats(5,9,10,5);rotor(27,16,9);rotor(48,16,9);rect(18,6,1,20,P.mid);rect(38,6,1,20,P.mid);rect(5,25,width-10,1,P.copperLight);for(let x=6;x<width-4;x+=12)bolt(x,6);}
+    else{slats(5,9,7,5,P.cyan);rotor(22,16,7);rect(14,8,1,17,P.mid);rect(5,25,22,1,P.copperLight);}
+    led(width-7,7);rect(4,28,4,2,P.ink);rect(width-8,28,4,2,P.ink);
+  }else if(type==='supplyVent'){
+    panel(3,5,26,22);for(let y=9;y<25;y+=3){rect(6,y,20,2,P.ink);rect(6,y,20,1,off?P.mid:P.cyan);}rect(15,27,2,3,P.cyan);rect(13,28,6,1,P.cyan);bolt(4,6);bolt(26,6);
+  }else{
+    panel(6,5,20,24);rect(10,9,12,13,P.ink);for(let i=0;i<3;i++)rect(12+i*3,12+i*2,2,8-i*2,P.copper);rect(9,25,14,1,P.yellow);bolt(7,6);
+  }
+  // Coalesce horizontal runs while preserving the exact authored pixel grid.
+  let svg='';for(let y=0;y<32;y++){let x=0;while(x<width){const c=pixels.get(x+','+y);if(!c){x++;continue;}const start=x;while(x<width&&pixels.get(x+','+y)===c)x++;svg+=`<rect x="${start}" y="${y}" width="${x-start}" height="1" fill="${c}"/>`;}}
+  return svg;
 }
-
-for(const [type,[relative,template,frameCount=3]] of Object.entries(sources)){
-  const frames=Array.from({length:frameCount},(_,frame)=>`<g transform="translate(${frame*64} 0)">${art(type,template,frame)}<path d="M12 58h40" stroke="#020817" stroke-opacity=".45" stroke-width="2"/></g>`).join('');
-  const width=64*frameCount,svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="64" viewBox="0 0 ${width} 64"><defs><linearGradient id="steel" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#536b80"/><stop offset=".45" stop-color="#26394c"/><stop offset="1" stop-color="#111c2a"/></linearGradient></defs>${frames}</svg>`;
-  const path=resolve(out,relative);await mkdir(dirname(path),{recursive:true});await writeFile(path,svg+'\n');
+for(const [id,s] of Object.entries(SPRITES)){
+  let content='';for(let row=0;row<s.rows;row++)for(let frame=0;frame<s.frames;frame++)content+=`<g transform="translate(${frame*s.frameWidth} ${row*64}) scale(2)">${artwork(id,frame,id==='technician'?false:row===1,s.frameWidth/2,row)}</g>`;
+  const width=s.frameWidth*s.frames,height=s.frameHeight*s.rows,path=resolve('public',s.path.slice(1));await mkdir(dirname(path),{recursive:true});
+  await writeFile(path,`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" shape-rendering="crispEdges">${content}</svg>\n`);
 }
-console.log(`Generated ${Object.keys(sources).length} sprite sheets in ${out}`);
+console.log(`Generated ${Object.keys(SPRITES).length} pixel-art sheets with running and idle states.`);
+
+// Shared title-screen illustration, authored with the same equipment pixels.
+let room='<rect width="320" height="160" fill="#1c282e"/>';
+for(let y=16;y<144;y+=16)for(let x=16;x<304;x+=16)room+=`<rect x="${x}" y="${y}" width="15" height="15" fill="${(x+y)%32?'#34474c':'#3c5055'}"/>`;
+room+='<path d="M16 136V16H304V136" fill="none" stroke="#819594" stroke-width="8"/><path d="M24 25H296" stroke="#a7b9b3" stroke-width="2"/><path d="M30 120H286" stroke="#e3b657" stroke-width="2"/>';
+for(let row=0;row<2;row++)for(let col=0;col<6;col++)room+=`<g transform="translate(${40+col*34} ${35+row*42})">${artwork('serverRack',col%4,false)}</g>`;
+room+=`<g transform="translate(257 47)">${artwork('coolingUnit',0,false)}</g><g transform="translate(257 91)">${artwork('pump',0,false)}</g>`;
+await mkdir(resolve('public/assets/scenes'),{recursive:true});
+await writeFile(resolve('public/assets/scenes/factory.svg'),`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="320" viewBox="0 0 320 160" shape-rendering="crispEdges">${room}</svg>\n`);

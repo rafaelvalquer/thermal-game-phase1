@@ -1,12 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BUILD_CATALOG } from '../src/building/BuildCatalog.js';
-import { clearToolbarSearch, groupToolbarTools, isToolbarCategoryOpen, openCategoryForTool, toggleToolbarCategory } from '../src/ui/Toolbar.js';
+import { clearToolbarSearch, groupToolbarTools, isToolbarCategoryOpen, openCategoryForTool, toggleToolbarCategory, TOOL_SPRITE_ICONS } from '../src/ui/Toolbar.js';
 
 test('toolbar groups every catalog tool by its category',()=>{
   const groups=groupToolbarTools(BUILD_CATALOG);
   assert.equal(groups.reduce((count,group)=>count+group.tools.length,0),Object.keys(BUILD_CATALOG).length);
   assert.deepEqual(groups.map(group=>group.category),[...new Set(Object.values(BUILD_CATALOG).map(tool=>tool.category))]);
+});
+
+test('compact and industrial condensers use the dedicated cooling sprite in the toolbar',()=>{
+  assert.equal(TOOL_SPRITE_ICONS.coolingUnit,'cooling/condenser.svg');
+  assert.equal(TOOL_SPRITE_ICONS.industrialCoolingUnit,'cooling/condenser.svg');
 });
 
 test('toolbar search matches tool names, descriptions, and categories without accents',()=>{

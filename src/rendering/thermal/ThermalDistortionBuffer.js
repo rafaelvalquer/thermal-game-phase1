@@ -19,6 +19,7 @@ export class ThermalDistortionBuffer {
     }
     this.width=width;this.height=height;this.dpr=dpr;
     this.ctx.setTransform(dpr,0,0,dpr,0,0);
+    this.ctx.imageSmoothingEnabled=false;
     this.ctx.clearRect(0,0,width,height);
     return true;
   }

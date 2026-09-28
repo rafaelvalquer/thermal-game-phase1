@@ -6,5 +6,6 @@ export class Entity {
     this.x = x;
     this.y = y;
     this.enabled = true;
+    this.powerBlocked = false;
   }
 }

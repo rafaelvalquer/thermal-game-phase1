@@ -5,12 +5,14 @@ export class EntityRenderer {
   constructor(){this.sprites=new EquipmentSpriteRenderer();this.sprites.fallback=this;}
   preloadSprites(){return this.sprites.preload();}
 
-  draw(ctx,world,tile,mode,time=0,{selectedEntity=null}={}){
+  draw(ctx,world,tile,mode,time=0,{selectedEntity=null,bounds=null,zoom=1}={}){
     this.stats={spriteDraws:0,fallbacks:0,animated:0};
     const ordered=[...world.entities].map((entity,index)=>({entity,index})).sort((a,b)=>(a.entity.y+this.sprites.visualFootY(a.entity))*tile-(b.entity.y+this.sprites.visualFootY(b.entity))*tile||a.index-b.index);
     const thermalMachines=[];
     for(const {entity:e} of ordered){
-      if(this.sprites.draw(ctx,world,e,tile,mode,time,{selected:e===selectedEntity})){this.stats.spriteDraws++;if(this.sprites.isAnimated(e))this.stats.animated++;if(mode==='thermal'&&['machine','serverRack','furnace'].includes(e.type))thermalMachines.push(e);continue;}
+      if(bounds&&(e.x*tile<bounds.x-tile*3||e.y*tile<bounds.y-tile*3||e.x*tile>bounds.x+bounds.width+tile*3||e.y*tile>bounds.y+bounds.height+tile*3))continue;
+      const visual=e.type==='technician'&&e.moveProgress>0?{...e,x:e.fromX+(e.toX-e.fromX)*e.moveProgress,y:e.fromY+(e.toY-e.fromY)*e.moveProgress}:e;
+      if(this.sprites.draw(ctx,world,visual,tile,mode,time,{selected:e===selectedEntity})){if(e.type==='serverRack')this.rackOrientation(ctx,e,tile);this.stats.spriteDraws++;if(this.sprites.isAnimated(e))this.stats.animated++;if(mode==='thermal'&&['machine','serverRack','furnace'].includes(e.type))thermalMachines.push(e);continue;}
       this.stats.fallbacks++;
       const x=e.x*tile,y=e.y*tile,cx=x+tile/2,cy=y+tile/2;
       ctx.save();
@@ -26,27 +28,50 @@ export class EntityRenderer {
       if(mode==='thermal'&&['machine','serverRack','furnace'].includes(e.type))thermalMachines.push(e);
       ctx.restore();
     }
-    if(mode==='thermal')for(const entity of thermalMachines)this.thermalIndicator(ctx,entity,tile);
+    if(mode==='thermal'){
+      const labels=[];
+      for(const entity of thermalMachines.sort((a,b)=>(b===selectedEntity)-(a===selectedEntity))){
+        const box={x:(entity.x+.5)*tile-21,y:entity.y*tile-16,w:42,h:15};
+        const show=entity===selectedEntity||(zoom>=.85&&!labels.some(b=>box.x<b.x+b.w&&box.x+box.w>b.x&&box.y<b.y+b.h&&box.y+box.h>b.y));
+        this.thermalIndicator(ctx,entity,tile,show);if(show)labels.push(box);
+      }
+    }
+    this.drawTechnicianWork(ctx,world,tile,mode);
   }
 
-  drawPreview(ctx,world,tool,x,y,direction,tile,mode,time=0,valid=true){
-    const types={fan:'fan',exhaust:'exhaust',pipe:'pipe',pump:'pump',tank:'tank',radiator:'radiator',exchanger:'exchanger',sensor:'sensor',coolingUnit:'coolingUnit',supplyVent:'supplyVent'};
+  drawTechnicianWork(ctx,world,tile,mode){
+    const workers=world.entities.filter(entity=>entity.type==='technician'&&entity.action==='working'&&entity.targetRackId!=null);
+    for(const worker of workers){const rack=world.entities.find(entity=>entity.type==='serverRack'&&entity.id===worker.targetRackId);if(!rack)continue;
+      const width=Math.max(116,tile*3.5),height=30,left=(rack.x+.5)*tile-width/2;let top=rack.y*tile-height-3;
+      if(mode==='thermal')top-=Math.max(12,tile*.72);if(top<0)top=rack.y*tile+tile+2;
+      const progress=Math.max(0,Math.min(1,worker.workProgress||0));ctx.save();ctx.fillStyle='rgba(2,10,20,.95)';ctx.strokeStyle='#22d3ee';ctx.lineWidth=Math.max(1,tile*.025);ctx.fillRect(left,top,width,height);ctx.strokeRect(left+.5,top+.5,width-1,height-1);
+      ctx.textAlign='left';ctx.textBaseline='middle';ctx.font='700 '+Math.max(8,tile*.22)+'px system-ui';ctx.fillStyle='#e0f2fe';let name=rack.name||'Rack';const maxName=Math.max(20,width-12);while(name.length>3&&ctx.measureText(name).width>maxName)name=name.slice(0,-2)+'…';ctx.fillText(name,left+6,top+8);
+      ctx.textAlign='right';ctx.font='800 '+Math.max(7,tile*.17)+'px system-ui';ctx.fillStyle='#67e8f9';ctx.fillText('TROCA TÉRMICA +20%',left+width-6,top+8);
+      ctx.fillStyle='#102a38';ctx.fillRect(left+6,top+17,width-12,5);ctx.fillStyle='#22d3ee';ctx.fillRect(left+6,top+17,(width-12)*progress,5);
+      ctx.textAlign='right';ctx.font='700 '+Math.max(7,tile*.16)+'px ui-monospace,monospace';ctx.fillStyle='#cbd5e1';ctx.fillText(Math.ceil(worker.boostRemaining||0)+' s',left+width-6,top+26);ctx.restore();
+    }
+  }
+
+  drawPreview(ctx,world,tool,x,y,direction,tile,mode,time=0,valid=true,model=null){
+    const types={fan:'fan',exhaust:'exhaust',pipe:'pipe',pump:'pump',tank:'tank',radiator:'radiator',exchanger:'exchanger',sensor:'sensor',coolingUnit:'coolingUnit',industrialCoolingUnit:'coolingUnit',supplyVent:'supplyVent',serverRack:'serverRack'};
     if(!types[tool])return false;
-    const entity={id:987654,type:types[tool],x,y,direction:{...direction},enabled:true,started:true,currentVelocity:.35,currentFlow:.15,
+    const entity={id:987654,type:types[tool],x,y,direction:{...direction},tier:tool==='industrialCoolingUnit'?'industrial':model,footprintLength:tool==='industrialCoolingUnit'||model==='industrial'?2:1,enabled:true,started:true,currentVelocity:.35,currentFlow:.15,
       circuitClosed:false,flowRate:0,waterTemperature:25,inletTemperature:25,outletTemperature:25,thermalPower:0,
       airInTemperature:25,airOutTemperature:25,fanBoost:1,resistance:1,hydraulicPower:36,current:25,average:25,max:25,
-      name:'Prévia',temperature:25};
+      airIntakeDirection:{...direction},airExhaustDirection:{x:-direction.x,y:-direction.y},name:'Prévia',temperature:25};
     ctx.save();ctx.globalAlpha=valid?.58:.38;
     const previewWorld={...world,entities:[entity],entityAt:(tx,ty)=>world.entityAt(tx,ty)};
     if(!this.sprites.draw(ctx,previewWorld,entity,tile,mode,time,{preview:true,valid}))this.drawProcedural(ctx,previewWorld,entity,tile,mode,time);
+    else if(entity.type==='serverRack')this.rackOrientation(ctx,entity,tile);
     ctx.restore();
     return true;
   }
 
-  thermalIndicator(ctx,entity,tile){
+  thermalIndicator(ctx,entity,tile,showLabel=true){
     if(!['machine','serverRack','furnace'].includes(entity.type)||!Number.isFinite(entity.temperature))return;
     const color=thermalGameplayState(entity.temperature);
     if(color){ctx.save();ctx.strokeStyle=color;ctx.lineWidth=Math.max(1.4,tile*.075);ctx.globalAlpha=.96;ctx.strokeRect(entity.x*tile+1.5,entity.y*tile+1.5,tile-3,tile-3);ctx.restore();}
+    if(!showLabel)return;
     const label=entity.temperature.toFixed(1)+'°',cx=(entity.x+.5)*tile,cy=(entity.y+.5)*tile;
     ctx.save();ctx.font='700 '+Math.max(8,tile*.38)+'px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';
     const width=ctx.measureText(label).width+6,height=Math.max(12,tile*.72);let left=cx-width/2,top=entity.y*tile-height-2;
@@ -104,12 +129,17 @@ export class EntityRenderer {
       const ry=y+tile*(.16+i*.14);ctx.fillStyle=i%2?'#263244':'#1e293b';ctx.fillRect(x+tile*.16,ry,tile*.68,tile*.09);
       ctx.fillStyle=i<3?'#34d399':'#60a5fa';ctx.globalAlpha=.45+.45*pulse;ctx.fillRect(x+tile*.73,ry+tile*.02,tile*.05,tile*.035);ctx.globalAlpha=1;
     }
+    this.rackOrientation(ctx,e,tile);
+  }
+
+  rackOrientation(ctx,e,tile){
+    const x=e.x*tile,y=e.y*tile;
     const arrow=(d,color)=>{
-      const cx=x+tile/2,cy=y+tile/2,ex=cx+d.x*tile*.48,ey=cy+d.y*tile*.48;
+      d=d||{x:0,y:0};const cx=x+tile/2,cy=y+tile/2,ex=cx+d.x*tile*.48,ey=cy+d.y*tile*.48;
       ctx.strokeStyle=color;ctx.lineWidth=Math.max(1,tile*.06);ctx.beginPath();ctx.moveTo(cx-d.x*tile*.18,cy-d.y*tile*.18);ctx.lineTo(ex,ey);ctx.stroke();
-      ctx.fillStyle=color;ctx.beginPath();ctx.arc(ex,ey,Math.max(1.2,tile*.055),0,Math.PI*2);ctx.fill();
+      ctx.fillStyle=color;ctx.beginPath();ctx.arc(ex,ey,Math.max(1.5,tile*.07),0,Math.PI*2);ctx.fill();
     };
-    arrow(e.airIntakeDirection,'#38bdf8');arrow(e.airExhaustDirection,'#fb923c');
+    ctx.save();arrow(e.airIntakeDirection,'#38bdf8');arrow(e.airExhaustDirection,'#fb923c');ctx.restore();
   }
 
   furnace(ctx,e,x,y,tile,time){
@@ -165,12 +195,14 @@ export class EntityRenderer {
   pipe(ctx,world,e,x,y,tile,mode,time){
     const cx=x+tile/2,cy=y+tile/2,neighbors=this.connections(world,e);
     const links=neighbors.length?neighbors:[[1,0],[-1,0]];
-    ctx.lineCap='round';ctx.lineJoin='round';
+    ctx.lineCap='square';ctx.lineJoin='miter';
     for(const [dx,dy] of links){
-      ctx.strokeStyle='#334155';ctx.lineWidth=tile*.34;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+dx*tile*.55,cy+dy*tile*.55);ctx.stroke();
-      ctx.strokeStyle=waterCss(e.waterTemperature,mode==='fluid'?1:.82);ctx.lineWidth=tile*.16;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+dx*tile*.55,cy+dy*tile*.55);ctx.stroke();
+      ctx.strokeStyle='#15242a';ctx.lineWidth=tile*.38;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+dx*tile*.5,cy+dy*tile*.5);ctx.stroke();
+      ctx.strokeStyle=mode==='normal'?'#6e8588':waterCss(e.waterTemperature,1);ctx.lineWidth=tile*.23;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+dx*tile*.5,cy+dy*tile*.5);ctx.stroke();
+      ctx.strokeStyle=mode==='normal'?'#a7b9b3':waterCss(e.waterTemperature,.8);ctx.lineWidth=tile*.055;ctx.beginPath();ctx.moveTo(cx-dy*tile*.06,cy-dx*tile*.06);ctx.lineTo(cx+dx*tile*.5-dy*tile*.06,cy+dy*tile*.5-dx*tile*.06);ctx.stroke();
+      const jx=cx+dx*tile*.33,jy=cy+dy*tile*.33;ctx.fillStyle='#bf7846';ctx.fillRect(jx-tile*(dx?.04:.16),jy-tile*(dy?.04:.16),tile*(dx?.08:.32),tile*(dy?.08:.32));
     }
-    ctx.fillStyle=waterCss(e.waterTemperature,1);ctx.beginPath();ctx.arc(cx,cy,tile*.13,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=mode==='normal'?'#6e8588':waterCss(e.waterTemperature,1);ctx.fillRect(cx-tile*.115,cy-tile*.115,tile*.23,tile*.23);
   }
 
   equipmentPorts(ctx,world,e,x,y,tile,mode,time){

@@ -1,3 +1,4 @@
+import { isPowered } from '../PowerState.js';
 import { AIR_FACE_AREA, AIR } from './AirConstants.js';
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -30,7 +31,7 @@ export class FanModel {
   }
 
   applyMomentumSource(fan,dt){
-    if(!fan.enabled)return;
+    if(!isPowered(fan))return;
     const g=this.grid,d=fan.direction||{x:1,y:0};
     const area=fan.faceArea||AIR_FACE_AREA*.52;
     const face=this.sourceFace(fan),field=face.kind==='u'?g.u:g.v;
@@ -56,8 +57,8 @@ export class FanModel {
     const field=face.kind==='u'?g.u:g.v;
     const signedVelocity=field[face.index]*face.sign;
     const area=fan.faceArea||AIR_FACE_AREA*.52;
-    const flow=fan.enabled?clamp(signedVelocity*area,0,fan.qFree):0;
-    fan.currentVelocity=Math.max(0,signedVelocity);
+    const powered=isPowered(fan),flow=powered?clamp(signedVelocity*area,0,fan.qFree):0;
+    fan.currentVelocity=powered?Math.max(0,signedVelocity):0;
     fan.currentFlow=flow;
     fan.currentPressureRise=this.localPressureDelta(fan);
     fan.availablePressure=this.pressureRise(fan,flow);

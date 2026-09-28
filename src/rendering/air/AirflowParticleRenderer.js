@@ -51,7 +51,9 @@ export class AirflowParticleRenderer {
       p.x+=v.x*dt*scale;p.y+=v.y*dt*scale;
       if(!this.generator.isValidPosition(world,p.x,p.y)){this.resetParticle(p,world);continue;}
       const alpha=Math.min(.8,.18+v.speed*.1);
-      ctx.strokeStyle='rgba(186,230,253,'+alpha+')';
+      const index=world.index(Math.floor(p.x),Math.floor(p.y));
+      const temp=world.temperatureAtIndex(index),ambient=world.environment.temperature;
+      ctx.strokeStyle=temp>ambient+1?'rgba(251,146,60,'+alpha+')':temp<ambient-1?'rgba(103,232,249,'+alpha+')':'rgba(186,230,253,'+alpha+')';
       ctx.lineWidth=Math.max(.8,tile*.055);
       ctx.beginPath();ctx.moveTo(ox*tile,oy*tile);ctx.lineTo(p.x*tile,p.y*tile);ctx.stroke();
     }

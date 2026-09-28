@@ -15,11 +15,21 @@ const fillRect=(world,{x,y,w,h,material})=>{
 export class MapBuilder {
   static apply(world,spec){
     world.airRooms=(spec.rooms||[]).map(room=>({...room}));
+    world.airExteriorOpenings=[];
     world.fill(spec.baseMaterial||'air',spec.initialTemperature??world.environment.temperature);
     for(const r of spec.rooms||[])rect(world,r);
     for(const l of spec.lines||[])setLine(world,l.x1,l.y1,l.x2,l.y2,l.material||'concrete');
     for(const f of spec.fills||[])fillRect(world,f);
     for(const o of spec.openings||[])fillRect(world,{...o,material:'air'});
     for(const m of spec.materials||[])fillRect(world,m);
+    const inRoom=(x,y)=>world.airRooms.some(room=>x>room.x&&y>room.y&&x<room.x+room.w-1&&y<room.y+room.h-1);
+    for(const opening of spec.openings||[])for(let y=opening.y;y<opening.y+opening.h;y++)for(let x=opening.x;x<opening.x+opening.w;x++){
+      if(!world.isAir(x,y))continue;
+      for(const direction of [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}]){
+        if(inRoom(x-direction.x,y-direction.y)&&!inRoom(x+direction.x,y+direction.y)){
+          world.airExteriorOpenings.push({x,y,direction});break;
+        }
+      }
+    }
   }
 }

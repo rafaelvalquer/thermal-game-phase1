@@ -6,6 +6,9 @@ export class UtilityPlacementSystem {
     const seen=new Set(),additionalUtilities=[],entries=[];let remaining=inventory,remainingBudget=budget;
     for(const point of path){
       const key=`${point.x},${point.y}`;if(seen.has(key))continue;seen.add(key);
+      if(DUCT_TOOLS.has(tool)&&this.world.utilityAt(point.x,point.y,tool)){
+        entries.push({...point,valid:true,connect:true,embedded:false});continue;
+      }
       const hasResources=remaining>0&&remainingBudget>=cost;
       const valid=DUCT_TOOLS.has(tool)&&hasResources&&this.validator.canPlace(tool,point.x,point.y,{additionalUtilities});
       entries.push({...point,valid,embedded:valid&&!this.world.isAir(point.x,point.y)});

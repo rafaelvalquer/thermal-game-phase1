@@ -4,6 +4,7 @@ import { World } from '../../../src/world/World.js';
 import { Fan } from '../../../src/entities/Fan.js';
 import { ExhaustFan } from '../../../src/entities/ExhaustFan.js';
 import { CoolingUnit } from '../../../src/entities/CoolingUnit.js';
+import { SupplyVent } from '../../../src/entities/SupplyVent.js';
 import { StreamlineGenerator } from '../../../src/rendering/air/StreamlineGenerator.js';
 import { StreamlineSeeder } from '../../../src/rendering/air/StreamlineSeeder.js';
 
@@ -73,15 +74,49 @@ test('exhaust seeds show suction on the inlet side',()=>{
   const world=new World(12,8);uniform(world,1,0);
   const exhaust=world.addEntity(new ExhaustFan(8,4));
   const seeds=new StreamlineSeeder({gridStep:20}).generate(world,1);
+  const inlet=seeds.filter(seed=>seed.sourceType==='exhaust'&&seed.x<exhaust.x+.5);
   assert.ok(seeds.slice(0,3).every(s=>s.x<exhaust.x));
+  assert.ok(inlet.some(seed=>seed.x<exhaust.x-3&&seed.y<exhaust.y+.5),'streamlines seed the wide, distant end of the capture funnel');
+  assert.ok(inlet.some(seed=>seed.x<exhaust.x-1&&seed.x>exhaust.x-2.5),'streamlines also seed its narrower throat');
 });
 
 test('hot indoor cooling unit seeds streamlines in the condenser exhaust direction',()=>{
   const world=new World(14,8);uniform(world,1,0);
   const unit=world.addEntity(new CoolingUnit(3,4,{direction:{x:1,y:0}}));unit.indoor=true;unit.heatRejected=12000;
   const seeds=new StreamlineSeeder({gridStep:20}).generate(world,1);
-  assert.ok(seeds.length>=1&&seeds.length<=3);
-  assert.ok(seeds.every(seed=>seed.x>unit.x+.5));
+  const hot=seeds.filter(seed=>seed.sourceType==='hot');
+  assert.equal(hot.length,3);
+  assert.ok(hot.every(seed=>seed.x>unit.x+.5));
+  assert.ok(seeds.some(seed=>!seed.sourceType),'ambient flow seeds are retained alongside the condenser jet');
+});
+
+test('active supply vent seeds cold streamlines along its outlet direction',()=>{
+  const world=new World(14,8);uniform(world,0,1);
+  const vent=world.addEntity(new SupplyVent(5,2,{direction:{x:0,y:1}}));vent.flowRate=.8;
+  const seeds=new StreamlineSeeder({gridStep:30}).generate(world,1);
+  const cold=seeds.filter(seed=>seed.sourceType==='cold');
+  assert.equal(cold.length,3);
+  assert.ok(cold.every(seed=>seed.y>vent.y+.5));
+});
+
+test('inactive supply vent does not seed cold streamlines',()=>{
+  const world=new World(14,8);uniform(world,0,1);
+  const vent=world.addEntity(new SupplyVent(5,2,{direction:{x:0,y:1}}));
+  assert.ok(new StreamlineSeeder({gridStep:30}).generate(world,1).every(seed=>seed.sourceType!=='cold'));
+  vent.flowRate=.8;vent.enabled=false;
+  assert.ok(new StreamlineSeeder({gridStep:30}).generate(world,1).every(seed=>seed.sourceType!=='cold'));
+});
+
+test('solid wall blocks cold outlet seeds but reachable cells receive them',()=>{
+  const world=new World(14,8);uniform(world,0,1);
+  const vent=world.addEntity(new SupplyVent(5,2,{direction:{x:0,y:1}}));vent.flowRate=.8;
+  world.setMaterial(5,3,'concrete');
+  const seeds=new StreamlineSeeder({gridStep:30}).generate(world,1);
+  assert.ok(seeds.every(seed=>seed.sourceType!=='cold'));
+  world.setMaterial(5,3,'air');
+  const reachable=new StreamlineSeeder({gridStep:30}).generate(world,1).filter(seed=>seed.sourceType==='cold');
+  assert.equal(reachable.length,3);
+  assert.ok(reachable.every(seed=>Math.floor(seed.y)===3));
 });
 
 test('inactive and outdoor cooling units do not seed indoor hot-air streamlines',()=>{

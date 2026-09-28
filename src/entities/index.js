@@ -1,4 +1,5 @@
 export { Entity } from './Entity.js';
+export { entityFootprintCells } from './EntityFootprint.js';
 export { Machine } from './Machine.js';
 export { ServerRack } from './ServerRack.js';
 export { Furnace } from './Furnace.js';
@@ -15,3 +16,5 @@ export { AirDuct } from './AirDuct.js';
 export { utilityCanShareTile, UTILITY_COMPATIBILITY } from './UtilityCompatibility.js';
 export { CoolingUnit } from './CoolingUnit.js';
 export { SupplyVent } from './SupplyVent.js';
+export { Technician } from './Technician.js';
+export { PowerBattery, BATTERY_CAPACITY_KWH, BATTERY_MAX_POWER_W, BATTERY_ROUND_TRIP_EFFICIENCY } from './PowerBattery.js';

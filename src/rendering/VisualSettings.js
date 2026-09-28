@@ -2,7 +2,7 @@ export const VisualSettings={
   streamlines:true,
   streamlineDensity:1,
   airflowMode:'streamlines',
-  heatHaze:true,
+  heatHaze:false,
   heatHazeQuality:'high',
   maxHazeRegions:24,
   reduceMotion:globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches??false,

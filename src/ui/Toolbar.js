@@ -1,6 +1,7 @@
+import { spriteIconStyle } from '../rendering/sprites/SpriteManifest.js';
 import { BUILD_CATALOG } from '../building/BuildCatalog.js';
 
-const SPRITE_ICONS={fan:'airflow/fan.svg',exhaust:'airflow/exhaust.svg',pump:'fluid/pump.svg',tank:'fluid/tank.svg',radiator:'fluid/radiator.svg',exchanger:'fluid/heat_exchanger.svg',sensor:'sensors/sensor.svg'};
+export const TOOL_SPRITE_ICONS={fan:'airflow/fan.svg',exhaust:'airflow/exhaust.svg',pump:'fluid/pump.svg',tank:'fluid/tank.svg',radiator:'fluid/radiator.svg',exchanger:'fluid/heat_exchanger.svg',sensor:'sensors/sensor.svg',coolingUnit:'cooling/condenser.svg',industrialCoolingUnit:'cooling/condenser.svg',battery:'power/battery.svg'};
 const COOLING_MODELS={compact:{label:'Compacta',cost:4000},commercial:{label:'Comercial',cost:8000},industrial:{label:'Industrial',cost:14000}};
 const normalize=value=>String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('pt-BR').trim();
 const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -75,10 +76,10 @@ export class Toolbar {
       const open=isToolbarCategoryOpen(group.category,this.query,this.openCategories),listId='tool-group-'+index;
       const items=group.tools.map(tool=>{
         const inventory=this.build.inventory[tool.id],stock=Number.isFinite(inventory)?'×'+inventory:'∞';
-        const model=tool.id==='coolingUnit'?COOLING_MODELS[this.build.coolingUnitModel]:null;
-        const cost=model?.cost??tool.cost,description=tool.description+(model?' Modelo '+model.label+'; pressione M para alternar.':'')+(tool.power?' Consumo: '+tool.power+'.':'');
-        const sprite=SPRITE_ICONS[tool.id],active=this.build.selected===tool.id,disabled=tool.id!=='demolish'&&!this.build.canAfford(tool.id);
-        return '<button type="button" class="tool tool-compact '+(active?'active':'')+'" data-tool="'+escapeHtml(tool.id)+'" title="'+escapeHtml(description)+'" aria-pressed="'+active+'" '+(disabled?'disabled':'')+'><span class="tool-icon '+(sprite?'tool-icon-sprite':'')+'" '+(sprite?'style="--tool-sprite:url(/assets/sprites/'+escapeHtml(sprite)+')"':'')+'>'+ (sprite?'':escapeHtml(tool.icon)) +'</span><span class="tool-main"><b>'+escapeHtml(tool.label)+'</b></span><span class="tool-meta"><em>$'+Number(cost||0).toLocaleString('pt-BR')+'</em><i>'+stock+(tool.power?' · '+escapeHtml(tool.power):'')+'</i></span></button>';
+        const model=tool.id==='industrialCoolingUnit'?COOLING_MODELS.industrial:tool.id==='coolingUnit'?COOLING_MODELS[this.build.coolingUnitModel]:null;
+        const cost=model?.cost??tool.cost,description=tool.description+(model?(tool.id==='coolingUnit'?' Modelo '+model.label+'; pressione M para alternar.':' Modelo '+model.label+'.'):'')+(tool.power?' Consumo: '+tool.power+'.':'')+(tool.capacity?' Capacidade: '+tool.capacity+'.':'');
+        const sprite=TOOL_SPRITE_ICONS[tool.id],active=this.build.selected===tool.id,disabled=tool.id!=='demolish'&&!this.build.canAfford(tool.id);
+        return '<button type="button" class="tool tool-compact '+(active?'active':'')+'" data-tool="'+escapeHtml(tool.id)+'" title="'+escapeHtml(description)+'" aria-pressed="'+active+'" '+(disabled?'disabled':'')+'><span class="tool-icon '+(sprite?'tool-icon-sprite':'')+'" '+(sprite?'style="'+spriteIconStyle({type:tool.id==='industrialCoolingUnit'?'coolingUnit':tool.id,tier:tool.id==='industrialCoolingUnit'?'industrial':this.build.coolingUnitModel},'--tool-sprite')+'"':'')+'>'+ (sprite?'':escapeHtml(tool.icon)) +'</span><span class="tool-main"><b>'+escapeHtml(tool.label)+'</b></span><span class="tool-meta"><em>$'+Number(cost||0).toLocaleString('pt-BR')+'</em><i>'+stock+(tool.power?' · '+escapeHtml(tool.power):tool.capacity?' · '+escapeHtml(tool.capacity):'')+'</i></span></button>';
       }).join('');
       return '<section class="tool-group '+(open?'open':'')+'"><button type="button" class="tool-category" data-category="'+escapeHtml(group.category)+'" aria-expanded="'+open+'" aria-controls="'+listId+'"><span>'+escapeHtml(group.category)+'</span><span class="tool-category-count">'+group.tools.length+'</span><span class="tool-category-chevron" aria-hidden="true">⌄</span></button><div class="tool-category-items" id="'+listId+'" '+(open?'':'hidden')+'>'+items+'</div></section>';
     }).join('');

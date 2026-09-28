@@ -1,3 +1,4 @@
+import { isPowered } from '../PowerState.js';
 import { clamp } from '../../utils/MathUtils.js';
 import { AirGrid } from './AirGrid.js';
 import { AirBoundarySystem } from './AirBoundarySystem.js';
@@ -58,7 +59,7 @@ export class AirflowSystem {
   applyRadiatorNaturalConvection(dt){
     const g=this.grid,w=this.world;
     for(const radiator of w.entitiesByType('radiator')){
-      if(!radiator.enabled)continue;
+      if(!isPowered(radiator))continue;
       const localAir=w.inBounds(radiator.x,radiator.y)?w.temperatureAt(radiator.x,radiator.y):radiator.waterTemperature;
       const delta=radiator.waterTemperature-localAir;
       if(delta<=.5)continue;
@@ -84,17 +85,19 @@ export class AirflowSystem {
     for(const e of w.entitiesByType('exhaust')){
       e.heatRejectedPower=0;
       const connected=this.isExhaustConnectedToOutside(e);
-      const d=e.direction,blocked=this.grid.inCell(e.x+d.x,e.y+d.y)&&this.grid.isSolid(e.x+d.x,e.y+d.y);
-      e.status=blocked?'BLOCKED':!connected?'NO OUTLET':e.flowEfficiency<.2?'BLOCKED':e.flowEfficiency<.6?'HIGH RESISTANCE':'READY';
-      if(!e.enabled)continue;
-      if(!connected||blocked)continue;
+      e.status=!connected?'BLOCKED':e.flowEfficiency<.2?'BLOCKED':e.flowEfficiency<.6?'HIGH RESISTANCE':'READY';
+      if(!isPowered(e))continue;
+      if(!connected)continue;
       const volumeFlow=Math.max(0,e.currentFlow||0);
       if(volumeFlow<=1e-5)continue;
       const massFlow=AIR.density*volumeFlow;
-      const cells=this.capture.cells(e),weightSum=cells.reduce((sum,c)=>sum+c.weight,0);
+      const cells=this.capture.cells(e).map(c=>{
+        const temperature=w.temperatureAt(c.x,c.y),hotness=Math.max(0,temperature-out);
+        return {...c,temperature,thermalWeight:c.weight*(1+Math.min(40,hotness)/20)};
+      }),weightSum=cells.reduce((sum,c)=>sum+c.thermalWeight,0);
       for(const c of cells){
         const i=w.index(c.x,c.y),T=w.temperatureAtIndex(i),cap=w.capacityAtIndex(i);
-        const localMassFlow=massFlow*(c.weight/weightSum);
+        const localMassFlow=massFlow*(c.thermalWeight/weightSum);
         const localMass=w.massAt(c.x,c.y);
         const fraction=clamp((localMassFlow*dt)/Math.max(localMass,1e-6),0,.45);
         const q=(T-out)*cap*fraction;
@@ -108,13 +111,13 @@ export class AirflowSystem {
   applyCoolingUnitExhausts(dt){
     const g=this.grid,w=this.world;
     for(const unit of w.entitiesByType('coolingUnit')){
-      if(!unit.enabled||!unit.indoor||(unit.heatRejected||0)<=0)continue;
-      const d=unit.direction||{x:1,y:0},nextX=unit.x+d.x,nextY=unit.y+d.y;
-      const outletBlocked=d.x?g.blockedU(d.x>0?unit.x+1:unit.x,unit.y):g.blockedV(unit.x,d.y>0?unit.y+1:unit.y);
+      if(!isPowered(unit)||!unit.indoor||(unit.heatRejected||0)<=0)continue;
+      const d=unit.direction||{x:1,y:0},length=Math.max(1,unit.footprintLength||1),nextX=unit.x+d.x*length,nextY=unit.y+d.y*length;
+      const outletBlocked=d.x?g.blockedU(d.x>0?unit.x+length:unit.x-length+1,unit.y):g.blockedV(unit.x,d.y>0?unit.y+length:unit.y-length+1);
       if(!g.isAir(nextX,nextY)||outletBlocked)continue;
-      const magnitude=Math.min(1.2,Math.sqrt(unit.heatRejected/50000)*.35),faceX=d.x>0?unit.x+1:unit.x,faceY=d.y>0?unit.y+1:unit.y;
+      const magnitude=Math.min(1.2,Math.sqrt(unit.heatRejected/50000)*.35);
       // A short, balanced fan loop creates a continuous outlet jet without a pressure source.
-      const outletX=unit.x+d.x*.5,outletY=unit.y+d.y*.5;
+      const outletX=unit.x+d.x*(length-.5),outletY=unit.y+d.y*(length-.5);
       const lateralX=-d.y,lateralY=d.x;
       for(const offset of [-.5,.5]){
         const lx=outletX+lateralX*offset,ly=outletY+lateralY*offset,cx=Math.floor(lx),cy=Math.floor(ly);
@@ -127,8 +130,8 @@ export class AirflowSystem {
         if(lateralX){const sideX=cx+lateralX;if(g.isAir(sideX,cy))g.u[g.uIndex(lateralX>0?cx+1:cx,cy)]+=magnitude*lateralX*.5;}
         else{const sideY=cy+lateralY;if(g.isAir(cx,sideY))g.v[g.vIndex(cx,lateralY>0?cy+1:cy)]+=magnitude*lateralY*.5;}
       }
-      if(d.x)g.u[g.uIndex(faceX,unit.y)]+=magnitude*d.x;
-      else g.v[g.vIndex(unit.x,faceY)]+=magnitude*d.y;
+      if(d.x)g.u[g.uIndex(d.x>0?unit.x+length:unit.x-length+1,unit.y)]+=magnitude*d.x;
+      else g.v[g.vIndex(unit.x,d.y>0?unit.y+length:unit.y-length+1)]+=magnitude*d.y;
     }
   }
 

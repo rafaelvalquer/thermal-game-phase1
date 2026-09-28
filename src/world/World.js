@@ -2,6 +2,7 @@ import { MaterialRegistry } from './MaterialRegistry.js';
 import { TileMap } from './TileMap.js';
 import { TILE_VOLUME, OUTDOOR_TEMP } from '../utils/Constants.js';
 import { utilityCanShareTile } from '../entities/UtilityCompatibility.js';
+import { entityFootprintCells } from '../entities/EntityFootprint.js';
 
 export class World {
   constructor(width,height){
@@ -84,7 +85,7 @@ export class World {
     if(next.length!==items.length)this.bumpUtilityTopology();
   }
   allUtilities(){return [...this.utilityLayer.values()].flat();}
-  entityAt(x,y){return this.entities.find(e=>e.x===x&&e.y===y);}
+  entityAt(x,y){return this.entities.find(e=>!e.isTechnician&&entityFootprintCells(e).some(cell=>cell.x===x&&cell.y===y));}
   entitiesByType(type){return this.entities.filter(e=>e.type===type);}
   totalTileEnergy(){let s=0;for(let i=0;i<this.size;i++)s+=this.energy[i];return s;}
 }

@@ -1,61 +1,118 @@
-import { POWER_TIERS } from '../datacenter/PowerGridSystem.js';
+import { offerDisplayState, offerExpiryLabel } from '../datacenter/ContractDefinitions.js';
+import { POWER_INSTALL_COST_PER_KW, POWER_MONTHLY_COST_PER_KW } from '../datacenter/PowerGridSystem.js';
 
 const money=value=>'R$ '+Math.round(Number(value)||0).toLocaleString('pt-BR');
 const kw=value=>(Number(value)||0).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+' kW';
 const tariff=value=>'R$ '+(Number(value)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const unitRate=value=>'R$ '+Number(value).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const pct=value=>Math.max(0,Math.min(100,Number(value)||0));
 const statusLabel=status=>({installing:'INSTALAÇÃO',active:'EM OPERAÇÃO',completed:'CONCLUÍDO',cancelled:'ENCERRADO'})[status]||status.toUpperCase();
+const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 
 export class DataCenterDashboard {
-  constructor(root,manager,onMessage=()=>{}){this.root=root;this.manager=manager;this.onMessage=onMessage;this.lastHtml='';}
+  constructor(root,manager,onMessage=()=>{},onOpenReport=()=>{},onContractSelection=()=>{}){this.root=root;this.manager=manager;this.onMessage=onMessage;this.onOpenReport=onOpenReport;this.onContractSelection=onContractSelection;this.lastHtml='';this.powerAmount='50';this.selectedContractId=null;this.contractsExpanded=false;}
   update(){
     const dc=this.manager,metrics=dc.simulation.metrics,active=dc.activeContracts,installing=dc.state.contracts.filter(contract=>contract.status==='installing');
-    const powerUse=dc.powerGrid.capacityKW?100*dc.facilityPowerKW/dc.powerGrid.capacityKW:0;
-    const coolingCapacity=dc.installedCoolingKW;
-    const coolingLoad=dc.rackCoolingDemandKW;
-    const coolingUse=coolingCapacity?100*coolingLoad/coolingCapacity:coolingLoad?100:0;
-    const spaceUse=100*dc.rackCount/Math.max(1,dc.level.datacenter.rackSpace);
-    const next=dc.nextPowerTier;
-    const upgrades=POWER_TIERS.filter(tier=>tier.capacityKW>dc.powerGrid.capacityKW).map(tier=>'<option value="'+tier.capacityKW+'">'+tier.capacityKW.toLocaleString('pt-BR')+' kW · '+money(tier.installationCost)+' · '+money(tier.monthlyFixedCost)+'/mês</option>').join('');
-    const offers=dc.state.offers.map(offer=>'<article class="dc-offer"><div class="dc-offer-head"><div><small>'+offer.tier.toUpperCase()+'</small><h4>'+offer.clientName+'</h4></div><b>'+money(offer.monthlyFee)+'<small>/mês</small></b></div><div class="dc-offer-grid"><span>Racks<strong>'+offer.rackCount+'</strong></span><span>Potência<strong>'+kw(offer.rackCount*offer.powerPerRackKW)+'</strong></span><span>Por rack<strong>'+kw(offer.powerPerRackKW)+'</strong></span><span>SLA térmico<strong>'+offer.maxInletTemperature+' °C</strong></span><span>Disponibilidade<strong>'+offer.availability+'%</strong></span><span>Prazo<strong>'+offer.termDays+' dias</strong></span></div><div class="dc-offer-footer"><span>Instalação '+money(offer.installationFee)+'</span><div><button data-decline="'+(offer.contractId||offer.id)+'">Recusar</button><button class="primary" data-accept="'+(offer.contractId||offer.id)+'">Aceitar</button></div></div><p class="dc-risk">Energia necessária '+kw(offer.rackCount*offer.powerPerRackKW)+' · disponível '+kw(dc.availableEnergyKW)+' energia / '+kw(dc.availableCoolingKW)+' refrigeração. A aceitação continua disponível mesmo sem capacidade suficiente.</p></article>').join('');
-    const contracts=dc.state.contracts.filter(contract=>['active','installing'].includes(contract.status)).map(contract=>{
+    const powerCapacity=dc.contractedPowerKW,powerCurrent=dc.facilityPowerKW,powerCommitted=dc.committedPowerKW;
+    const coolingCapacity=dc.effectiveCoolingCapacityKW,coolingCurrent=dc.currentRackHeatKW,coolingCommitted=dc.committedCoolingKW;
+    const committedPowerUse=powerCapacity?100*powerCommitted/powerCapacity:powerCommitted?100:0;
+    const coolingUse=coolingCapacity?100*coolingCommitted/coolingCapacity:coolingCommitted?100:0;
+    const remainingPower=dc.powerGrid.remainingCapacityKW,requestedAmount=Number(this.powerAmount),defaultAddedKW=remainingPower?Math.min(Number.isInteger(requestedAmount)&&requestedAmount>0?requestedAmount:50,remainingPower):0;
+    const powerQuote=defaultAddedKW?dc.powerGrid.quote(defaultAddedKW):null;
+    const powerPreview=powerQuote?.ok?'Instalação '+money(powerQuote.cost)+' · +'+money(powerQuote.monthlyIncrease)+'/mês · total '+kw(powerQuote.capacityKW)+' · tarifa fixa '+money(powerQuote.monthlyFixedCost)+'/mês':'Capacidade máxima contratada';
+    const offers=[...dc.state.offers].sort((a,b)=>b.offeredDay-a.offeredDay||a.expiresDay-b.expiresDay);
+    const offerCard=offer=>{
+      const requestedPower=offer.rackCount*offer.powerPerRackKW;
+      const exceedsCapacity=requestedPower>dc.availableEnergyKW||requestedPower>dc.availableCoolingContractsKW;
+      const state=offerDisplayState(offer,dc.clock.day);
+      return '<article class="dc-offer '+(state==='NOVO'?'is-new':'')+'"><div class="dc-offer-head"><div><small>'+offer.tier.toUpperCase()+' · '+state+'</small><h4>'+offer.clientName+'</h4></div><b>'+money(offer.monthlyFee)+'<small>/mês</small></b></div><div class="dc-offer-grid"><span>Racks<strong>'+offer.rackCount+'</strong></span><span>Potência<strong>'+kw(requestedPower)+'</strong></span><span>Por rack<strong>'+kw(offer.powerPerRackKW)+'</strong></span><span>SLA térmico<strong>'+offer.maxInletTemperature+' °C</strong></span><span>Disponibilidade<strong>'+offer.availability+'%</strong></span><span>Prazo<strong>'+offer.termDays+' dias</strong></span></div><div class="dc-offer-footer"><span>'+offerExpiryLabel(offer,dc.clock.day)+'</span><div><button data-decline="'+offer.id+'">Recusar</button><button class="primary" data-accept="'+offer.id+'">Aceitar</button></div></div><p class="dc-risk '+(exceedsCapacity?'power-risk':'')+'">Máximo solicitado '+kw(requestedPower)+' · reserva elétrica '+kw(dc.powerReserveKW)+' · reserva térmica para racks '+kw(dc.availableCoolingContractsKW)+'.</p></article>';
+    };
+    const newOffers=offers.filter(offer=>offer.offeredDay===dc.clock.day),olderOffers=offers.filter(offer=>offer.offeredDay!==dc.clock.day);
+    const market='<section id="dc-market" class="dc-subsection"><div class="dc-section-title"><b>MERCADO</b><span>'+offers.length+' contratos disponíveis</span></div>'+(offers.length?'<div class="dc-market-group"><small>NOVOS</small>'+(newOffers.map(offerCard).join('')||'<p class="dc-empty">Nenhum contrato novo hoje.</p>')+'</div><div class="dc-market-group"><small>ANTERIORES</small>'+(olderOffers.map(offerCard).join('')||'<p class="dc-empty">As propostas anteriores aparecem aqui até serem aceitas, recusadas ou expirarem.</p>')+'</div>':'<p class="dc-empty">Nenhum contrato disponível.</p>')+'</section>';
+    const liveContracts=dc.state.contracts.filter(contract=>['active','installing'].includes(contract.status));
+    const installedContractRacks=dc.world.entitiesByType('serverRack').filter(rack=>liveContracts.some(contract=>contract.id===rack.contractId)).length;
+    if(this.selectedContractId&&!liveContracts.some(contract=>contract.id===this.selectedContractId)){this.selectedContractId=null;this.onContractSelection(null,[],false);}
+    const contracts=liveContracts.map(contract=>{
       const availability=contract.activeSeconds?100*contract.uptimeSeconds/contract.activeSeconds:100;
       const violated=contract.dailyViolation||contract.lastSlaViolationDay===dc.clock.day;
-      return '<article class="dc-contract"><div><b>'+contract.clientName+'</b><span class="dc-state '+(violated?'violated':contract.status)+'">'+(violated?'SLA VIOLADO':statusLabel(contract.status))+'</span></div><p>'+contract.installedRacks+' / '+contract.rackCount+' racks · '+kw(contract.rackCount*contract.powerPerRackKW)+' · '+money(contract.monthlyFee)+'/mês</p><p>SLA '+contract.maxInletTemperature+' °C · disponibilidade '+contract.availability+'% · atual '+availability.toFixed(2)+'%</p><button data-cancel="'+contract.id+'">Cancelar contrato</button></article>';
+      const selected=this.selectedContractId===contract.id,racks=dc.world.entitiesByType('serverRack').filter(rack=>rack.contractId===contract.id);
+      const rackList=racks.length?'<ul class="dc-contract-racks">'+racks.map(rack=>'<li><span>'+escapeHtml(rack.name||'Rack')+'</span><small>posição '+(rack.x+1)+', '+(rack.y+1)+'</small></li>').join('')+'</ul>':'<p class="dc-empty">Nenhum rack deste contrato foi colocado ainda.</p>';
+      const missing=Math.max(0,contract.rackCount-racks.length);
+      const details=selected?'<div class="dc-contract-details"><b>RACKS DO CONTRATO · '+racks.length+' / '+contract.rackCount+'</b>'+rackList+(missing?'<p class="dc-empty">Faltam '+missing+' rack'+(missing===1?'':'s')+' para instalar.</p>':'')+'</div>':'';
+      return '<article class="dc-contract '+(selected?'is-selected':'')+'" data-select-contract="'+escapeHtml(contract.id)+'" aria-expanded="'+selected+'"><div><b>'+escapeHtml(contract.clientName)+'</b><span class="dc-state '+(violated?'violated':contract.status)+'">'+(violated?'SLA VIOLADO':statusLabel(contract.status))+'</span></div><p>'+contract.installedRacks+' / '+contract.rackCount+' racks · '+kw(contract.rackCount*contract.powerPerRackKW)+' · '+money(contract.monthlyFee)+'/mês</p><p>SLA '+contract.maxInletTemperature+' °C · disponibilidade '+contract.availability+'% · atual '+availability.toFixed(2)+'%</p>'+details+'<button data-cancel="'+escapeHtml(contract.id)+'">Cancelar contrato</button></article>';
     }).join('');
+    const activeContractCount=liveContracts.filter(contract=>contract.status==='active').length;
+    const committedRacks=liveContracts.reduce((sum,contract)=>sum+contract.rackCount,0);
+    const contractSummary='<div class="dc-contract-summary"><span>Ativos<strong>'+activeContractCount+'</strong></span><span>Instalação<strong>'+installing.length+'</strong></span><span>Racks instalados<strong>'+installedContractRacks+' / '+committedRacks+'</strong></span><span>Potência comprometida<strong>'+kw(dc.committedPowerKW)+'</strong></span><span>Consumo atual<strong>'+kw(dc.currentContractRackPowerKW)+'</strong></span></div>';
+    const contractList=contracts||'<p class="dc-empty">Aceite uma proposta para começar a operar.</p>';
+    const contractAccordion='<section class="dc-subsection dc-active-clients"><div class="dc-section-title"><b>CLIENTES ATIVOS</b><span>'+liveContracts.length+' '+(liveContracts.length===1?'contrato':'contratos')+' · '+installing.length+' instalações pendentes</span></div>'+contractSummary+'<button class="dc-accordion-toggle" type="button" data-contract-accordion-toggle aria-expanded="'+this.contractsExpanded+'" aria-controls="dc-contract-accordion">'+(this.contractsExpanded?'Ocultar contratos':'Mostrar contratos')+'</button><div id="dc-contract-accordion" data-contract-accordion-panel '+(this.contractsExpanded?'':'hidden')+'>'+contractList+'</div></section>';
     const ledger=dc.state.ledger.slice(0,5).map(item=>'<div class="dc-ledger-row"><span>D'+item.day+' · '+item.description+'</span><b class="'+(item.amount<0?'negative':'positive')+'">'+(item.amount<0?'−':'+')+money(Math.abs(item.amount))+'</b></div>').join('')||'<p class="dc-empty">Os lançamentos diários aparecerão aqui.</p>';
     const daily=dc.state.dailyResult;
+    const capacitySection='<div class="dc-capacity"><div class="dc-section-title"><b>CAPACIDADE</b><span>carga atual, compromisso e infraestrutura</span></div>'+this.capacityMatrix(powerCurrent,dc.committedFacilityPowerKW,dc.committedPowerKW,dc.otherFacilityPowerKW,powerCapacity,coolingCurrent,coolingCommitted,coolingCapacity)+this.capacityRow('Energia comprometida',powerCommitted,powerCapacity,committedPowerUse,'kW')+this.capacityRow('Calor comprometido',coolingCommitted,coolingCapacity,coolingUse,'kW')+'<div class="dc-available '+(dc.powerReserveKW<0?'power-risk':'')+'"><span>Reserva elétrica para novos contratos</span><strong>'+kw(dc.powerReserveKW)+'</strong></div><div class="dc-available '+(dc.coolingReserveKW<0?'power-risk':'')+'"><span>Reserva térmica equivalente para racks</span><strong>'+kw(dc.coolingReserveKW/.98)+'</strong></div><div class="dc-available"><span>Recurso limitante</span><strong>'+dc.bottleneckResource+'</strong></div><div class="dc-available"><span>Capacidade para novos contratos</span><strong>'+kw(dc.capacityForNewContractsKW)+'</strong></div><div class="dc-power-upgrade"><label for="dc-power-amount">Adicionar potência (kW)<input id="dc-power-amount" data-power-amount type="number" min="1" max="'+remainingPower+'" step="1" value="'+defaultAddedKW+'" '+(remainingPower?'':'disabled')+'></label><span class="dc-power-preview" data-power-preview>'+powerPreview+'</span><button data-upgrade '+(!powerQuote?.ok||powerQuote.cost>dc.cash?'disabled':'')+'>Contratar potência</button><small>Instalação '+unitRate(POWER_INSTALL_COST_PER_KW)+'/kW · acréscimo '+unitRate(POWER_MONTHLY_COST_PER_KW)+'/kW/mês</small></div></div>';
     const html='<section class="dc-dashboard"><div class="dc-dashboard-head"><div><span>OPERAÇÃO</span><strong>'+dc.clock.format()+'</strong></div><b>'+money(dc.cash)+'</b></div>'+
-      '<div class="dc-kpis"><div><small>CLIENTES</small><b>'+dc.clientCount+'</b></div><div><small>RACKS</small><b>'+dc.rackCount+' / '+dc.level.datacenter.rackSpace+'</b></div><div><small>CONTRATOS</small><b>'+active.length+' ativos</b></div><div><small>PUE</small><b>'+(dc.pue==null?'—':dc.pue.toFixed(2))+'</b></div></div>'+
-      '<div class="dc-capacity"><div class="dc-section-title"><b>CAPACIDADE</b><span>disponível para novos contratos</span></div>'+this.capacityRow('Energia',dc.facilityPowerKW,dc.powerGrid.capacityKW,powerUse,'kW')+this.capacityRow('Refrigeração',coolingLoad,coolingCapacity,coolingUse,'kW')+this.capacityRow('Espaço',dc.rackCount,dc.level.datacenter.rackSpace,spaceUse,'racks')+'<div class="dc-available"><span>Recurso limitante</span><strong>'+dc.bottleneckResource+'</strong></div><div class="dc-available"><span>Capacidade energética e térmica</span><strong>'+kw(dc.capacityForNewContractsKW)+'</strong></div><div class="dc-available"><span>Vagas para racks</span><strong>'+dc.rackSpaceAvailable+'</strong></div><div class="dc-power-upgrade"><select data-power-tier '+(upgrades?'':'disabled')+'><option value="">'+(next?'Contratar mais potência…':'Capacidade máxima contratada')+'</option>'+upgrades+'</select><button data-upgrade '+(upgrades?'':'disabled')+'>Ampliar rede</button></div></div>'+ 
-      '<div class="dc-thermal"><span>Refrigeração</span><b>'+kw(coolingCapacity)+'</b><span>Ar máximo</span><b>'+(metrics.maxAirTemp||0).toFixed(1)+' °C</b><span>Tarifa</span><b>'+tariff(dc.state.energyTariff)+'/kWh</b><span>Reputação</span><b>'+dc.state.reputation.toFixed(0)+' / 100</b></div>'+
-      '<section class="dc-subsection"><div class="dc-section-title"><b>MERCADO</b><span>aceitar além da capacidade traz risco</span></div>'+(offers||'<p class="dc-empty">Novas propostas chegam periodicamente.</p>')+'</section>'+ 
-      '<section class="dc-subsection"><div class="dc-section-title"><b>CLIENTES ATIVOS</b><span>'+installing.length+' instalações pendentes</span></div>'+(contracts||'<p class="dc-empty">Aceite uma proposta para começar a operar.</p>')+'</section>'+ 
+      '<div class="dc-kpis"><div><small>CLIENTES</small><b>'+dc.clientCount+'</b></div><div><small>RACKS INSTALADOS</small><b>'+dc.rackCount+'</b></div><div><small>CONTRATOS</small><b>'+active.length+' ativos</b></div><div><small>PUE</small><b>'+(dc.pue==null?'—':dc.pue.toFixed(2))+'</b></div></div>'+
+      '<label class="dc-pause-setting"><input type="checkbox" data-pause-new '+(dc.state.pauseOnNewContracts?'checked':'')+'> Pausar quando novos contratos chegarem</label>'+
+      (daily?'<button class="dc-report-open" data-open-report>Último relatório · Dia '+daily.day+'</button>':'')+
+      capacitySection+this.powerProtection()+'<div class="dc-thermal"><span>Ar máximo</span><b>'+(metrics.maxAirTemp||0).toFixed(1)+' °C</b><span>Tarifa</span><b>'+tariff(dc.state.energyTariff)+'/kWh</b><span>Reputação</span><b>'+dc.state.reputation.toFixed(0)+' / 100</b></div>'+market+
+      contractAccordion+
       '<section class="dc-subsection"><div class="dc-section-title"><b>FINANÇAS · ÚLTIMO DIA</b><span>'+(daily?'lucro '+money(daily.net):'dia ainda não fechado')+'</span></div>'+ledger+'</section>'+ 
       '<div class="dc-save-actions"><button data-save>Salvar agora</button><button data-load>Carregar último salvamento</button></div></section>';
-    if(html!==this.lastHtml){
-      const select=this.root.querySelector('[data-power-tier]');
-      const preserveOpen=select&&document.activeElement===select;
-      const selectedValue=select?.value||'';
+    const activeElement=typeof document!=='undefined'?document.activeElement:null;
+    const hasFocusedControl=activeElement&&typeof this.root.contains==='function'&&this.root.contains(activeElement)&&activeElement.matches('button,input,select');
+    if(html!==this.lastHtml&&!hasFocusedControl){
+      const focusedMarketId=activeElement?.dataset?.accept||activeElement?.dataset?.decline||null;
       this.root.innerHTML=html;this.lastHtml=html;this.bind();
-      const nextSelect=this.root.querySelector('[data-power-tier]');
-      if(nextSelect&&selectedValue)nextSelect.value=selectedValue;
-      if(preserveOpen)nextSelect?.focus();
+      if(focusedMarketId)this.root.querySelector(`[data-accept="${focusedMarketId}"],[data-decline="${focusedMarketId}"]`)?.focus();
+      if(offers.some(offer=>offer.isNew))dc.markOffersSeen(offers.filter(offer=>offer.isNew).map(offer=>offer.id));
     }
   }
-  capacityRow(label,used,capacity,percentage,unit){
-    const usage=unit==='kW'?kw(used)+' / '+kw(capacity):used+' / '+capacity+' racks';
-    return '<div class="dc-cap-row"><div><span>'+label+'</span><b>'+usage+'</b></div><div class="dc-bar"><i class="'+(percentage>=100?'overload':percentage>=80?'warn':'')+'" style="width:'+pct(percentage)+'%"></i></div></div>';
+  powerProtection(){
+    const grid=this.manager.powerGrid;
+    return '<div class="dc-available"><span>Rede elétrica</span><strong>'+grid.status+'</strong></div><div class="dc-available"><span>Demanda solicitada</span><strong>'+kw(grid.demandKW)+'</strong></div><div class="dc-available"><span>Racks sem energia</span><strong>'+grid.blockedRacks+'</strong></div>'+(grid.overloadSeconds>0?'<p class="dc-risk">Corte em '+grid.remainingSeconds.toFixed(1)+' s de simulação física.</p>':'')+(grid.breakerOpen||grid.blockedRacks?'<button data-rearm>Rearmar energia</button>':'');
+  }
+  capacityRow(label,used,capacity,percentage,unit){const usage=unit==='kW'?kw(used)+' / '+kw(capacity):used+' / '+capacity+' racks';return '<div class="dc-cap-row"><div><span>'+label+'</span><b>'+usage+'</b></div><div class="dc-bar"><i class="'+(percentage>=(label.startsWith('Energia')?90:80)?'warn':'')+'" style="width:'+pct(percentage)+'%"></i></div></div>';}
+  capacityMatrix(powerCurrent,powerCommitted,rackPeakPower,otherPower,powerCapacity,coolingCurrent,coolingCommitted,coolingCapacity){
+    const row=(label,power,powerDetail,cooling,coolingDetail)=>'<div class="dc-cap-matrix-row" role="row"><span role="rowheader">'+label+'</span><b role="cell">'+kw(power)+(powerDetail?'<small>'+powerDetail+'</small>':'')+'</b><b role="cell">'+kw(cooling)+(coolingDetail?'<small>'+coolingDetail+'</small>':'')+'</b></div>';
+    return '<div class="dc-cap-matrix" role="table" aria-label="Consumo e capacidade contratual elétrica e térmica"><div class="dc-cap-matrix-row head" role="row"><span role="columnheader">CARGA</span><b role="columnheader">ENERGIA</b><b role="columnheader">REFRIGERAÇÃO</b></div>'+row('Atual',powerCurrent,'instalação inteira',coolingCurrent,'calor atual dos racks')+row('Comprometida',powerCommitted,kw(rackPeakPower)+' racks + '+kw(otherPower)+' outras cargas',coolingCommitted,'pico contratado dos racks')+row('Capacidade',powerCapacity,'rede contratada',coolingCapacity,'efetiva agora')+'</div>';
   }
   bind(){
-    this.root.querySelectorAll('[data-accept]').forEach(button=>button.onclick=()=>{button.disabled=true;const result=this.manager.acceptOffer(button.dataset.accept);this.onMessage(result.ok?(result.alreadyAccepted?'Este contrato já foi aceito. Instale os racks solicitados.':'Contrato assinado. Instale os racks solicitados.'):result.reason);if(!result.ok)this.lastHtml='';this.update();});
-    this.root.querySelectorAll('[data-decline]').forEach(button=>button.onclick=()=>{this.manager.declineOffer(button.dataset.decline);this.update();});
-    this.root.querySelectorAll('[data-cancel]').forEach(button=>button.onclick=()=>{if(this.manager.cancelContract(button.dataset.cancel)){this.onMessage('Contrato encerrado; os racks foram desligados.');this.update();}});
-    this.root.querySelector('[data-upgrade]')?.addEventListener('click',()=>{
-      const target=this.root.querySelector('[data-power-tier]')?.value;if(!target)return;
-      const result=this.manager.upgradePower(target);this.onMessage(result.ok?'Rede ampliada para '+result.tier.capacityKW+' kW.':result.reason);this.update();
+    const accordionToggle=this.root.querySelector('[data-contract-accordion-toggle]'),accordionPanel=this.root.querySelector('[data-contract-accordion-panel]');
+    accordionToggle?.setAttribute('aria-expanded',String(this.contractsExpanded));
+    if(accordionPanel)accordionPanel.hidden=!this.contractsExpanded;
+    accordionToggle?.addEventListener('click',event=>{
+      this.contractsExpanded=!this.contractsExpanded;
+      const button=event.currentTarget,panel=this.root.querySelector('[data-contract-accordion-panel]');
+      button.setAttribute('aria-expanded',String(this.contractsExpanded));
+      button.textContent=this.contractsExpanded?'Ocultar contratos':'Mostrar contratos';
+      if(panel)panel.hidden=!this.contractsExpanded;
     });
+    this.root.querySelector('[data-rearm]')?.addEventListener('click',()=>{const result=this.manager.rearmPower();this.onMessage(result.ok?result.restored+' racks religados; '+result.remaining+' continuam sem energia.':result.reason);this.update();});
+    this.root.querySelectorAll('[data-accept]').forEach(button=>button.onclick=()=>{const result=this.manager.acceptOffer(button.dataset.accept);this.onMessage(result.ok?(result.alreadyAccepted?'Este contrato já foi aceito. Instale os racks solicitados.':'Contrato assinado. Instale os racks solicitados.'):result.reason);this.lastHtml='';this.update();});
+    this.root.querySelectorAll('[data-decline]').forEach(button=>button.onclick=()=>{this.manager.declineOffer(button.dataset.decline);this.lastHtml='';this.update();});
+    this.root.querySelectorAll('[data-cancel]').forEach(button=>button.onclick=()=>{if(this.manager.cancelContract(button.dataset.cancel)){this.onMessage('Contrato encerrado; os racks foram desligados.');this.update();}});
+    this.root.querySelectorAll('[data-select-contract]').forEach(card=>card.addEventListener('click',event=>{
+      if(event.target.closest?.('[data-cancel]'))return;
+      const contractId=card.dataset.selectContract;
+      if(this.selectedContractId===contractId){this.selectedContractId=null;this.onContractSelection(null,[],false);}
+      else{
+        this.selectedContractId=contractId;
+        const racks=this.manager.world.entitiesByType('serverRack').filter(rack=>rack.contractId===contractId);
+        this.onContractSelection(contractId,racks,true);
+      }
+      this.lastHtml='';this.update();
+    }));
+    const amountInput=this.root.querySelector('[data-power-amount]'),preview=this.root.querySelector('[data-power-preview]'),upgradeButton=this.root.querySelector('[data-upgrade]');
+    const refreshPowerPreview=()=>{
+      if(!amountInput)return;
+      const quote=this.manager.powerGrid.quote(amountInput.value);
+      if(preview)preview.textContent=quote.ok?'Instalação '+money(quote.cost)+' · +'+money(quote.monthlyIncrease)+'/mês · total '+kw(quote.capacityKW)+' · tarifa fixa '+money(quote.monthlyFixedCost)+'/mês':quote.reason;
+      if(upgradeButton)upgradeButton.disabled=!quote.ok||quote.cost>this.manager.cash;
+    };
+    amountInput?.addEventListener('input',()=>{this.powerAmount=amountInput.value;refreshPowerPreview();});
+    upgradeButton?.addEventListener('click',()=>{const result=this.manager.upgradePower(amountInput?.value);this.onMessage(result.ok?'Rede ampliada em '+result.addedKW+' kW; capacidade '+result.capacityKW+' kW, tarifa fixa '+money(result.monthlyFixedCost)+'/mês.':result.reason);if(result.ok)this.powerAmount=String(Math.min(50,this.manager.powerGrid.remainingCapacityKW));this.lastHtml='';this.update();});
+    this.root.querySelector('[data-pause-new]')?.addEventListener('change',event=>this.manager.setPauseOnNewContracts(event.target.checked));
+    this.root.querySelector('[data-open-report]')?.addEventListener('click',()=>this.onOpenReport());
     this.root.querySelector('[data-save]')?.addEventListener('click',()=>this.onMessage(this.manager.persist()?'Data center salvo.':'Não foi possível salvar neste navegador.'));
-    this.root.querySelector('[data-load]')?.addEventListener('click',()=>{const loaded=this.manager.load();this.onMessage(loaded?'Salvamento carregado.':'Nenhum salvamento encontrado.');if(loaded)this.update();});
+    this.root.querySelector('[data-load]')?.addEventListener('click',()=>{const loaded=this.manager.load();this.onMessage(loaded?'Salvamento carregado.':'Nenhum salvamento encontrado.');this.lastHtml='';if(loaded)this.update();});
   }
 }
