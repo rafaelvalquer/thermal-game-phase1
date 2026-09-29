@@ -5,12 +5,9 @@ import { DUCT_TOOLS } from './PlacementValidator.js';
 import { UtilityPlacementSystem } from './UtilityPlacementSystem.js';
 import { DEFAULT_BUDGET } from '../utils/Constants.js';
 import { entityFootprintCells } from '../entities/EntityFootprint.js';
+import { COOLING_UNIT_MODELS } from '../entities/CoolingUnitModels.js';
 
-export const COOLING_UNIT_MODELS=Object.freeze({
-  compact:{label:'Compacta',cost:4000,ratedCoolingCapacity:10000,maxAirFlow:1.2,cop:3.5,fanPower:300},
-  commercial:{label:'Comercial',cost:8000,ratedCoolingCapacity:25000,maxAirFlow:2.5,cop:3.5,fanPower:700},
-  industrial:{label:'Industrial',cost:14000,ratedCoolingCapacity:50000,maxAirFlow:5,cop:3.2,fanPower:1400},
-});
+export { COOLING_UNIT_MODELS } from '../entities/CoolingUnitModels.js';
 
 const DIRS=[{x:1,y:0},{x:0,y:1},{x:-1,y:0},{x:0,y:-1}];
 

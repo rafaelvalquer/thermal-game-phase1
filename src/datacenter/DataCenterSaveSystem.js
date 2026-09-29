@@ -1,5 +1,6 @@
 import { createLevelEntity } from '../campaign/LevelManager.js';
 import { HeatExchanger } from '../entities/HeatExchanger.js';
+import { migrateCoolingUnitBalance } from '../entities/CoolingUnitModels.js';
 
 const STORAGE_KEY='thermal-lab-datacenter-sandbox-v1';
 const EXCLUDED_KEYS=new Set(['id','world']);
@@ -66,6 +67,7 @@ export class DataCenterSaveSystem {
     world.clearEntities();world.clearUtilities();
     for(const definition of snapshot.world.entities||[]){
       const properties={...(definition.properties||{})};
+      if(definition.type==='coolingUnit')Object.assign(properties,migrateCoolingUnitBalance(properties));
       if(definition.type==='solarPanel')properties.generationW=0;
       if(definition.type==='serverRack'&&properties.thermalViolationSeconds!==undefined&&!properties.thermalViolationTimebase){
         properties.thermalViolationSeconds=Math.max(0,Number(properties.thermalViolationSeconds)||0)/360;

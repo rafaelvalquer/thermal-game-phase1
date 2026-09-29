@@ -179,8 +179,8 @@ test('an indoor cooling unit returns its rejected heat to the same building',()=
 
 test('hot outdoor conditions reduce available cooling capacity',()=>{
   const s=warmScenario({outdoorTemperature:40});s.cooling.update(1);
-  assert.ok(s.unit.availableCapacity<25000);
-  assert.ok(s.unit.availableCapacity>=25000*.65);
+  assert.ok(s.unit.availableCapacity<55000);
+  assert.ok(s.unit.availableCapacity>=55000*.65);
 });
 
 test('outdoor derating matches the design points at 25, 30, 35 and 40 degrees',()=>{
@@ -217,8 +217,8 @@ test('disabled and restored units change only their own cooling output',()=>{
   units[0].enabled=false;system.update(1);
   assert.equal(units[0].status,'OFF');assert.equal(units[0].currentAirFlow,0);assert.ok(units[1].currentAirFlow>0);
   units[0].enabled=true;world.environment.temperature=35;system.update(1);
-  assert.ok(units[0].availableCapacity<25000);
-  assert.ok(units[1].availableCapacity<25000);
+  assert.ok(units[0].availableCapacity<55000);
+  assert.ok(units[1].availableCapacity<55000);
 });
 
 test('cooling overload uses a hold timer and cooling-unit failure events can be restored',()=>{

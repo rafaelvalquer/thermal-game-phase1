@@ -72,6 +72,10 @@ test('data center dashboard exposes finance, PUE, capacity, contract market, and
   assert.match(root.innerHTML,/R\$ 150\.000/);
   assert.match(root.innerHTML,/PUE/);
   assert.match(root.innerHTML,/CAPACIDADE/);
+  assert.match(root.innerHTML,/Capacidade nominal instalada/);
+  assert.match(root.innerHTML,/Capacidade disponível agora/);
+  assert.match(root.innerHTML,/Calor removido da sala agora/);
+  assert.match(root.innerHTML,/dutos e saídas determinam quanto frio chega aos racks/);
   assert.match(root.innerHTML,/NovaBank/);
   assert.match(root.innerHTML,/role="table"/);
   assert.match(root.innerHTML,/data-power-amount/);

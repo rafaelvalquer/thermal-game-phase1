@@ -26,7 +26,7 @@ test('independent cooling units keep their own full capacity and separate networ
   assert.ok(networks.every(network=>network.status==='READY'));
   assert.notEqual(first.unit.networkId,second.unit.networkId);
   assert.equal(networks[0].availableCooling,0);
-  assert.deepEqual(networks.map(network=>network.sourceUnit.ratedCoolingCapacity),[25000,25000]);
+  assert.deepEqual(networks.map(network=>network.sourceUnit.ratedCoolingCapacity),[55000,55000]);
 });
 
 test('industrial two-tile condenser connects through its rear cell while keeping its outlet clear',()=>{
@@ -103,8 +103,8 @@ test('branch efficiency is counted once when dividing cooling between outlets',(
   system.builder.build=()=>[network];
   system.update(1);
 
-  assert.equal(network.paths[0].flowRate,1.25);
-  assert.equal(network.paths[1].flowRate,.625);
+  assert.equal(network.paths[0].flowRate,3);
+  assert.equal(network.paths[1].flowRate,1.5);
   assert.ok(Math.abs(network.paths[0].cooling/network.paths[1].cooling-2)<1e-8);
 });
 
@@ -145,7 +145,7 @@ test('one unit divides flow across several outlets and separate units can cool t
   const metrics={},airflow=new AirflowSystem(world,metrics),system=new CoolingSystem(world,airflow,metrics);system.update(1);
   assert.equal(system.networks.length,2);assert.ok(system.networks.every(network=>network.status==='READY'));
   assert.equal(system.networks[0].vents.length,2);assert.equal(system.networks[1].vents.length,1);
-  assert.ok(a.availableCapacity>=25000);assert.ok(b.availableCapacity>=25000);
+  assert.ok(a.availableCapacity>=55000);assert.ok(b.availableCapacity>=55000);
   assert.ok(vents[0].flowRate>0&&vents[1].flowRate>0&&vents[2].flowRate>0);
   assert.equal(vents[0].networkId,vents[2].networkId);
   assert.notEqual(vents[0].networkId,vents[1].networkId);

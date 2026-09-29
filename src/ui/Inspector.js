@@ -130,10 +130,10 @@ export class Inspector {
     if(e.type==='coolingUnit'){
       const network=(world.coolingSystem?.networks||[]).find(item=>item.sourceUnits.includes(e));
       rows.push(['Modelo',({compact:'Compacta',commercial:'Comercial',industrial:'Industrial'})[e.tier]||'Comercial'],['Estado',e.status],['Rede',e.networkId||'—'],['Condensadoras',String(network?.sourceUnits.length||0)],['Saídas',String(network?.vents.length||0)],
-        ['Capacidade',formatPower(e.ratedCoolingCapacity)],['Capacidade disponível',formatPower(e.availableCapacity||0)],
+        ['Capacidade nominal',formatPower(e.ratedCoolingCapacity)],['Capacidade disponível',formatPower(e.availableCapacity||0)],['COP',Number(e.cop||0).toFixed(1)+' · '+formatPower((e.availableCapacity||0)/Math.max(.1,e.cop))+' elétricos a plena carga'],
         ['Carga',(Math.min(100,Math.round((e.loadRatio||0)*100)))+'%'],['Vazão',Number(e.currentAirFlow||0).toFixed(2)+' / '+e.maxAirFlow+' m³/s'],
         ['Retorno',Number(e.returnTemperature||25).toFixed(1)+' °C'],['Insuflação',Number(e.supplyTemperature||25).toFixed(1)+' °C'],
-        ['Refrigeração',formatPower(e.currentCooling||0)+' / '+formatPower(e.ratedCoolingCapacity)],['Eficiência',e.cop>=3.4?'Alta':e.cop>=3?'Média':'Baixa'],
+        ['Frio removido da sala',formatPower(e.actualRoomCooling||0)],['Refrigeração da unidade',formatPower(e.currentCooling||0)+' / '+formatPower(e.availableCapacity||0)],
         ['Potência elétrica',formatPower(e.electricalPower||0)],['Calor rejeitado',formatPower(e.heatRejected||0)],['Local',e.indoor?'Interno':'Externo']);
     }
     if(e.type==='supplyVent'){

@@ -31,7 +31,7 @@ test('three units own independent full-capacity networks and add cooling in one 
 
   assert.equal(cooling.networks.length,3);
   assert.ok(cooling.networks.every(network=>network.status==='READY'));
-  assert.deepEqual(units.map(unit=>unit.availableCapacity),[25000,25000,0]);
+  assert.deepEqual(units.map(unit=>unit.availableCapacity),[55000,55000,0]);
   assert.ok(units[0].currentAirFlow>0&&units[1].currentAirFlow>0);
   assert.equal(units[2].currentAirFlow,0);
   assert.ok(units[0].currentCooling>0&&units[1].currentCooling>0);

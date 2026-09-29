@@ -64,9 +64,11 @@ export class Renderer {
       if(this.mode==='normal')this.staticMap.draw(scene,world,this.tile,this.zones||[],this.tileRenderer,bounds);
       else this.tileRenderer.draw(scene,world,this.tile,this.zones||[],this.mode,bounds);
       if(this.mode==='thermal')this.heatmap.draw(scene,world,this.tile,bounds);
+      // In thermal view, keep duct overlays behind racks and their temperature labels.
+      if(this.mode==='thermal')this.coolingDucts.draw(scene,world,this.tile,this.mode,this.camera.zoom,bounds);
       this.entities.draw(scene,world,this.tile,this.mode,time,{selectedEntity:this.selectedEntity,bounds,zoom:this.camera.zoom});
       this.monitor?.set('visibleEntities',this.entities.stats?.visibleEntities||0);this.monitor?.set('totalEntities',world.entities.length);
-      this.coolingDucts.draw(scene,world,this.tile,this.mode,this.camera.zoom,bounds);
+      if(this.mode!=='thermal')this.coolingDucts.draw(scene,world,this.tile,this.mode,this.camera.zoom,bounds);
       this.effects.draw(scene,world,this.tile,this.mode,time,bounds);
       if(this.buildSystem?.selected)this.drawBuildPreview(scene,world,uiTime);
       this.drawRecentPlacement(scene,uiTime);

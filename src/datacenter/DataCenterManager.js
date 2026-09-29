@@ -38,6 +38,7 @@ export class DataCenterManager {
     if(this.snapshot)this.saveSystem.restoreBuild(build,this.snapshot);
     this.level.powerLimit=this.powerGrid.capacityKW*1000;
     simulation.metrics.powerEnergy=this.state.powerEnergyTotal;
+    if(this.snapshot)simulation.cooling?.rebuild();
     simulation.paused=Boolean(this.state.reportPending);
     this.persist();
   }
@@ -314,6 +315,7 @@ export class DataCenterManager {
     this.racks=new RackSystem(this.world,this.contracts);this.saveSystem.restoreBuild(this.build,snapshot);
     this.world.datacenter=this;this.world.onPowerEquipmentIndexed=equipment=>{if(this.powerGrid.breakerOpen)equipment.powerBlocked=true;};this.level.powerLimit=this.powerGrid.capacityKW*1000;
     this.powerGrid.refresh(this.world);
+    this.simulation.cooling?.rebuild();
     Object.assign(this.simulation.metrics,{generatedHeat:0,externalEnergy:0,powerDraw:0,powerEnergy:this.state.powerEnergyTotal,energyBalance:0,maxTempEver:25,maxPowerEver:0});
     this.simulation.energySystem.initialize();this.simulation.updateMetrics();this.simulation.mission.lastEventMessage='';
     this.simulation.paused=Boolean(this.state.reportPending);this.simulation.elapsed=this.clock.seconds;

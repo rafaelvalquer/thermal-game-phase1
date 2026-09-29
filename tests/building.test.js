@@ -226,7 +226,7 @@ test('sandbox industrial condenser is a powered two-tile tool aligned to its dis
   assert.ok(build.catalog.industrialCoolingUnit);
   build.select('industrialCoolingUnit');assert.equal(build.canPlace('industrialCoolingUnit',2,2),true);
   const result=build.place(2,2),unit=result.entity;
-  assert.equal(unit.ratedCoolingCapacity,50000);assert.equal(unit.maxAirFlow,5);assert.equal(unit.footprintLength,2);
+  assert.equal(unit.ratedCoolingCapacity,110000);assert.equal(unit.maxAirFlow,12);assert.equal(unit.footprintLength,2);
   assert.equal(build.budget,16000);assert.equal(world.entityAt(3,2),unit);
   assert.equal(build.canPlace('fan',3,2),false);
   build.rotate();assert.equal(build.canPlace('industrialCoolingUnit',6,5),false,'rotated second tile cannot exceed map bounds');
@@ -250,7 +250,7 @@ test('cooling unit model selection applies the correct cost and restores its sto
   const world=new World(5,5);world.thermalSystems={simpleCooling:true,coolingUnitModel:'commercial'};
   const build=new BuildSystem(world,{totalInternalEnergy:()=>0,registerConstruction:()=>{}},{budget:15000,inventory:{coolingUnit:1}});
   build.select('coolingUnit');assert.equal(build.place(2,2).ok,true);
-  assert.equal(world.entityAt(2,2).ratedCoolingCapacity,25000);assert.equal(world.entityAt(2,2).missionId,'ac-1');assert.equal(build.budget,7000);
+  assert.equal(world.entityAt(2,2).ratedCoolingCapacity,55000);assert.equal(world.entityAt(2,2).missionId,'ac-1');assert.equal(build.budget,7000);
   build.select('demolish');assert.equal(build.place(2,2).ok,true);
   assert.equal(build.inventory.coolingUnit,1);assert.equal(build.budget,15000);
   build.select('coolingUnit');assert.equal(build.place(3,3).ok,true);
