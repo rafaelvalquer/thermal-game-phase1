@@ -1,9 +1,11 @@
 import { thermalGameplayCss } from './VisualTheme.js';
+import { ViewportCulling } from './ViewportCulling.js';
 
 export class HeatmapRenderer {
-  draw(ctx,world,tile){
+  draw(ctx,world,tile,bounds=null){
+    const viewport=ViewportCulling.fromBounds(bounds,tile,1).tileBounds(world);
     ctx.save();
-    for(let y=0;y<world.height;y++)for(let x=0;x<world.width;x++){
+    for(let y=viewport.minY;y<viewport.maxY;y++)for(let x=viewport.minX;x<viewport.maxX;x++){
       const i=world.index(x,y),t=world.temperatureAtIndex(i);
       ctx.fillStyle=thermalGameplayCss(t,.88);
       ctx.fillRect(x*tile,y*tile,tile+.35,tile+.35);

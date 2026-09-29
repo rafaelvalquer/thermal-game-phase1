@@ -5,7 +5,7 @@ import { CoolingAirExchange } from '../simulation/cooling/CoolingAirExchange.js'
 
 const fluidTypes=['pipe','pump','tank','radiator','exchanger'];
 const airDuctTypes=['duct'];
-const POWER_DEVICE_TYPES=new Set(['fan','exhaust','pump','coolingUnit','serverRack','battery']);
+const POWER_DEVICE_TYPES=new Set(['fan','exhaust','pump','coolingUnit','serverRack','battery','solarPanel']);
 const dirGlyph=d=>d?.x>0?'→':d?.x<0?'←':d?.y>0?'↓':d?.y<0?'↑':'—';
 
 function rackCoolingAdvice(world,rack){
@@ -108,6 +108,8 @@ export class Inspector {
       rows.push(['Estado operacional',stateLabel],['Energia armazenada',Number(e.storedEnergyKWh||0).toFixed(2)+' / 50.00 kWh'],['Carga',(Number(e.chargePercent)||0).toFixed(1)+'%'],['Potência de carga',formatPower(e.chargePowerW||0)],['Potência de descarga',formatPower(e.dischargePowerW||0)],['Limite por sentido','10.00 kW'],['Eficiência do ciclo','90%']);
     }
 
+    if(e.type==='solarPanel')rows.push(['Geração atual',formatPower(e.generationW||0)],['Potência de pico',formatPower(e.peakPowerW||2000)],['Período de geração','06h–18h · pico às 12h']);
+
     if(e.type==='fan'||e.type==='exhaust'){
       rows.push(['Direção',dirGlyph(e.direction)],['Vazão atual',Number(e.currentFlow||0).toFixed(2)+' m³/s']);
       if(world.thermalSystems?.simpleCooling){
@@ -152,6 +154,7 @@ export class Inspector {
     if(e.type==='technician')state=e.action==='working'?{id:'stable',label:'EM ATENDIMENTO',color:'#34d399'}:e.action==='moving'?{id:'warm',label:'A CAMINHO',color:'#38bdf8'}:e.action==='cooldown'?{id:'warm',label:'EM INTERVALO',color:'#fbbf24'}:{id:'stable',label:'EM PATRULHA',color:'#34d399'};
     else if(cancelled)state={id:'warm',label:'CONTRATO ENCERRADO',color:'#94a3b8'};
     else if(e.type==='battery')state={id:e.operationState==='DISCHARGING'?'warm':e.operationState==='CHARGING'?'stable':e.operationState==='OFF'?'warm':'stable',label:e.operationState==='DISCHARGING'?'FORNECENDO ENERGIA':e.operationState==='CHARGING'?'CARREGANDO':e.operationState==='FULL'?'CARGA COMPLETA':e.operationState==='EMPTY'?'SEM CARGA':e.operationState==='OFF'?'DESLIGADA':'EM ESPERA',color:e.operationState==='DISCHARGING'?'#fbbf24':e.operationState==='CHARGING'?'#38bdf8':e.operationState==='OFF'?'#94a3b8':'#34d399'};
+    else if(e.type==='solarPanel')state={id:e.enabled&&e.generationW>0?'stable':'warm',label:e.enabled&&e.generationW>0?'GERANDO ENERGIA':e.enabled?'SEM IRRADIAÇÃO':'DESLIGADO',color:e.enabled&&e.generationW>0?'#34d399':'#fbbf24'};
     else if(hasPowerControl&&!e.enabled)state={id:'warm',label:'DESLIGADO',color:'#94a3b8'};
     else if(e.powerBlocked)state={id:'hot',label:'SEM ENERGIA',color:'#fb7185'};
     else if((fluidTypes.includes(e.type)||airDuctTypes.includes(e.type))&&e.networkStatus&&e.networkStatus!=='CLOSED'){

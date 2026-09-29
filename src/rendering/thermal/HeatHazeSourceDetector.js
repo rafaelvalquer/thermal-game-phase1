@@ -52,6 +52,7 @@ export class HeatHazeSourceDetector {
 
   detectEntities(world,bounds,regions){
     for(const e of world.entities){
+      if(bounds&&(e.x<bounds.x1-3||e.x>bounds.x2+3||e.y<bounds.y1-3||e.y>bounds.y2+3))continue;
       const temperature=this.entityTemperature(e);
       if(temperature==null||temperature<this.threshold)continue;
       const air=this.localAirTemperature(world,e),delta=temperature-air;
@@ -77,9 +78,10 @@ export class HeatHazeSourceDetector {
   }
 
   detectHotAir(world,bounds,regions){
-    const step=this.thermalSampleStep;
-    for(let y=0;y<world.height;y+=step){
-      for(let x=0;x<world.width;x+=step){
+    const step=this.thermalSampleStep,minX=bounds?Math.max(0,Math.floor(bounds.x1/step)*step):0,minY=bounds?Math.max(0,Math.floor(bounds.y1/step)*step):0;
+    const maxX=bounds?Math.min(world.width,Math.ceil(bounds.x2/step)*step):world.width,maxY=bounds?Math.min(world.height,Math.ceil(bounds.y2/step)*step):world.height;
+    for(let y=minY;y<maxY;y+=step){
+      for(let x=minX;x<maxX;x+=step){
         let sum=0,count=0;
         for(let dy=0;dy<step;dy++)for(let dx=0;dx<step;dx++){
           const tx=x+dx,ty=y+dy;

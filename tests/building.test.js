@@ -40,6 +40,38 @@ for(const [tool,material,cost] of [['wall','concrete',35],['insulation','insulat
   });
 }
 
+test('demolish drag removes every built object and material in the rectangle with a full refund',()=>{
+  const world=new World(7,5);world.thermalSystems={allBuildTools:true};
+  const build=new BuildSystem(world,{totalInternalEnergy:()=>0,registerConstruction:()=>{}},{budget:1010,inventory:{wall:2,fan:1,duct:4,pipe:1}});
+  for(const [tool,x,y] of [['wall',1,1],['wall',2,1],['fan',2,2],['duct',3,2],['pipe',1,1]]){build.select(tool);assert.equal(build.place(x,y).ok,true);}
+  assert.equal(build.budget,780);build.select('demolish');
+  const result=build.demolishArea({x:3,y:2},{x:1,y:1});
+  assert.deepEqual({ok:result.ok,removed:result.removed,entities:result.entities,utilities:result.utilities,materials:result.materials,refund:result.refund},
+    {ok:true,removed:5,entities:2,utilities:1,materials:2,refund:230});
+  assert.equal(build.budget,1010);assert.equal(world.entities.length,0);assert.equal(world.allUtilities().length,0);
+  assert.equal(world.materialAt(1,1).id,'air');assert.equal(world.materialAt(2,1).id,'air');
+  assert.equal(build.inventory.wall,2);assert.equal(build.inventory.fan,1);assert.equal(build.inventory.duct,4);assert.equal(build.inventory.pipe,1);
+});
+
+test('demolish drag skips mission-locked equipment and reports protected items',()=>{
+  const world=new World(4,4);world.thermalSystems={allBuildTools:true};world.addEntity({id:'mission-unit',type:'fan',x:1,y:1,enabled:true,locked:true});
+  const build=new BuildSystem(world,{totalInternalEnergy:()=>0,registerConstruction:()=>{}},{budget:500,inventory:{}});
+  const result=build.demolishArea({x:1,y:1},{x:2,y:2});
+  assert.equal(result.ok,false);assert.equal(result.blocked,1);assert.equal(world.entities.length,1);assert.equal(build.budget,500);
+});
+
+test('demolish drag removes unassigned server racks',()=>{
+  const world=new World(4,4);world.thermalSystems={allBuildTools:true};
+  const rack={id:'available-rack',type:'serverRack',x:2,y:2,isHeatMachine:true,contractId:null};world.addEntity(rack);
+  let notified=null;world.datacenter={onRackRemoved(entity){notified=entity;},persist(){}};
+  const build=new BuildSystem(world,{totalInternalEnergy:()=>0,registerConstruction:()=>{}},{budget:100,inventory:{}});
+
+  const result=build.demolishArea({x:2,y:2});
+
+  assert.equal(result.ok,true);assert.equal(result.entities,1);assert.equal(result.refund,0);
+  assert.equal(world.entities.includes(rack),false);assert.equal(notified,rack);
+});
+
 test('pipe batch places valid cells, skips blocked cells, and charges only placed pipes',()=>{
   const world=new World(8,5);world.addEntity({id:'blocker',type:'machine',x:3,y:1});
   const simulation={totalInternalEnergy:()=>0,registerConstruction:()=>{}};
@@ -88,6 +120,28 @@ test('pipe click and drag can pass under walls without replacing the wall',()=>{
   assert.equal(build.place(2,1).ok,true);
   assert.equal(world.entityAt(2,1),undefined);
   assert.equal(world.materialAt(2,1).id,'concrete');
+});
+
+test('wall can be built over an existing pipe without removing it',()=>{
+  const world=new World(5,3);
+  const simulation={totalInternalEnergy:()=>0,registerConstruction:()=>{}};
+  const build=new BuildSystem(world,simulation,{budget:100,inventory:{pipe:2,wall:2}});
+
+  build.select('pipe');
+  assert.equal(build.place(2,1).ok,true);
+  const pipe=world.entityAt(2,1);
+
+  build.select('wall');
+  assert.equal(build.canPlace('wall',2,1),true);
+  assert.equal(build.place(2,1).ok,true);
+  assert.equal(world.materialAt(2,1).id,'concrete');
+  assert.equal(world.entityAt(2,1),pipe);
+
+  const blocked=new World(5,3);
+  blocked.addEntity({type:'pump',x:2,y:1});
+  const blockedBuild=new BuildSystem(blocked,simulation,{budget:100,inventory:{wall:2}});
+  blockedBuild.select('wall');
+  assert.equal(blockedBuild.canPlace('wall',2,1),false);
 });
 
 test('pipe placement can form a T junction but rejects a fourth connection',()=>{

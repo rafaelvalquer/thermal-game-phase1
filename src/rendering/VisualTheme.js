@@ -48,6 +48,7 @@ export const entityLabel = (type) => ({
   machine:'Máquina industrial',
   serverRack:'Rack de servidores',
   battery:'Banco de baterias',
+  solarPanel:'Painel solar',
   furnace:'Forno industrial',
   passiveHeat:'Fonte térmica passiva',
   fan:'Ventilador',

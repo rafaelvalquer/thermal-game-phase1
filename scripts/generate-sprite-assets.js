@@ -87,6 +87,10 @@ function artwork(type,frame,off,width=32,sheetRow=0){
     panel(5,3,22,26);rect(11,1,10,3,P.mid);rect(8,7,16,7,P.ink);rect(9,8,14,5,off?P.dark:P.water);rect(10,9,3,3,off?P.mid:P.cyan);rect(14,9,3,3,off?P.mid:P.cyan);rect(18,9,3,3,off?P.mid:P.cyan);
     rect(9,16,14,8,P.ink);rect(10,17,12,6,P.shadow);rect(11,18,10,4,P.steel);rect(15,18,2,3,P.yellow);rect(14,20,4,1,P.copperLight);
     for(let i=0;i<4;i++){rect(8,25+i%2,3,2,P.mid);rect(21,25+i%2,3,2,P.mid);}led(24,5,frame);bolt(6,4);bolt(25,26);
+  }else if(type==='solarPanel'){
+    panel(2,11,28,13);for(let x=5;x<30;x+=3)rect(x,13,1,9,P.cyan);for(let y=15;y<24;y+=4)rect(3,y,26,1,P.cyan);
+    rect(8,24,2,5,P.steel);rect(23,24,2,5,P.steel);rect(7,29,19,1,P.mid);
+    rect(24,2,4,4,P.yellow);rect(25,0,2,2,P.yellow);rect(25,7,2,2,P.yellow);rect(21,3,2,2,P.yellow);rect(29,3,2,2,P.yellow);
   }else if(type.startsWith('cooling')){
     const compact=type==='coolingCompact',industrial=type==='coolingIndustrial';
     panel(2,5,width-4,23);ports();

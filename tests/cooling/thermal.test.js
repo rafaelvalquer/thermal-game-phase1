@@ -163,6 +163,7 @@ test('rotating a cold-air outlet applies airflow momentum in its selected direct
     const airflow=new AirflowSystem(world,{}),cooling=new CoolingSystem(world,airflow,{});
     cooling.update(.1);
     assert.ok(vent.flowRate>0,axis+' direction received no cooling flow');
+    airflow.updateVelocity(.1);
     assert.ok(face(airflow.grid,vent)>0,axis+' outlet failed to inject momentum in its selected direction');
   }
 });

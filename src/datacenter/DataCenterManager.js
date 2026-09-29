@@ -6,22 +6,27 @@ import { DataCenterSaveSystem } from './DataCenterSaveSystem.js';
 import { PowerGridSystem, POWER_MAX_CAPACITY_KW } from './PowerGridSystem.js';
 import { ServerRack } from '../entities/ServerRack.js';
 import { createDailyOperations, normalizeDailyState, sampleDailyOperations, summarizeDailyOperations } from './DailyOperations.js';
+import { ReputationSystem } from './ReputationSystem.js';
 
-const DEFAULT_STATE=()=>({cash:150000,clockSeconds:0,day:1,reputation:50,powerCapacityKW:100,energyTariff:0.85,
-  offerSequence:0,offers:[],marketInitialized:false,contracts:[],pendingExpansionOffer:null,ledger:[],dailyViolation:false,lastPowerEnergy:0,rackSequence:0});
-const clampReputation=value=>Math.max(0,Math.min(100,value));
+const DEFAULT_STATE=()=>({cash:150000,clockSeconds:0,day:1,reputation:50,powerCapacityKW:100,energyTariff:0.55,
+  offerSequence:0,offers:[],marketInitialized:false,contracts:[],pendingExpansionOffer:null,lastExpansionInviteByClient:{},ledger:[],dailyViolation:false,lastPowerEnergy:0,rackSequence:0,
+  reputationHistory:[],dailyPositiveReputation:0,reputationStreakDays:0});
 
 export class DataCenterManager {
   constructor(world,level,{saveSystem=new DataCenterSaveSystem(),random=Math.random}={}){
     this.world=world;this.level=level;this.saveSystem=saveSystem;this.random=random;this.snapshot=saveSystem.load();
     const defaults=DEFAULT_STATE();defaults.cash=level.datacenter.initialCash??defaults.cash;defaults.powerCapacityKW=level.datacenter.powerCapacityKW??defaults.powerCapacityKW;defaults.energyTariff=level.datacenter.energyTariff??defaults.energyTariff;defaults.coolingMaintenanceDaily=level.datacenter.coolingMaintenanceDaily??110;
     this.state={...defaults,...(this.snapshot?.state||{})};
+    // Bring existing sandbox saves onto the new base electricity tariff while
+    // preserving custom tariffs configured by other scenarios.
+    if(level.datacenter.energyTariff===0.55&&this.snapshot?.state?.energyTariff===0.85)this.state.energyTariff=0.55;
     normalizeDailyState(this.state,this.snapshot?.state);
+    this.reputation=new ReputationSystem(this.state);
     this.clock=new GameClock(this.state.clockSeconds);
     this.powerGrid=new PowerGridSystem({capacityKW:this.state.powerCapacityKW,...this.state.powerProtection});
     this.contracts=new ContractSystem(this.state,{random:this.random});
     this.racks=new RackSystem(world,this.contracts);
-    this.build=null;this.simulation=null;this.saveTimer=0;
+    this.build=null;this.simulation=null;this.saveTimer=0;this.saveDirty=false;this.saveDebounceRemaining=0;
     world.datacenter=this;world.datacenterConfig=level.datacenter;
     if(this.snapshot)saveSystem.restoreWorld(world,this.snapshot);
     this.powerGrid.refresh(world);
@@ -106,7 +111,7 @@ export class DataCenterManager {
       this.contracts.attachRack(rack);
     }
   }
-  onRackPlaced(rack){this.contracts.attachRack(rack);this.persist();}
+  onRackPlaced(rack){this.contracts.attachRack(rack);this.markSaveDirty();}
   onRackRemoved(rack){
     const contract=this.state.contracts.find(item=>item.id===rack.contractId);if(!contract)return;
     contract.installedRacks=Math.max(0,contract.installedRacks-1);
@@ -116,6 +121,7 @@ export class DataCenterManager {
   acceptOffer(offerId){
     const result=this.contracts.accept(offerId,this.clock.day,this.cash);
     if(!result.ok)return result;
+    if(!result.alreadyAccepted&&result.contract.renewalContractId)this.reputation.change(1,'Renovação de contrato · '+result.contract.clientName,this.clock.day);
     if(!result.alreadyAccepted)this.assignAvailableRacks(result.contract);
     this.build.budget+=result.installationIncome;
     this.record('Instalação · '+result.contract.clientName,result.installationIncome);
@@ -125,7 +131,7 @@ export class DataCenterManager {
   cancelContract(contractId){
     const contract=this.state.contracts.find(item=>item.id===contractId);
     if(!this.contracts.cancel(contractId)){return false;}
-    this.state.reputation=clampReputation(this.state.reputation-2);
+    this.reputation.change(-2,'Cancelamento manual',this.clock.day);
     contract.reputationProcessed=true;
     this.releaseContractRacks(contractId);
     this.record('Cancelamento · '+contract.clientName,0);this.persist();return true;
@@ -152,7 +158,9 @@ export class DataCenterManager {
   protectPower(dt,billingDt=dt){
     this.preparePowerDemand(dt||this.simulation?.lastPhysicsDt||1/60);
     this.simulation?.batteryDispatch?.dispatch(this.powerGrid.capacityKW*1000,billingDt||dt,{disabled:this.powerGrid.breakerOpen});
+    const wasOpen=this.powerGrid.breakerOpen;
     this.powerGrid.update(this.world,dt);
+    if(!wasOpen&&this.powerGrid.breakerOpen)this.state.powerOutageOccurredToday=true;
   }
   rearmPower(){
     this.preparePowerDemand(this.simulation?.lastPhysicsDt||1/60);
@@ -176,8 +184,14 @@ export class DataCenterManager {
     this.state.lastPowerEnergy=metrics.powerEnergy||0;
     this.racks.evaluateDailyAvailability();
     const violations=new Set(this.state.contracts.filter(contract=>contract.status==='active'&&contract.dailyViolation).map(contract=>contract.id));
+    const reputationStart=this.reputation.value,reputationTierStart=this.reputation.tier;
+    this.reputation.startDay();
     const operatingContracts=[...this.activeContracts];
     const sla={operatingCount:operatingContracts.length,violations:operatingContracts.filter(contract=>violations.has(contract.id)).map(contract=>({id:contract.id,clientName:contract.clientName}))};
+    for(const contract of operatingContracts)if(!violations.has(contract.id)&&contract.dailyActiveSeconds>0&&
+      contract.dailyUptimeSeconds/contract.dailyActiveSeconds>=.9995)this.reputation.changeDaily(.05,'Disponibilidade excelente · '+contract.clientName,day);
+    for(const contract of operatingContracts)if(contract.dailyDowntimeSeconds>=21600)
+      this.reputation.change(-3,'Indisponibilidade crítica prolongada · '+contract.clientName,day);
     this.contracts.updateDay(day);
     for(const contract of this.state.contracts)if(['completed','cancelled'].includes(contract.status))this.releaseContractRacks(contract.id);
     let revenue=0,penalties=0;
@@ -187,11 +201,29 @@ export class DataCenterManager {
       }
       if(violations.has(contract.id)){
         contract.lastSlaViolationDay=day;
-        penalties+=5000;contract.finesPaid+=5000;this.state.reputation=clampReputation(this.state.reputation-1);
-      }else if(operatingContracts.includes(contract))this.state.reputation=clampReputation(this.state.reputation+.015);
-      if(contract.status==='completed'&&contract.completedDay===day&&!contract.reputationProcessed){this.state.reputation=clampReputation(this.state.reputation+2);contract.reputationProcessed=true;}
-      if(contract.status==='cancelled'&&contract.cancelledDay===day&&!contract.reputationProcessed){this.state.reputation=clampReputation(this.state.reputation-(contract.cancelReason==='Cancelado pelo operador'?2:5));contract.reputationProcessed=true;}
+        penalties+=5000;contract.finesPaid+=5000;this.reputation.change(-1,'Violação de SLA · '+contract.clientName,day);
+      }
+      if(contract.status==='completed'&&contract.completedDay===day&&!contract.reputationProcessed){
+        this.reputation.change(2,'Contrato concluído · '+contract.clientName,day);
+        if(!contract.violationDays)this.reputation.change(1,'Histórico perfeito de SLA · '+contract.clientName,day);
+        contract.reputationProcessed=true;
+      }
+      if(contract.status==='cancelled'&&contract.cancelledDay===day&&!contract.reputationProcessed){
+        const installationFailed=contract.cancelReason==='Prazo de instalação expirado',penalty=contract.cancelReason==='Cancelado pelo operador'?-2:installationFailed?-4:-5;
+        this.reputation.change(penalty,contract.cancelReason==='Cancelado pelo operador'?'Cancelamento manual · '+contract.clientName:installationFailed?'Incapacidade de iniciar operação · '+contract.clientName:'Contrato cancelado após violações · '+contract.clientName,day);
+        contract.reputationProcessed=true;
+      }
     }
+    const allSlaMet=operatingContracts.length>0&&!violations.size;
+    if(allSlaMet)this.reputation.changeDaily(.05,'Todos os contratos cumpriram o SLA',day);
+    const cleanActive=operatingContracts.filter(contract=>!violations.has(contract.id)).length;
+    if(cleanActive)this.reputation.changeDaily(cleanActive*.015,'Operação estável',day);
+    if(violations.size){this.state.reputationStreakDays=0;}
+    else if(operatingContracts.length){
+      this.state.reputationStreakDays++;
+      if(this.state.reputationStreakDays>0&&this.state.reputationStreakDays%30===0)this.reputation.change(1,'30 dias sem violação de SLA',day);
+    }
+    if(this.state.powerOutageOccurredToday){this.reputation.change(-2,'Falha grave de energia',day);this.state.powerOutageOccurredToday=false;}
     const fixedPowerCost=this.powerGrid.monthlyFixedCost/30,coolingMaintenance=this.state.coolingMaintenanceDaily??110;
     const staffPayroll=this.world.technicianSystem?.settleDay(day-1)||0;
     const expenses=energyCost+fixedPowerCost+coolingMaintenance+penalties+staffPayroll,net=revenue-expenses;
@@ -206,8 +238,13 @@ export class DataCenterManager {
     this.state.rackCount=this.rackCount;
     this.state.powerCapacityKW=this.powerGrid.capacityKW;
     const newOffers=this.contracts.generateDaily(day,this.state.reputation).map(offer=>({...offer}));
+    const renewalContract=this.state.contracts.find(contract=>contract.status==='completed'&&contract.completedDay===day&&!contract.renewalOfferChecked);
+    const renewalOffer=this.contracts.generateRenewalOffer(renewalContract,day,this.state.reputation);
+    if(renewalOffer)newOffers.push({...renewalOffer});
     this.contracts.generateExpansionOffer(day,this.state.reputation,violations);
+    const reputationTierEnd=this.reputation.tier;
     this.state.dailyResult={day:day-1,revenue,energyCost,fixedPowerCost,coolingMaintenance,penalties,staffPayroll,net,energyKWh,
+      reputation:{start:reputationStart,end:this.reputation.value,change:this.reputation.value-reputationStart,tierStart:reputationTierStart.name,tierEnd:reputationTierEnd.name,tierChanged:reputationTierStart.id!==reputationTierEnd.id,history:this.state.reputationHistory.filter(event=>event.day===day)},
       operations:summarizeDailyOperations(this.state.dailyOperations),sla,newOffers};
     this.state.dailyOperations=createDailyOperations();
     this.state.lastSettledDay=day-1;
@@ -226,6 +263,8 @@ export class DataCenterManager {
     if(!accept){this.record('Proposta de expansão recusada · '+contract.clientName,0);this.persist();return {ok:true,accepted:false,contract};}
     contract.rackCount=offer.rackCount;contract.powerPerRackKW=offer.powerPerRackKW;
     contract.monthlyFee=offer.monthlyFee;contract.installationFee=(contract.installationFee||0)+offer.installationFee;
+    contract.baseMonthlyFee=Math.round((contract.baseMonthlyFee||contract.monthlyFee)*(offer.capacityKW/offer.currentCapacityKW));
+    contract.reputationMultiplier=contract.baseMonthlyFee?contract.monthlyFee/contract.baseMonthlyFee:1;
     contract.expiresDay=offer.expiresDay;contract.lastAmendedDay=this.clock.day;contract.amendmentCount=(contract.amendmentCount||0)+1;
     for(const rack of this.world.entitiesByType('serverRack'))if(rack.contractId===contract.id){
       rack.maxPowerKW=contract.powerPerRackKW;rack.baseHeatOutput=contract.powerPerRackKW*980;rack.heatOutput=rack.baseHeatOutput;
@@ -235,7 +274,7 @@ export class DataCenterManager {
     this.persist();this.build.onChange?.();
     return {ok:true,accepted:true,contract,offer};
   }
-  markOffersSeen(ids){if(this.contracts.markSeen(ids))this.persist();}
+  markOffersSeen(ids){if(this.contracts.markSeen(ids))this.markSaveDirty();}
   dismissReport(){this.state.reportPending=false;this.persist();}
   consumeNotification(){
     if(!this.state.notificationPending)return null;
@@ -247,21 +286,26 @@ export class DataCenterManager {
   }
   updateAutoSave(realDt){
     this.saveTimer+=realDt;
-    if(this.saveTimer>=10){this.saveTimer=0;this.persist();}
+    if(this.saveDirty){this.saveDebounceRemaining-=realDt;if(this.saveDebounceRemaining<=1e-9){this.persist();return;}}
+    if(this.saveTimer>=15-1e-9)this.persist();
+  }
+  markSaveDirty(debounceSeconds=2){
+    this.saveDirty=true;this.saveDebounceRemaining=Math.max(0,Number(debounceSeconds)||0);
   }
   persist(){
     if(!this.build)return false;
+    this.monitor?.begin('saveMs');
     this.state.cash=this.build.budget;this.state.clockSeconds=this.clock.seconds;this.state.day=this.clock.day;
     this.state.powerCapacityKW=this.powerGrid.capacityKW;
     this.state.powerProtection=this.powerGrid.snapshot();
     this.state.powerEnergyTotal=this.simulation?.metrics.powerEnergy||0;
-    return this.saveSystem.save(this.saveSystem.capture(this.world,this.state,this.build));
+    try{const saved=this.saveSystem.save(this.saveSystem.capture(this.world,this.state,this.build));if(saved){this.saveTimer=0;this.saveDirty=false;this.saveDebounceRemaining=0;}return saved;}finally{this.monitor?.end('saveMs');}
   }
   clearSave(){return this.saveSystem.clear();}
   load(){
     const snapshot=this.saveSystem.load();if(!snapshot)return false;
     this.snapshot=snapshot;this.saveSystem.restoreWorld(this.world,snapshot);
-    this.state={...DEFAULT_STATE(),...snapshot.state};normalizeDailyState(this.state,snapshot.state);this.clock=new GameClock(this.state.clockSeconds);
+    this.state={...DEFAULT_STATE(),...snapshot.state};normalizeDailyState(this.state,snapshot.state);this.reputation=new ReputationSystem(this.state);this.clock=new GameClock(this.state.clockSeconds);
     if(this.world.technicianSystem)this.world.technicianSystem.payrollDay=this.state.lastSettledDay||0;
     this.powerGrid=new PowerGridSystem({capacityKW:this.state.powerCapacityKW,...this.state.powerProtection});this.contracts=new ContractSystem(this.state,{random:this.random});
     this.racks=new RackSystem(this.world,this.contracts);this.saveSystem.restoreBuild(this.build,snapshot);

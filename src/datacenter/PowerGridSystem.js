@@ -26,7 +26,8 @@ export class PowerGridSystem {
   snapshot(){return {overloadSeconds:this.overloadSeconds,breakerOpen:this.breakerOpen};}
   refresh(world){
     const equipment=powerEquipment(world);
-    this.demandKW=(nonBattery(equipment).reduce((sum,e)=>sum+demand(e),0)+(world.batteryDispatch?.chargePowerW||0))/1000;
+    const grossDemand=nonBattery(equipment).reduce((sum,e)=>sum+demand(e),0),solar=world.batteryDispatch?.solarGenerationW||0;
+    this.demandKW=Math.max(0,grossDemand-solar+(world.batteryDispatch?.gridChargePowerW??world.batteryDispatch?.chargePowerW??0))/1000;
     this.effectiveKW=(world.batteryDispatch?.currentGridPowerW({breakerOpen:this.breakerOpen})??nonBattery(equipment).reduce((sum,e)=>sum+(isPowered(e)?demand(e):0),0))/1000;
     this.blockedRacks=equipment.filter(e=>e.type==='serverRack'&&e.enabled&&e.powerBlocked).length;
     for(const rack of equipment.filter(e=>e.type==='serverRack')){

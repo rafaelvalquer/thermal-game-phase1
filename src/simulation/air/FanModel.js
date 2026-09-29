@@ -39,7 +39,7 @@ export class FanModel {
     const pressure=this.pressureRise(fan,measuredFlow);
     // A finite actuator region adds momentum before projection. Pressure remains
     // responsible for back pressure and for redistributing incompressible flow.
-    const impulse=pressure*dt/(AIR.density*g.dx*AIR.fanSourceSpread);
+    const impulse=pressure*dt*AIR.fanMomentumBoost/(AIR.density*g.dx*AIR.fanSourceSpread);
     const limit=Math.min(AIR.maxVelocity,fan.qFree/area);
     for(let offset=0;offset<AIR.fanSourceSpread;offset++){
       const x=fan.x+d.x*offset,y=fan.y+d.y*offset;

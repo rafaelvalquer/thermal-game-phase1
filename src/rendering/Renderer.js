@@ -18,15 +18,21 @@ import { CoolingFlowRenderer } from './cooling/CoolingFlowRenderer.js';
 import { CoolingOverlayRenderer } from './cooling/CoolingOverlayRenderer.js';
 import { CoolingUnitRenderer } from './cooling/CoolingUnitRenderer.js';
 import { CoolingAirExchange } from '../simulation/cooling/CoolingAirExchange.js';
+import { ViewportCulling } from './ViewportCulling.js';
+import { StaticMapCache } from './StaticMapCache.js';
+import { VisualQualityManager } from './VisualQualityManager.js';
 
 export class Renderer {
-  constructor(canvas,camera,{tilePixels=14}={}){
+  constructor(canvas,camera,{tilePixels=14,monitor=null}={}){
     this.canvas=canvas;this.ctx=canvas.getContext('2d');this.camera=camera;this.tile=tilePixels;
+    this.monitor=monitor;
     this.mode='normal';this.debug=false;this.hover=null;this.buildSystem=null;this.selectedEntity=null;this.highlightedContractId=null;this.level=null;
     this.tileRenderer=new TileRenderer();this.heatmap=new HeatmapRenderer();this.airflow=new AirflowRenderer();this.pressure=new PressureRenderer();
+    this.staticMap=new StaticMapCache();
     this.entities=new EntityRenderer();this.effects=new EffectsRenderer();
     this.coolingDucts=new CoolingDuctRenderer();this.coolingFlow=new CoolingFlowRenderer();this.coolingOverlay=new CoolingOverlayRenderer();this.coolingUnits=new CoolingUnitRenderer();
     this.distortionBuffer=new ThermalDistortionBuffer();this.heatHaze=new HeatHazeRenderer({quality:VisualSettings.heatHazeQuality,maxRegions:VisualSettings.maxHazeRegions});
+    this.visualQuality=new VisualQualityManager();
   }
 
   resize(){
@@ -35,6 +41,7 @@ export class Renderer {
   }
 
   draw(world,simulation){
+    this.monitor?.begin('renderMs');
     this.resize();
     const ctx=this.ctx,time=VisualSettings.reduceMotion?0:(simulation.visualTime??0),uiTime=VisualSettings.reduceMotion?0:performance.now()/1000;
     const width=this.canvas.width/this.dpr,height=this.canvas.height/this.dpr;
@@ -54,17 +61,19 @@ export class Renderer {
       scene.scale(this.camera.zoom,this.camera.zoom);
       scene.translate(-this.camera.x,-this.camera.y);
       scene.imageSmoothingEnabled=false;
-      this.tileRenderer.draw(scene,world,this.tile,this.zones||[],this.mode,bounds);
-      if(this.mode==='thermal')this.heatmap.draw(scene,world,this.tile);
+      if(this.mode==='normal')this.staticMap.draw(scene,world,this.tile,this.zones||[],this.tileRenderer,bounds);
+      else this.tileRenderer.draw(scene,world,this.tile,this.zones||[],this.mode,bounds);
+      if(this.mode==='thermal')this.heatmap.draw(scene,world,this.tile,bounds);
       this.entities.draw(scene,world,this.tile,this.mode,time,{selectedEntity:this.selectedEntity,bounds,zoom:this.camera.zoom});
-      this.coolingDucts.draw(scene,world,this.tile,this.mode,this.camera.zoom);
+      this.monitor?.set('visibleEntities',this.entities.stats?.visibleEntities||0);this.monitor?.set('totalEntities',world.entities.length);
+      this.coolingDucts.draw(scene,world,this.tile,this.mode,this.camera.zoom,bounds);
       this.effects.draw(scene,world,this.tile,this.mode,time,bounds);
       if(this.buildSystem?.selected)this.drawBuildPreview(scene,world,uiTime);
       this.drawRecentPlacement(scene,uiTime);
       scene.restore();
 
       if(!renderDirect){
-        const allowHeatHaze=VisualSettings.heatHaze&&this.mode!=='pressure';
+        const allowHeatHaze=VisualSettings.heatHaze&&this.mode!=='pressure'&&this.heatHaze.maxRegions>0;
         if(allowHeatHaze)this.heatHaze.render(ctx,this.distortionBuffer.canvas,world,this.camera,this.tile,this.mode,time,width,height,this.dpr);
         else ctx.drawImage(this.distortionBuffer.canvas,0,0,this.distortionBuffer.canvas.width,this.distortionBuffer.canvas.height,0,0,width,height);
       }
@@ -74,12 +83,12 @@ export class Renderer {
     ctx.scale(this.camera.zoom,this.camera.zoom);
     ctx.translate(-this.camera.x,-this.camera.y);
     this.drawZones(ctx);
-    if(this.mode==='pressure')this.pressure.draw(ctx,world,this.tile);
+    if(this.mode==='pressure')this.pressure.draw(ctx,world,this.tile,bounds);
     if(this.mode==='fluid')this.drawFluidNetwork(ctx,world,time);
     if(this.mode==='cooling'&&simulation.cooling){
-      this.coolingOverlay.draw(ctx,world,this.tile,time,this.camera.zoom,this.selectedEntity);
-      this.coolingFlow.draw(ctx,simulation.cooling.networks,this.tile,time,this.camera.zoom,this.selectedEntity);
-      for(const unit of simulation.cooling.units)this.coolingUnits.draw(ctx,unit,this.tile,this.camera.zoom);
+      this.coolingOverlay.draw(ctx,world,this.tile,time,this.camera.zoom,this.selectedEntity,bounds);
+      this.coolingFlow.draw(ctx,simulation.cooling.networks,this.tile,time,this.camera.zoom,this.selectedEntity,bounds);
+      const viewport=ViewportCulling.fromBounds(bounds,this.tile,2);for(const unit of simulation.cooling.units)if(viewport.contains(unit.x,unit.y))this.coolingUnits.draw(ctx,unit,this.tile,this.camera.zoom);
     }
     if(this.mode==='airflow'){
       this.airflow.draw(ctx,world,this.tile,time,this.camera.zoom,bounds);
@@ -103,12 +112,28 @@ export class Renderer {
     this.drawEventBanner(ctx,simulation,width);
     this.drawLegend(ctx,simulation,width);
     if(this.debug)this.drawVisualPhysicsDebug(ctx,time,world,simulation.metrics);
+    if(this.debug)this.drawPerformanceOverlay(ctx);
+    if(this.monitor){const settings=this.visualQuality.update(this.monitor.snapshot().fps);this.heatHaze.quality=settings.quality;this.heatHaze.maxRegions=settings.maxRegions;this.heatHaze.detector.maxRegions=settings.maxRegions;}
+    this.monitor?.end('renderMs');this.monitor?.endFrame();
+  }
+
+  drawPerformanceOverlay(ctx){
+    const p=this.monitor?.snapshot();if(!p)return;
+    const n=value=>Number(value||0).toFixed(1),lines=['PERFORMANCE',`FPS              ${p.fps.toFixed(0)}`,`Frame            ${n(p.frameTime)} ms`,`Simulation       ${n(p.simulationMs)} ms`,` Airflow         ${n(p.airflowMs)} ms`,` Pressure        ${n(p.pressureMs)} ms`,` Cooling         ${n(p.coolingMs)} ms`,` Thermal         ${n(p.thermalMs)} ms`,` Racks           ${n(p.rackMs)} ms`,` Render          ${n(p.renderMs)} ms`,` UI              ${n(p.uiMs)} ms`,` Save            ${n(p.saveMs)} ms`,`Entities visible ${p.visibleEntities} / ${p.totalEntities}`,`Pressure solves  ${p.pressureSolveCount.toFixed(1)}/s`,`Cooling rebuilds ${p.coolingRebuildCount.toFixed(1)}/s`,`Fluid rebuilds   ${p.fluidRebuildCount.toFixed(1)}/s`];
+    const x=this.canvas.width/this.dpr-234,y=18,w=220,h=lines.length*12+12;ctx.save();ctx.setTransform(this.dpr,0,0,this.dpr,0,0);ctx.fillStyle='rgba(2,6,23,.92)';ctx.fillRect(x,y,w,h);ctx.strokeStyle='rgba(71,85,105,.8)';ctx.strokeRect(x+.5,y+.5,w-1,h-1);ctx.font='9px ui-monospace,monospace';lines.forEach((line,index)=>{ctx.fillStyle=index===0?'#67e8f9':'#cbd5e1';ctx.fillText(line,x+7,y+13+index*12);});ctx.restore();
   }
 
   preloadSprites(){return this.entities.preloadSprites();}
 
   drawBuildPreview(ctx,world,time){
-    const p=this.hover,tool=this.buildSystem.selected;if(!p||(!world.inBounds(p.x,p.y)&&tool!=='pipe'&&!DUCT_TOOLS.has(tool)))return;
+    const p=this.hover,tool=this.buildSystem.selected;
+    if(tool==='demolish'&&this.demolishSelection){
+      const {start,end}=this.demolishSelection,x=Math.min(start.x,end.x),y=Math.min(start.y,end.y),width=Math.abs(end.x-start.x)+1,height=Math.abs(end.y-start.y)+1;
+      ctx.save();ctx.fillStyle='rgba(239,68,68,.22)';ctx.strokeStyle='#fb7185';ctx.lineWidth=Math.max(1.5,2/this.camera.zoom);ctx.setLineDash([5/this.camera.zoom,3/this.camera.zoom]);
+      ctx.fillRect(x*this.tile,y*this.tile,width*this.tile,height*this.tile);ctx.strokeRect(x*this.tile,y*this.tile,width*this.tile,height*this.tile);ctx.setLineDash([]);
+      ctx.font='900 '+Math.max(8,10/this.camera.zoom)+'px ui-monospace,monospace';ctx.textAlign='left';ctx.textBaseline='bottom';ctx.fillStyle='#fecaca';ctx.fillText('REMOVER · '+width+' × '+height,(x*this.tile)+3,(y*this.tile)-3);ctx.restore();return;
+    }
+    if(!p||(!world.inBounds(p.x,p.y)&&tool!=='pipe'&&!DUCT_TOOLS.has(tool)))return;
     const pipePath=tool==='pipe'?this.pipePreview?.():null;
     const utilityPath=DUCT_TOOLS.has(tool)?this.pipePreview?.():null;
     const structurePath=STRUCTURE_TOOLS.has(tool)?this.pipePreview?.():null;

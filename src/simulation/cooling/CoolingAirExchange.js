@@ -4,17 +4,18 @@ import { clamp } from '../../utils/MathUtils.js';
 export class CoolingAirExchange {
   constructor(world,airflow){this.world=world;this.airflow=airflow;}
   serviceRacks(vent,radius=3){
-    const reachable=new Set(this.supplyCells(vent,radius,false).map(cell=>this.world.index(cell.x,cell.y)));
-    const d=vent.direction||{x:0,y:1},candidates=[];
-    for(const rack of this.world.entitiesByType('serverRack')){
-      const intake=rack.airIntakeDirection||{x:0,y:-1},x=rack.x+intake.x,y=rack.y+intake.y;
-      if(!this.world.inBounds(x,y)||!reachable.has(this.world.index(x,y)))continue;
-      const dx=x-vent.x,dy=y-vent.y,forward=dx*d.x+dy*d.y,lateral=Math.abs(dx*d.y-dy*d.x);
+    const cells=this.supplyCells(vent,radius,false),d=vent.direction||{x:0,y:1},candidates=new Map();
+    for(const cell of cells)for(const intakeDirection of [{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}]){
+      const rack=this.world.entityAt(cell.x-intakeDirection.x,cell.y-intakeDirection.y);
+      if(rack?.type!=='serverRack')continue;
+      const intake=rack.airIntakeDirection||{x:0,y:-1};
+      if(intake.x!==intakeDirection.x||intake.y!==intakeDirection.y||candidates.has(rack))continue;
+      const x=cell.x,y=cell.y,dx=x-vent.x,dy=y-vent.y,forward=dx*d.x+dy*d.y,lateral=Math.abs(dx*d.y-dy*d.x);
       if(forward<1||forward>radius||lateral>1)continue;
       const temperature=this.world.temperatureAt(x,y),excess=Math.max(0,temperature-(rack.slaTemperature??30));
-      candidates.push({rack,x,y,distance:forward+lateral*.35,excess});
+      candidates.set(rack,{rack,x,y,distance:forward+lateral*.35,excess,order:this.world.entityOrder(rack)});
     }
-    return candidates.sort((a,b)=>b.excess-a.excess||a.distance-b.distance).slice(0,3);
+    return [...candidates.values()].sort((a,b)=>b.excess-a.excess||a.distance-b.distance||a.order-b.order).slice(0,3);
   }
   coolingDemand(vent){return this.serviceRacks(vent).reduce((sum,item)=>sum+item.excess,0);}
   supplyCells(vent,radius=3,prioritizeRacks=true){
@@ -66,9 +67,6 @@ export class CoolingAirExchange {
   }
   applySupply(vent,dt,maxCooling=Infinity){return this.transferMassEnergy(vent,dt,maxCooling);}
   applyMomentum(sources,dt){
-    const grid=this.airflow?.grid;if(!grid)return;
-    for(const {vent} of sources){if(vent.flowRate<=0||!grid.inCell(vent.x,vent.y)||grid.isSolid(vent.x,vent.y))continue;const d=vent.direction||{x:0,y:1},area=vent.area??.5*2.5,velocity=vent.flowRate/Math.max(area,1e-6)*(vent.throwCoefficient??1);
-      if(d.x>0&&vent.x+1<grid.width)grid.u[grid.uIndex(vent.x+1,vent.y)]+=velocity;else if(d.x<0&&vent.x>0)grid.u[grid.uIndex(vent.x,vent.y)]-=velocity;else if(d.y>0&&vent.y+1<grid.height)grid.v[grid.vIndex(vent.x,vent.y+1)]+=velocity;else if(d.y<0&&vent.y>0)grid.v[grid.vIndex(vent.x,vent.y)]-=velocity;}
-    this.airflow.boundaries.enforce();this.airflow.pressure.computeDivergence();this.airflow.pressure.solve(dt);this.airflow.pressure.project(dt);this.airflow.boundaries.enforce();this.airflow.pressure.computeDivergence();grid.syncWorldVelocity();this.airflow.diagnostics.update();
+    this.airflow?.queueCoolingMomentum?.(sources,dt);
   }
 }

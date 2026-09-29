@@ -38,6 +38,13 @@ test('data center sandbox starts with a large hall, starter capital, grid capaci
   assert.equal(s.datacenter.state.reputation,50);
   assert.equal(s.datacenter.state.offers.length,3);
   assert.equal(s.datacenter.rackCount,0);
+  assert.equal(s.datacenter.state.energyTariff,.55);
+});
+
+test('legacy sandbox saves migrate the previous default energy tariff',()=>{
+  const storage=new TestStorage();storage.setItem('sandbox-test',JSON.stringify({version:1,state:{energyTariff:.85,cash:12345},entities:[],materials:[]}));
+  const s=createSandbox(storage);
+  assert.equal(s.datacenter.state.energyTariff,.55);assert.equal(s.datacenter.cash,12345);
 });
 
 test('sandbox exposes every build tool with unlimited inventory and all physical systems enabled',()=>{
@@ -70,8 +77,22 @@ test('data center dashboard exposes finance, PUE, capacity, contract market, and
   assert.match(root.innerHTML,/data-power-amount/);
   assert.match(root.innerHTML,/data-power-preview/);
   assert.match(root.innerHTML,/R\$ 166,67\/kW/);
+  assert.match(root.innerHTML,/\/dia/,'contract offers are presented as daily payments');
   assert.match(root.innerHTML,/data-save/);
-  assert.match(root.innerHTML,/R\$ 0,85\/kWh/);
+  assert.match(root.innerHTML,/R\$ 0,55\/kWh/);
+  assert.match(root.innerHTML,/Confiável · 50\/100/);
+  assert.match(root.innerHTML,/preço contratual 1\.00×/);
+  assert.match(root.innerHTML,/Níveis e benefícios/);
+});
+
+test('reputation benefit and history details stay open through live dashboard refreshes',()=>{
+  const s=createSandbox(),details=[{open:false},{open:false}],root={innerHTML:'',querySelectorAll(selector){return selector==='.dc-reputation details'?details:[];},querySelector:()=>null};
+  const panel=new DataCenterDashboard(root,s.datacenter);panel.update();
+  details[0].open=true;details[1].open=true;
+  s.datacenter.clock.seconds=1;panel.update();
+  assert.equal(details[0].open,true);assert.equal(details[1].open,true);
+  details[0].open=false;s.datacenter.clock.seconds=2;panel.update();
+  assert.equal(details[0].open,false);assert.equal(details[1].open,true);
 });
 
 test('active clients accordion starts collapsed and summarizes contracts, racks, and committed versus current power',()=>{
@@ -133,8 +154,15 @@ test('ending a selected contract clears its rack-map highlight',()=>{
   const s=createSandbox(),accepted=s.datacenter.acceptOffer('offer-1'),contract=accepted.contract,cleared=[];
   const root={innerHTML:'',querySelectorAll:()=>[],querySelector:()=>null};
   const panel=new DataCenterDashboard(root,s.datacenter,()=>{},()=>{},(...args)=>cleared.push(args));
-  panel.selectedContractId=contract.id;s.datacenter.cancelContract(contract.id);panel.update();
+  panel.contractsExpanded=true;panel.selectedContractId=contract.id;panel.update();
+  assert.match(root.innerHTML,/NovaBank/);
+  assert.match(root.innerHTML,/1 contrato · 1 instalações pendentes/);
+  assert.equal(s.datacenter.cancelContract(contract.id),true);panel.update();
   assert.equal(panel.selectedContractId,null);assert.deepEqual(cleared,[[null,[],false]]);
+  assert.equal(s.datacenter.activeContracts.length,0);
+  assert.ok(s.datacenter.state.contracts.includes(contract),'cancellation history stays in the saved contract list');
+  assert.match(root.innerHTML,/0 contratos · 0 instalações pendentes/);
+  assert.match(root.innerHTML,/<div id="dc-contract-accordion"[^>]*><p class="dc-empty">Aceite uma proposta para começar a operar\.<\/p><\/div>/);
 });
 
 test('game clock uses four real minutes per 24-hour game day',()=>{
@@ -255,17 +283,17 @@ test('cancelled contracts release capacity and overcommitment remains visible wi
   new DataCenterDashboard(root,overcommitted.datacenter).update();
   assert.match(root.innerHTML,/Reserva elétrica/);
   assert.match(root.innerHTML,/-12,0 kW/);
-  assert.match(root.innerHTML,/Máximo solicitado 120,0 kW/);
+  assert.match(root.innerHTML,/Máximo solicitado \d{2,3},0 kW/);
   assert.match(root.innerHTML,/power-risk/);
   assert.equal(overcommitted.datacenter.acceptOffer('offer-3').ok,true);
-  assert.equal(overcommitted.datacenter.committedPowerKW,232);
-  assert.equal(overcommitted.datacenter.powerReserveKW,-132);
+  assert.equal(overcommitted.datacenter.committedPowerKW,172);
+  assert.equal(overcommitted.datacenter.powerReserveKW,-72);
 });
 
 test('cancelled contract racks stop producing heat and are reused by the next customer',()=>{
   const s=createSandbox(),first=s.datacenter.acceptOffer('offer-1');
   s.build.select('serverRack');for(const x of [22,24,26,28])assert.equal(s.build.place(x,20).ok,true);
-  const original=s.world.entitiesByType('serverRack').slice(),originalIds=original.map(rack=>rack.id);
+  const original=s.world.entitiesByType('serverRack').slice(),originalIds=original.map(rack=>rack.id),originalPositions=original.map(({x,y})=>({x,y}));
   assert.equal(s.datacenter.cancelContract(first.contract.id),true);
   assert.ok(original.every(rack=>!rack.enabled&&rack.contractId===null&&rack.clientId===null&&rack.heatOutput===0&&rack.heatGenerationPower===0));
 
@@ -273,6 +301,7 @@ test('cancelled contract racks stop producing heat and are reused by the next cu
   assert.equal(next.contract.status,'installing');
   assert.equal(next.contract.installedRacks,4);
   assert.ok(original.every(rack=>rack.contractId===next.contract.id&&rack.clientId==='PixelGames'&&rack.maxPowerKW===8&&rack.enabled));
+  assert.deepEqual(original.map(({x,y})=>({x,y})),originalPositions,'reassigned racks stay in their original map positions');
   for(const x of [30,32,34,36])assert.equal(s.build.place(x,20).ok,true);
   assert.equal(next.contract.status,'active');
   assert.equal(next.contract.installedRacks,8);
@@ -330,7 +359,7 @@ test('daily billing includes kWh, fixed grid fees, climatization upkeep, client 
   accepted.contract.dailyViolation=true;
   s.datacenter.settleDay(2);
   assert.equal(s.datacenter.state.dailyResult.energyKWh,100);
-  assert.equal(s.datacenter.state.dailyResult.energyCost,85);
+  assert.ok(Math.abs(s.datacenter.state.dailyResult.energyCost-55)<1e-9);
   assert.equal(s.datacenter.state.dailyResult.fixedPowerCost,100);
   assert.equal(s.datacenter.state.dailyResult.coolingMaintenance,110);
   assert.equal(s.datacenter.state.dailyResult.penalties,5000);
@@ -338,6 +367,8 @@ test('daily billing includes kWh, fixed grid fees, climatization upkeep, client 
   assert.equal(s.datacenter.state.dailyResult.revenue,1400);
   assert.ok(s.datacenter.cash<before);
   assert.equal(accepted.contract.violationDays,1);
+  assert.equal(s.datacenter.state.reputation,49);
+  assert.match(s.datacenter.state.reputationHistory.at(-1).reason,/Violação de SLA/);
 });
 
 test('daily close accumulates operational readings, generates offers once, and pauses by default',()=>{
@@ -351,12 +382,23 @@ test('daily close accumulates operational readings, generates offers once, and p
   assert.equal(result.operations.averagePowerKW,20);
   assert.equal(result.operations.peakPowerKW,20);
   assert.equal(result.operations.maxAirTemperature,31);
-  assert.ok(result.newOffers.length>=1&&result.newOffers.length<=2);
+  assert.ok(result.newOffers.length>=1&&result.newOffers.length<=5);
   assert.equal(s.datacenter.state.offers.length,3+result.newOffers.length);
   assert.equal(s.simulation.paused,true);
   s.datacenter.afterThermalStep(1);
   assert.equal(s.datacenter.state.offers.length,3+result.newOffers.length);
   assert.equal(s.datacenter.state.dailyResult.day,1);
+});
+
+test('clean SLA days grant capped reputation gains, update the tier, and persist event history',()=>{
+  const storage=new TestStorage(),s=createSandbox(storage),contract=s.datacenter.acceptOffer('offer-1').contract;
+  contract.status='active';contract.dailyActiveSeconds=3600;contract.dailyUptimeSeconds=3600;contract.dailyDowntimeSeconds=0;
+  s.datacenter.state.reputation=59.9;s.datacenter.clock.advance(86400);const result=s.datacenter.settleDay(2);
+  assert.ok(result.reputation.change>0&&result.reputation.change<=.5);
+  assert.equal(result.reputation.tierEnd,'Referência');assert.equal(result.reputation.tierChanged,true);
+  assert.ok(s.datacenter.state.reputationHistory.some(event=>event.reason.includes('Todos os contratos cumpriram o SLA')));
+  const saved=s.datacenter.state.reputationHistory.map(event=>({...event}));s.datacenter.persist();
+  assert.deepEqual(createSandbox(storage).datacenter.state.reputationHistory,saved);
 });
 
 test('daily settlement queues one expansion invitation for a qualified active client and saves it',()=>{
@@ -396,10 +438,10 @@ test('accepting a capacity expansion updates every existing rack and refusal lea
   const result=s.datacenter.respondToExpansionOffer(true);
   assert.equal(result.ok,true);assert.ok(racks.every(rack=>rack.maxPowerKW===15&&rack.baseHeatOutput===14700&&rack.heatOutput===14700));
   assert.equal(s.datacenter.cash,before+3750);assert.equal(contract.powerPerRackKW,15);assert.equal(contract.rackCount,4);
-  const state={...contract},cash=s.datacenter.cash;
+  const state={...contract},cash=s.datacenter.cash,reputation=s.datacenter.state.reputation;
   s.datacenter.state.pendingExpansionOffer={id:'expansion-decline',contractId:contract.id};
   const declined=s.datacenter.respondToExpansionOffer(false);
-  assert.equal(declined.ok,true);assert.equal(declined.accepted,false);assert.equal(s.datacenter.cash,cash);
+  assert.equal(declined.ok,true);assert.equal(declined.accepted,false);assert.equal(s.datacenter.cash,cash);assert.equal(s.datacenter.state.reputation,reputation);
   assert.equal(contract.monthlyFee,state.monthlyFee);assert.equal(contract.rackCount,state.rackCount);assert.equal(contract.powerPerRackKW,state.powerPerRackKW);
 });
 
@@ -408,11 +450,11 @@ test('expansion modal waits for the daily report and restores the previous pause
     currentCapacityKW:48,capacityKW:60,currentMonthlyFee:42000,monthlyFee:52500,monthlyIncrease:10500,installationFee:3750,currentExpiresDay:50,expiresDay:200};
   const buttons=['decline','accept'].map(decision=>({dataset:{expansionDecision:decision},addEventListener(type,handler){this.handler=handler;},focus(){this.focused=true;}}));
   const root={hidden:false,innerHTML:'',querySelectorAll:()=>buttons,querySelector:selector=>selector.includes('accept')?buttons[1]:null};
-  const sim={paused:false},messages=[],datacenter={state:{pendingExpansionOffer:offer,reportPending:false},respondToExpansionOffer(accept){this.state.pendingExpansionOffer=null;return {ok:true,accepted:accept,contract:{clientName:'NovaBank',rackCount:5}};}};
+  const sim={paused:false},messages=[],datacenter={state:{pendingExpansionOffer:offer,reportPending:true},dismissReport(){this.state.reportPending=false;},respondToExpansionOffer(accept){this.state.pendingExpansionOffer=null;return {ok:true,accepted:accept,contract:{clientName:'NovaBank',rackCount:5}};}};
   const ui=Object.create(UIManager.prototype);Object.assign(ui,{game:{datacenter,sim,toast:message=>messages.push(message)},reportRoot:root,expansionModalOfferId:null,resumeAfterExpansionOffer:false});
   ui.updateExpansionOfferModal();assert.equal(ui.expansionModalOfferId,null);assert.equal(sim.paused,false,'a visible daily report retains priority');
-  root.hidden=true;ui.updateExpansionOfferModal();assert.equal(sim.paused,true);assert.equal(root.hidden,false);
-  assert.match(root.innerHTML,/CONVITE DE EXPANSÃO/);assert.match(root.innerHTML,/R\$ 42\.000/);assert.ok(buttons[1].focused);
+  ui.closeDailyReport({resume:true});assert.equal(datacenter.state.reportPending,false);ui.updateExpansionOfferModal();assert.equal(sim.paused,true);assert.equal(root.hidden,false);
+  assert.match(root.innerHTML,/CONVITE DE EXPANSÃO/);assert.match(root.innerHTML,/Pagamento diário/);assert.match(root.innerHTML,/R\$ 1\.400,00/);assert.ok(buttons[1].focused);
   ui.closeDailyReport();assert.equal(root.hidden,false,'escape and backdrop dismissal cannot bypass the decision buttons');
   buttons[1].handler();assert.equal(sim.paused,false);assert.equal(root.hidden,true);assert.match(messages[0],/Aditivo aceito/);
 

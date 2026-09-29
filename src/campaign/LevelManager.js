@@ -1,6 +1,6 @@
 import { World } from '../world/World.js';
 import { MapBuilder } from './MapBuilder.js';
-import { Machine, ServerRack, Furnace, PassiveHeatSource, Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, TemperatureSensor, AirDuct, CoolingUnit, SupplyVent, Technician, PowerBattery } from '../entities/index.js';
+import { Machine, ServerRack, Furnace, PassiveHeatSource, Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, TemperatureSensor, AirDuct, CoolingUnit, SupplyVent, Technician, PowerBattery, SolarPanel } from '../entities/index.js';
 
 const constructors={
   machine:(d)=>new Machine(d.x,d.y,d),
@@ -20,6 +20,7 @@ const constructors={
   supplyVent:(d)=>new SupplyVent(d.x,d.y,d),
   technician:(d)=>new Technician(d.x,d.y,d),
   battery:(d)=>new PowerBattery(d.x,d.y,d),
+  solarPanel:(d)=>new SolarPanel(d.x,d.y,d),
 };
 
 export function createLevelEntity(definition){

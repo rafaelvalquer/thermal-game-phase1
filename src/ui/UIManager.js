@@ -135,7 +135,8 @@ export class UIManager {
       const dc=g.datacenter;
       if(dc.state.reportPending&&this.reportShownDay!==dc.state.dailyResult?.day)this.openDailyReport(false);
       const notification=dc.consumeNotification();
-      if(notification){const expenses=notification.energyCost+notification.fixedPowerCost+notification.coolingMaintenance+notification.penalties+(notification.staffPayroll||0);this.game.toast('DIA '+(notification.day+1)+' · +'+(notification.newOffers?.length||0)+' contratos · receita '+this.money(notification.revenue)+' · custos '+this.money(expenses)+' · lucro '+this.money(notification.net));}
+      if(notification){const expenses=notification.energyCost+notification.fixedPowerCost+notification.coolingMaintenance+notification.penalties+(notification.staffPayroll||0),tierSuffix=notification.reputation?.tierChanged?' · reputação alterada para '+notification.reputation.tierEnd:'';this.game.toast('DIA '+(notification.day+1)+' · +'+(notification.newOffers?.length||0)+' oportunidades · receita '+this.money(notification.revenue)+' · custos '+this.money(expenses)+' · lucro '+this.money(notification.net)+tierSuffix);if(notification.reputation?.tierChanged)dc.state.reputationTierNotification=null;}
+      if(dc.state.reputationTierNotification&&!dc.state.reportPending){const tier=dc.state.reputationTierNotification;dc.state.reputationTierNotification=null;this.game.toast('Nível de reputação alterado: '+tier.oldTier+' → '+tier.newTier+'.');dc.persist();}
       this.updateExpansionOfferModal();
     }
     document.querySelector('#clock').textContent=g.datacenter?g.datacenter.clock.format():this.formatTime(s.elapsed);
@@ -148,6 +149,7 @@ export class UIManager {
   }
 
   money(value){return (this.game.datacenter?'R$ ':'$ ')+Math.round(Number(value)||0).toLocaleString('pt-BR');}
+  dailyContractRate(monthlyValue){return (this.game.datacenter?'R$ ':'$ ')+((Number(monthlyValue)||0)/30).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
   updateStaffPanel(){
     const root=document.querySelector('#staffPanel'),staff=this.game.staff;if(!root||!staff)return;
     const racks=this.game.world.entitiesByType('serverRack').length;if(!racks){if(this.staffPanelHtml){root.innerHTML='';this.staffPanelHtml='';}return;}
@@ -159,13 +161,16 @@ export class UIManager {
   openDailyReport(manual=false){
     const dc=this.game.datacenter,result=dc?.state.dailyResult;if(!dc||!result||!this.reportRoot)return;
     this.reportManual=manual;this.resumeAfterReport=manual?this.game.sim.paused:false;this.reportShownDay=result.day;
+    if(result.reputation?.tierChanged)dc.state.reputationTierNotification=null;
     this.game.sim.paused=true;
     const opportunities=result.newOffers||[],operations=result.operations||{},sla=result.sla||{operatingCount:0,violations:[]};
+    const reputation=result.reputation;
     const rows=[['Receita',result.revenue],['Energia',-result.energyCost],['Contrato elétrico',-result.fixedPowerCost],['Manutenção',-result.coolingMaintenance],['Equipe técnica',-(result.staffPayroll||0)],['Multas SLA',-result.penalties]];
     const finance=rows.map(([name,value],index)=>{const expense=index>0;return '<div><span>'+name+'</span><b class="'+(expense?'negative':'positive')+'">'+(expense?'−':'+')+this.money(Math.abs(value))+'</b></div>';}).join('');
     const slaText=sla.violations?.length?'<ul>'+sla.violations.map(item=>'<li>'+item.clientName+'</li>').join('')+'</ul>':sla.operatingCount?'✓ Todos cumpridos':'Sem contratos em operação';
-    const offers=opportunities.length?opportunities.map(offer=>'<article><b>'+offer.clientName+'</b><span>'+offer.rackCount+' racks · '+this.managerKw(offer.rackCount*offer.powerPerRackKW)+' · '+this.money(offer.monthlyFee)+'/mês</span><small>Expira em '+(offer.expiresDay-offer.offeredDay)+' dias</small></article>').join(''):'<p>Nenhum contrato chegou neste dia.</p>';
-    this.reportRoot.innerHTML='<section class="daily-report" role="dialog" aria-modal="true" aria-labelledby="dailyReportTitle"><button class="daily-report-close" data-report-close aria-label="Fechar relatório">×</button><p class="eyebrow">FECHAMENTO OPERACIONAL</p><h2 id="dailyReportTitle">RELATÓRIO — DIA '+result.day+'</h2>'+(operations.partial?'<p class="report-partial">Dados operacionais parciais neste primeiro relatório.</p>':'')+'<h3>Financeiro</h3><div class="report-finance">'+finance+'<div class="report-net"><span>Resultado</span><b class="'+(result.net<0?'negative':'positive')+'">'+(result.net<0?'−':'+')+this.money(Math.abs(result.net))+'</b></div></div><h3>Operação</h3><div class="report-kpis"><div><span>Potência média</span><b>'+(operations.averagePowerKW==null?'—':this.managerKw(operations.averagePowerKW))+'</b></div><div><span>Pico</span><b>'+(operations.peakPowerKW==null?'—':this.managerKw(operations.peakPowerKW))+'</b></div><div><span>PUE</span><b>'+(operations.pue==null?'—':operations.pue.toFixed(2))+'</b></div><div><span>Temperatura máxima</span><b>'+(operations.maxAirTemperature==null?'—':operations.maxAirTemperature.toFixed(1)+' °C')+'</b></div></div><h3>SLA</h3><div class="report-sla">'+slaText+'</div><h3>Novas oportunidades · Dia '+(result.day+1)+'</h3><div class="report-offers">'+offers+'</div><label class="report-pause"><input type="checkbox" data-report-pause '+(dc.state.pauseOnNewContracts?'checked':'')+'> Pausar quando novos contratos chegarem</label><footer>'+(manual?'<button data-report-close>Fechar relatório</button>':'<button data-view-contracts>Ver contratos</button><button class="primary" data-start-day>Iniciar dia '+(result.day+1)+'</button>')+'</footer></section>';
+    const offers=opportunities.length?opportunities.map(offer=>'<article><b>'+escapeHtml(offer.clientName)+(offer.renewalContractId?' · RENOVAÇÃO':'')+'</b><span>'+offer.rackCount+' racks · '+this.managerKw(offer.rackCount*offer.powerPerRackKW)+' · '+this.dailyContractRate(offer.monthlyFee)+'/dia</span><small>'+(offer.locked?'Exige reputação '+offer.requiredReputation:'Expira em '+(offer.expiresDay-offer.offeredDay)+' dias')+'</small></article>').join(''):'<p>Nenhum contrato chegou neste dia.</p>';
+    const reputationSummary=reputation?'<h3>Reputação</h3><div class="report-reputation"><b>'+reputation.tierStart+' → '+reputation.tierEnd+'</b><span>'+reputation.start.toFixed(0)+' → '+reputation.end.toFixed(0)+' pontos ('+(reputation.change>0?'+':'')+reputation.change.toFixed(2)+')</span>'+(reputation.tierChanged?'<strong>Você alcançou o nível '+reputation.tierEnd+'. As novas condições já aparecem no mercado.</strong>':'')+'</div>':'';
+    this.reportRoot.innerHTML='<section class="daily-report" role="dialog" aria-modal="true" aria-labelledby="dailyReportTitle"><button class="daily-report-close" data-report-close aria-label="Fechar relatório">×</button><p class="eyebrow">FECHAMENTO OPERACIONAL</p><h2 id="dailyReportTitle">RELATÓRIO — DIA '+result.day+'</h2>'+(operations.partial?'<p class="report-partial">Dados operacionais parciais neste primeiro relatório.</p>':'')+'<h3>Financeiro</h3><div class="report-finance">'+finance+'<div class="report-net"><span>Resultado</span><b class="'+(result.net<0?'negative':'positive')+'">'+(result.net<0?'−':'+')+this.money(Math.abs(result.net))+'</b></div></div><h3>Operação</h3><div class="report-kpis"><div><span>Potência média</span><b>'+(operations.averagePowerKW==null?'—':this.managerKw(operations.averagePowerKW))+'</b></div><div><span>Pico</span><b>'+(operations.peakPowerKW==null?'—':this.managerKw(operations.peakPowerKW))+'</b></div><div><span>PUE</span><b>'+(operations.pue==null?'—':operations.pue.toFixed(2))+'</b></div><div><span>Temperatura máxima</span><b>'+(operations.maxAirTemperature==null?'—':operations.maxAirTemperature.toFixed(1)+' °C')+'</b></div></div>'+reputationSummary+'<h3>SLA</h3><div class="report-sla">'+slaText+'</div><h3>Novas oportunidades · Dia '+(result.day+1)+'</h3><div class="report-offers">'+offers+'</div><label class="report-pause"><input type="checkbox" data-report-pause '+(dc.state.pauseOnNewContracts?'checked':'')+'> Pausar quando novos contratos chegarem</label><footer>'+(manual?'<button data-report-close>Fechar relatório</button>':'<button data-view-contracts>Ver contratos</button><button class="primary" data-start-day>Iniciar dia '+(result.day+1)+'</button>')+'</footer></section>';
     this.reportRoot.hidden=false;
     dc.markOffersSeen(opportunities.map(offer=>offer.id));
     this.reportRoot.querySelector('[data-report-pause]')?.addEventListener('change',event=>dc.setPauseOnNewContracts(event.target.checked));
@@ -180,7 +185,7 @@ export class UIManager {
     this.resumeAfterExpansionOffer=this.game.sim.paused;this.game.sim.paused=true;this.expansionModalOfferId=offer.id;
     const currentExpiry='Dia '+offer.currentExpiresDay,proposedExpiry='Dia '+offer.expiresDay;
     const extraRacks=offer.rackCount-offer.currentRackCount,description=offer.expansionType==='racks'?'A expansão inclui '+extraRacks+(extraRacks===1?' rack adicional':' racks adicionais')+', que poderão ser instalados pelo fluxo normal.':'A expansão aumenta a potência máxima de cada rack existente e dos próximos racks instalados.';
-    this.reportRoot.innerHTML='<section class="daily-report expansion-report" role="dialog" aria-modal="true" aria-labelledby="expansionTitle"><p class="eyebrow">CONVITE DE EXPANSÃO</p><h2 id="expansionTitle">'+escapeHtml(offer.clientName)+' propõe um aditivo</h2><p class="expansion-intro">'+description+' A taxa de instalação será paga no aceite.</p><div class="expansion-terms"><div><span>Racks</span><b>'+offer.currentRackCount+' → '+offer.rackCount+'</b></div><div><span>Potência por rack</span><b>'+this.managerKw(offer.currentPowerPerRackKW)+' → '+this.managerKw(offer.powerPerRackKW)+'</b></div><div><span>Capacidade contratada</span><b>'+this.managerKw(offer.currentCapacityKW)+' → '+this.managerKw(offer.capacityKW)+'</b></div><div><span>Mensalidade</span><b>'+this.money(offer.currentMonthlyFee)+' → '+this.money(offer.monthlyFee)+' <small>(+'+this.money(offer.monthlyIncrease)+'/mês)</small></b></div><div><span>Taxa de instalação</span><b>'+this.money(offer.installationFee)+'</b></div><div><span>Vencimento</span><b>'+currentExpiry+' → '+proposedExpiry+'</b></div></div><footer><button type="button" data-expansion-decision="decline">Recusar</button><button type="button" class="primary" data-expansion-decision="accept">Aceitar aditivo</button></footer></section>';
+    this.reportRoot.innerHTML='<section class="daily-report expansion-report" role="dialog" aria-modal="true" aria-labelledby="expansionTitle"><p class="eyebrow">CONVITE DE EXPANSÃO</p><h2 id="expansionTitle">'+escapeHtml(offer.clientName)+' propõe um aditivo</h2><p class="expansion-intro">'+description+' A taxa de instalação será paga no aceite.</p><div class="expansion-terms"><div><span>Racks</span><b>'+offer.currentRackCount+' → '+offer.rackCount+'</b></div><div><span>Potência por rack</span><b>'+this.managerKw(offer.currentPowerPerRackKW)+' → '+this.managerKw(offer.powerPerRackKW)+'</b></div><div><span>Capacidade contratada</span><b>'+this.managerKw(offer.currentCapacityKW)+' → '+this.managerKw(offer.capacityKW)+'</b></div><div><span>Pagamento diário</span><b>'+this.dailyContractRate(offer.currentMonthlyFee)+' → '+this.dailyContractRate(offer.monthlyFee)+' <small>(+'+this.dailyContractRate(offer.monthlyIncrease)+'/dia)</small></b></div><div><span>Taxa de instalação</span><b>'+this.money(offer.installationFee)+'</b></div><div><span>Vencimento</span><b>'+currentExpiry+' → '+proposedExpiry+'</b></div></div><footer><button type="button" data-expansion-decision="decline">Recusar</button><button type="button" class="primary" data-expansion-decision="accept">Aceitar aditivo</button></footer></section>';
     this.reportRoot.hidden=false;
     this.reportRoot.querySelectorAll('[data-expansion-decision]').forEach(button=>button.addEventListener('click',()=>this.respondToExpansionOffer(button.dataset.expansionDecision==='accept')));
     this.reportRoot.querySelector('[data-expansion-decision="accept"]')?.focus();
@@ -198,6 +203,7 @@ export class UIManager {
   closeDailyReport({resume=false,keepPaused=false,scrollMarket=false}={}){
     if(!this.reportRoot||this.reportRoot.hidden||this.expansionModalOfferId)return;
     const wasManual=this.reportManual;this.reportRoot.hidden=true;this.reportRoot.innerHTML='';
+    if(!wasManual&&this.game.datacenter?.state.reportPending)this.game.datacenter.dismissReport();
     if(resume)this.game.sim.paused=false;
     else if(wasManual&&!keepPaused)this.game.sim.paused=this.resumeAfterReport;
     if(scrollMarket){document.querySelector('#dc-market')?.scrollIntoView({behavior:'smooth',block:'start'});}
@@ -272,10 +278,28 @@ export class UIManager {
     if(c.width!==w||c.height!==h){c.width=w;c.height=h;}ctx.setTransform(dpr,0,0,dpr,0,0);const W=w/dpr,H=h/dpr;
     ctx.clearRect(0,0,W,H);ctx.strokeStyle='rgba(148,163,184,.12)';ctx.lineWidth=1;
     for(let i=1;i<4;i++){ctx.beginPath();ctx.moveTo(0,H*i/4);ctx.lineTo(W,H*i/4);ctx.stroke();}
-    const limit=this.game.level.powerLimit||0,data=this.game.sim.history,peak=Math.max(limit,...data.map(item=>item.power||0),1000),max=peak*1.12;
-    const summary=document.querySelector('#powerSummary');if(summary)summary.textContent=formatPower(this.game.sim.metrics.powerDraw||0)+' / '+formatPower(limit);
-    const limitY=H-limit/max*H;ctx.strokeStyle='rgba(251,191,36,.82)';ctx.lineWidth=1.3;ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(0,limitY);ctx.lineTo(W,limitY);ctx.stroke();ctx.setLineDash([]);
+    const limit=this.game.level.powerLimit||0,data=this.game.sim.history;
+    const peak=Math.max(limit,...data.map(item=>item.power||0),...data.map(item=>item.batteryDischargeW||0),...data.map(item=>item.solarGenerationW||0),1000),max=peak*1.12;
+    const batteries=this.game.world.entitiesByType('battery'),stored=batteries.reduce((sum,battery)=>sum+(battery.storedEnergyJ||0)/3_600_000,0),capacity=batteries.reduce((sum,battery)=>sum+(battery.capacityJ||0)/3_600_000,0);
+    const discharge=batteries.reduce((sum,battery)=>sum+(battery.enabled?battery.dischargePowerW||0:0),0),charge=batteries.reduce((sum,battery)=>sum+(battery.enabled?battery.chargePowerW||0:0),0);
+    const summary=document.querySelector('#powerSummary');if(summary){
+      const flow=discharge>0?' · USANDO '+formatPower(discharge):charge>0?' · CARGA '+formatPower(charge):'';
+      const solar=this.game.sim.metrics.solarGenerationW||0;
+      summary.textContent='Rede '+formatPower(this.game.sim.metrics.powerDraw||0)+' / '+formatPower(limit)+' · Solar '+formatPower(solar)+' · Bat '+stored.toFixed(1)+'/'+capacity.toFixed(0)+' kWh'+flow;
+      summary.title='Geração solar: '+formatPower(solar)+'. Energia armazenada: '+stored.toFixed(2)+' de '+capacity.toFixed(2)+' kWh. Potência fornecida pela bateria: '+formatPower(discharge)+'. Potência de carga: '+formatPower(charge)+'.';
+    }
+    const plotW=Math.max(1,W-(capacity>0?28:0)),limitY=H-limit/max*H;ctx.strokeStyle='rgba(251,191,36,.82)';ctx.lineWidth=1.3;ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(0,limitY);ctx.lineTo(plotW,limitY);ctx.stroke();ctx.setLineDash([]);
     if(data.length<2)return;
-    ctx.strokeStyle='#67e8f9';ctx.lineWidth=1.7;ctx.beginPath();data.forEach((item,index)=>{const x=index/(data.length-1)*W,y=H-(Math.min(item.power||0,max)/max)*H;index?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();
+    const drawPowerSeries=(key,color,width)=>{ctx.strokeStyle=color;ctx.lineWidth=width;ctx.beginPath();data.forEach((item,index)=>{const x=index/(data.length-1)*plotW,y=H-(Math.min(item[key]||0,max)/max)*H;index?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();};
+    drawPowerSeries('power','#67e8f9',1.7);
+    drawPowerSeries('solarGenerationW','#fbbf24',1.7);
+    const batteryScale=Math.max(0,...data.map(item=>item.batteryCapacityKWh||0));
+    if(batteryScale>0||capacity>0)drawPowerSeries('batteryDischargeW','#fb923c',1.8);
+    if(batteryScale>0){
+      ctx.beginPath();data.forEach((item,index)=>{const x=index/(data.length-1)*plotW,ratio=Math.max(0,Math.min(1,(item.batteryStoredKWh||0)/batteryScale)),y=H-ratio*H;index?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+      ctx.lineTo(plotW,H);ctx.lineTo(0,H);ctx.closePath();ctx.fillStyle='rgba(167,139,250,.10)';ctx.fill();
+      ctx.strokeStyle='#a78bfa';ctx.lineWidth=1.5;ctx.beginPath();data.forEach((item,index)=>{const x=index/(data.length-1)*plotW,ratio=Math.max(0,Math.min(1,(item.batteryStoredKWh||0)/batteryScale)),y=H-ratio*H;index?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();
+      ctx.fillStyle='rgba(196,181,253,.8)';ctx.font='6px ui-monospace,monospace';ctx.textAlign='right';ctx.textBaseline='top';ctx.fillText(batteryScale.toFixed(0)+' kWh',W-1,1);ctx.textBaseline='bottom';ctx.fillText('0',W-1,H-1);
+    }
   }
 }

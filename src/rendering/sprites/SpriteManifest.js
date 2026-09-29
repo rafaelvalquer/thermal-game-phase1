@@ -18,6 +18,7 @@ export const SPRITES=Object.freeze({
   furnace:definition('furnace','machines/furnace.svg',4,{visualWidth:1.3,visualHeight:1.5}),
   sensor:definition('sensor','sensors/sensor.svg',4,{visualWidth:.92,visualHeight:.96}),
   battery:definition('battery','power/battery.svg',4,{visualWidth:1.12,visualHeight:1.28}),
+  solarPanel:definition('solarPanel','power/solar_panel.svg',1,{rows:1,stateRows:{running:0,idle:0,off:0,blocked:0},visualWidth:1.16,visualHeight:.94,anchor:{x:.5,y:.82},rotation:false}),
   coolingUnit:definition('coolingUnit','cooling/condenser.svg',6,{rotation:false}),
   coolingCompact:definition('coolingCompact','cooling/compact.svg',6,{rotation:false}),
   coolingIndustrial:definition('coolingIndustrial','cooling/industrial.svg',6,{frameWidth:128,rotation:false,footprint:{width:2,height:1}}),

@@ -53,18 +53,18 @@ export class FluidSystem {
   constructor(world,metrics){
     this.world=world;
     this.metrics=metrics;
-    this.networks=[];
+    this.networks=[];this.lastTopologyVersion=-1;this.monitor=null;
   }
 
   update(dt){
-    this.networks=this.buildNetworks();
+    if(this.lastTopologyVersion!==this.world.fluidTopologyVersion){this.networks=this.buildNetworks();this.lastTopologyVersion=this.world.fluidTopologyVersion;this.monitor?.count('fluidRebuildCount');}
     for(const network of this.networks)this.solveNetwork(network);
     this.exchangeMachines(dt);
     this.radiate(dt);
     for(const network of this.networks)this.transport(network,dt);
   }
 
-  fluidEntities(){return this.world.entities.filter(e=>FLUID_TYPES.has(e.type));}
+  fluidEntities(){return [...FLUID_TYPES].flatMap(type=>this.world.entitiesByType(type));}
 
   buildNetworks(){
     const entities=this.fluidEntities();

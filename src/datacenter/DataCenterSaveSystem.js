@@ -60,10 +60,12 @@ export class DataCenterSaveSystem {
   }
   restoreWorld(world,snapshot){
     if(!snapshot?.world)return false;
-    world.material.set(snapshot.world.materials);world.energy.set(snapshot.world.energy);
-    world.entities.length=0;world.utilityLayer.clear();
+    world.material.set(snapshot.world.materials);world.energy.set(snapshot.world.energy);world.rebuildMaterialProperties();
+    world.airTopologyVersion++;world.materialTopologyVersion++;
+    world.clearEntities();world.clearUtilities();
     for(const definition of snapshot.world.entities||[]){
       const properties={...(definition.properties||{})};
+      if(definition.type==='solarPanel')properties.generationW=0;
       if(definition.type==='serverRack'&&properties.thermalViolationSeconds!==undefined&&!properties.thermalViolationTimebase){
         properties.thermalViolationSeconds=Math.max(0,Number(properties.thermalViolationSeconds)||0)/360;
         properties.thermalViolationTimebase='simulation';
@@ -92,7 +94,7 @@ export class DataCenterSaveSystem {
     build.budget=snapshot.build.budget;
     build.inventory=build.unlimitedInventory
       ?Object.fromEntries(Object.keys(build.catalog).map(key=>[key,Infinity]))
-      :Object.fromEntries(Object.keys(build.catalog).map(key=>[key,key==='battery'?Infinity:(snapshot.build.inventory?.[key]===null?Infinity:snapshot.build.inventory?.[key]??0)]));
+      :Object.fromEntries(Object.keys(build.catalog).map(key=>[key,['battery','solarPanel'].includes(key)?Infinity:(snapshot.build.inventory?.[key]===null?Infinity:snapshot.build.inventory?.[key]??0)]));
     build.initialInventory={...build.inventory};
     build.placedEntities.clear();
     for(const item of snapshot.build.placedEntities||[]){

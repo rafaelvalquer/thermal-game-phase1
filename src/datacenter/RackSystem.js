@@ -30,9 +30,9 @@ export class RackSystem {
   }
   update(dt,clock){
     let index=0;
-    for(const rack of this.world.entitiesByType('serverRack')){
+    for(const rack of this.world.entitySetByType('serverRack')){
       if(!rack.contractId)continue;
-      const contract=this.contracts.state.contracts.find(item=>item.id===rack.contractId),live=contract&&['installing','active'].includes(contract.status);
+      const contract=this.contracts.getById(rack.contractId),live=contract&&['installing','active'].includes(contract.status);
       if(!live){this.release(rack);continue;}
       rack.cpuLoad=this.profileLoad(rack.loadProfile,clock.hour,index++,clock.seconds);
       rack.currentPowerKW=rack.maxPowerKW*rack.cpuLoad;
@@ -53,9 +53,9 @@ export class RackSystem {
     }
   }
   afterThermalStep(dt,simulationDt=dt){
-    for(const rack of this.world.entitiesByType('serverRack')){
+    for(const rack of this.world.entitySetByType('serverRack')){
       if(!rack.contractId||rack.status==='CANCELLED')continue;
-      const contract=this.contracts.state.contracts.find(item=>item.id===rack.contractId);
+      const contract=this.contracts.getById(rack.contractId);
       if(!contract||contract.status!=='active')continue;
       contract.activeSeconds+=dt;
       const hot=rack.inletTemperature>rack.slaTemperature,previousViolationSeconds=rack.thermalViolationSeconds||0;

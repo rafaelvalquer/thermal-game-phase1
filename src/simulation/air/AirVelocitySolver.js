@@ -12,16 +12,18 @@ export class AirVelocitySolver {
     for(let y=0;y<g.height;y++)for(let x=1;x<g.width;x++){
       const i=g.uIndex(x,y);
       if(g.blockedU(x,y)){g.uNext[i]=0;continue;}
-      const px=x*dx,py=(y+.5)*dx,vel=g.sampleVelocity(px,py);
-      const bx=px-vel.x*dt,by=py-vel.y*dt;
+      const px=x*dx,py=(y+.5)*dx,vx=g.sampleU(px,py),vy=g.sampleV(px,py);
+      if(vx===0&&vy===0){g.uNext[i]=g.u[i];continue;}
+      const bx=px-vx*dt,by=py-vy*dt;
       g.uNext[i]=g.sampleU(bx,by);
     }
 
     for(let y=1;y<g.height;y++)for(let x=0;x<g.width;x++){
       const i=g.vIndex(x,y);
       if(g.blockedV(x,y)){g.vNext[i]=0;continue;}
-      const px=(x+.5)*dx,py=y*dx,vel=g.sampleVelocity(px,py);
-      const bx=px-vel.x*dt,by=py-vel.y*dt;
+      const px=(x+.5)*dx,py=y*dx,vx=g.sampleU(px,py),vy=g.sampleV(px,py);
+      if(vx===0&&vy===0){g.vNext[i]=g.v[i];continue;}
+      const bx=px-vx*dt,by=py-vy*dt;
       g.vNext[i]=g.sampleV(bx,by);
     }
 

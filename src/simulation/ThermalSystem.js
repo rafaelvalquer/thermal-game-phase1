@@ -6,7 +6,7 @@ import { AIR_FACE_AREA } from './air/AirConstants.js';
 
 export class ThermalSystem {
   constructor(world, metrics){this.world=world;this.metrics=metrics;}
-  heatMachines(){return this.world.entities.filter(e=>e.isHeatMachine);}
+  heatMachines(){return this.world.heatMachines;}
   update(dt,elapsed){this.applyHeatSources(dt,elapsed);this.conduct(dt);this.exchangeMachines(dt);this.passiveOutdoorExchange(dt);}
 
   applyHeatSources(dt,elapsed){
@@ -16,7 +16,7 @@ export class ThermalSystem {
       m.thermalBalance=-m.heatGenerationPower;if(!m.started)continue;
       const q=m.heatGenerationPower*dt;m.energy+=q;this.metrics.generatedHeat+=q;
     }
-    for(const source of this.world.entities.filter(e=>e.isPassiveHeatSource)){
+    for(const source of this.world.passiveHeatSources){
       source.started=isPowered(source)&&elapsed>=(source.startAt??0);if(!source.started)continue;
       const cells=[];
       for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
@@ -31,11 +31,11 @@ export class ThermalSystem {
   conduct(dt){
     const w=this.world;w.nextEnergy.set(w.energy);w.heatFlux.fill(0);const dirs=[[1,0],[0,1]];
     for(let y=0;y<w.height;y++)for(let x=0;x<w.width;x++){
-      const i=w.index(x,y),Ti=w.temperatureAtIndex(i),mi=w.registry.fromIndex(w.material[i]);
+      const i=w.index(x,y),Ti=w.temperatureAtIndex(i),ki=w.thermalConductivity[i];
       for(const [dx,dy] of dirs){
         const nx=x+dx,ny=y+dy;if(!w.inBounds(nx,ny))continue;
-        const j=w.index(nx,ny),Tj=w.temperatureAtIndex(j),mj=w.registry.fromIndex(w.material[j]),dT=Ti-Tj;if(Math.abs(dT)<1e-7)continue;
-        const k=harmonicMean(mi.conductivity,mj.conductivity);if(k<=0)continue;
+        const j=w.index(nx,ny),Tj=w.temperatureAtIndex(j),dT=Ti-Tj;if(Math.abs(dT)<1e-7)continue;
+        const k=harmonicMean(ki,w.thermalConductivity[j]);if(k<=0)continue;
         let q=k*TILE_AREA*dT/TILE_SIZE_METERS*dt*C.conductionScale;
         const ci=w.capacityAtIndex(i),cj=w.capacityAtIndex(j),qEq=Math.abs(dT)/(1/ci+1/cj);
         q=clamp(q,-qEq*C.maxConductionEqualizationFraction,qEq*C.maxConductionEqualizationFraction);
@@ -89,7 +89,7 @@ export class ThermalSystem {
     for(let y=1;y<w.height-1;y++){this.exchangeBoundary(w.index(0,y),dt,out);this.exchangeBoundary(w.index(w.width-1,y),dt,out);}
   }
   exchangeBoundary(i,dt,out){
-    const w=this.world;if(w.registry.fromIndex(w.material[i]).id!=='air')return;
+    const w=this.world;if(!w.isAirIndex(i))return;
     const T=w.temperatureAtIndex(i),q=C.passiveOutdoorLeakWPerK*(T-out)*dt;w.energy[i]-=q;w.environment.energyReceived+=q;this.metrics.externalEnergy+=q;
   }
 }

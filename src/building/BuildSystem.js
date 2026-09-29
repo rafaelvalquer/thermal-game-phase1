@@ -1,9 +1,10 @@
 import { BUILD_CATALOG, STRUCTURE_TOOLS } from './BuildCatalog.js';
 import { PlacementValidator } from './PlacementValidator.js';
-import { Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, TemperatureSensor, AirDuct, CoolingUnit, ServerRack, SupplyVent, PowerBattery } from '../entities/index.js';
+import { Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, TemperatureSensor, AirDuct, CoolingUnit, ServerRack, SupplyVent, PowerBattery, SolarPanel } from '../entities/index.js';
 import { DUCT_TOOLS } from './PlacementValidator.js';
 import { UtilityPlacementSystem } from './UtilityPlacementSystem.js';
 import { DEFAULT_BUDGET } from '../utils/Constants.js';
+import { entityFootprintCells } from '../entities/EntityFootprint.js';
 
 export const COOLING_UNIT_MODELS=Object.freeze({
   compact:{label:'Compacta',cost:4000,ratedCoolingCapacity:10000,maxAirFlow:1.2,cop:3.5,fanPower:300},
@@ -29,7 +30,7 @@ export class BuildSystem {
     const defaults=Object.fromEntries(Object.entries(this.catalog).map(([k,v])=>[k,v.inventory]));
     this.unlimitedInventory=Boolean(this.world.datacenterConfig?.unlimitedBuildInventory);
     if(this.unlimitedInventory)this.inventory=Object.fromEntries(Object.keys(defaults).map(k=>[k,Infinity]));
-    else if(inventory){this.inventory=Object.fromEntries(Object.keys(defaults).map(k=>[k,['demolish','battery'].includes(k)?Infinity:0]));Object.assign(this.inventory,inventory);this.inventory.battery=Infinity;}
+    else if(inventory){this.inventory=Object.fromEntries(Object.keys(defaults).map(k=>[k,['demolish','battery','solarPanel'].includes(k)?Infinity:0]));Object.assign(this.inventory,inventory);this.inventory.battery=Infinity;this.inventory.solarPanel=Infinity;}
     else this.inventory=defaults;
     this.initialInventory={...this.inventory};this.placedEntities=new Map();this.placedMaterials=new Map();
     this.ductInsulated=false;this.coolingUnitModel=this.world.thermalSystems?.coolingUnitModel||'commercial';
@@ -68,6 +69,7 @@ export class BuildSystem {
       if(tool==='exchanger')entity=new HeatExchanger(x,y);
       if(tool==='sensor')entity=new TemperatureSensor(x,y);
       if(tool==='battery')entity=new PowerBattery(x,y);
+      if(tool==='solarPanel')entity=new SolarPanel(x,y);
       if(tool==='coolingUnit'||tool==='industrialCoolingUnit'){
         const model=tool==='industrialCoolingUnit'?'industrial':this.coolingUnitModel;
         entity=new CoolingUnit(x,y,{...COOLING_UNIT_MODELS[model],tier:model,direction:{...dir}});
@@ -96,7 +98,7 @@ export class BuildSystem {
     const before=this.simulation.totalInternalEnergy(),e=this.world.entityAt(x,y);
     if(e){
       if(e.locked)return {ok:false,reason:'Infraestrutura bloqueada pela missão'};
-      if((e.isHeatMachine&&!e.contractId)||e.isPassiveHeatSource)return {ok:false,reason:'Equipamento da missão não pode ser removido'};
+      if((e.isHeatMachine&&!e.contractId&&e.type!=='serverRack')||e.isPassiveHeatSource)return {ok:false,reason:'Equipamento da missão não pode ser removido'};
       if(e.type==='serverRack')this.world.datacenter?.onRackRemoved(e);
       this.world.removeEntity(e);
       if(['supplyVent','coolingUnit'].includes(e.type))this.simulation.cooling?.rebuild();
@@ -114,6 +116,42 @@ export class BuildSystem {
     }
     else return {ok:false,reason:'Nada removível'};
     this.simulation.registerConstruction(before);this.onChange();return {ok:true};
+  }
+
+  demolishArea(start,end=start){
+    const minX=Math.max(0,Math.min(start.x,end.x)),maxX=Math.min(this.world.width-1,Math.max(start.x,end.x));
+    const minY=Math.max(0,Math.min(start.y,end.y)),maxY=Math.min(this.world.height-1,Math.max(start.y,end.y));
+    if(minX>maxX||minY>maxY)return {ok:false,removed:0,blocked:0,refund:0};
+    const inArea=cell=>cell.x>=minX&&cell.x<=maxX&&cell.y>=minY&&cell.y<=maxY;
+    const intersects=entity=>entityFootprintCells(entity).some(inArea);
+    const before=this.simulation.totalInternalEnergy(),budgetBefore=this.budget;
+    let removed=0,blocked=0,entities=0,utilities=0,materials=0,coolingChanged=false;
+    for(const entity of [...this.world.entities]){
+      if(entity.isTechnician||!intersects(entity))continue;
+      if(entity.locked||(entity.isHeatMachine&&!entity.contractId&&entity.type!=='serverRack')||entity.isPassiveHeatSource){blocked++;continue;}
+      if(entity.type==='serverRack')this.world.datacenter?.onRackRemoved(entity);
+      this.world.removeEntity(entity);entities++;removed++;
+      const placed=this.placedEntities.get(entity.id);
+      if(placed){this.placedEntities.delete(entity.id);this.recover(placed);}
+      if(['supplyVent','coolingUnit'].includes(entity.type))coolingChanged=true;
+    }
+    for(const utility of [...this.world.allUtilities()]){
+      if(!inArea(utility))continue;
+      this.world.removeUtility(utility);utilities++;removed++;
+      const placed=this.placedEntities.get(utility.id);
+      if(placed){this.placedEntities.delete(utility.id);this.recover(placed);}
+      if(DUCT_TOOLS.has(utility.type))coolingChanged=true;
+    }
+    for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++){
+      if(this.world.isAir(x,y))continue;
+      const index=this.world.index(x,y),placed=this.placedMaterials.get(index);
+      this.world.setMaterial(x,y,'air');materials++;removed++;
+      if(placed){this.placedMaterials.delete(index);this.recover(placed);}
+    }
+    if(!removed)return {ok:false,removed:0,blocked,refund:0,entities,utilities,materials};
+    if(coolingChanged)this.simulation.cooling?.rebuild();
+    this.simulation.registerConstruction(before);this.world.datacenter?.persist();this.onChange();
+    return {ok:true,removed,blocked,refund:this.budget-budgetBefore,entities,utilities,materials};
   }
 
   placePipePath(path){

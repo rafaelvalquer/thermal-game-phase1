@@ -36,7 +36,10 @@ export class PlacementValidator {
   canPlace(tool,x,y,{additionalEntities=[],additionalUtilities=[],direction={x:1,y:0},footprintLength=1}={}){
     const w=this.world;if(!w.inBounds(x,y))return false;
     if(tool==='demolish')return Boolean(w.entityAt(x,y))||Boolean(w.utilityAt(x,y))||!w.isAir(x,y);
-    if(['wall','insulation','copper'].includes(tool))return w.isAir(x,y)&&!w.entityAt(x,y);
+    if(['wall','insulation','copper'].includes(tool)){
+      const entity=w.entityAt(x,y);
+      return w.isAir(x,y)&&(!entity||tool==='wall'&&entity.type==='pipe');
+    }
     if(DUCT_TOOLS.has(tool)){
       if(w.utilitiesAt(x,y).some(item=>DUCT_TOOLS.has(item.type))||additionalUtilities.some(item=>DUCT_TOOLS.has(item.type)&&item.x===x&&item.y===y)||w.entityAt(x,y))return false;
       return true;
@@ -46,6 +49,7 @@ export class PlacementValidator {
       if(cells.some(cell=>!w.inBounds(cell.x,cell.y)||!w.isAir(cell.x,cell.y)||w.entityAt(cell.x,cell.y)||additionalEntities.some(e=>entityFootprintCells(e).some(occupied=>occupied.x===cell.x&&occupied.y===cell.y))||w.utilityAt(cell.x,cell.y)))return false;
       return this.adjacentCoolingDuctComponents(x,y,cells).length<=1;
     }
+    if(tool==='solarPanel')return w.isAir(x,y)&&!w.entityAt(x,y)&&!w.utilityAt(x,y);
     if(tool==='serverRack'){
       const hall=w.datacenterConfig?.serverHall;
       const inHall=!hall||(x>=hall.x&&y>=hall.y&&x<hall.x+hall.width&&y<hall.y+hall.height);

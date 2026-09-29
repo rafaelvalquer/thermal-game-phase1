@@ -14,10 +14,14 @@ export class AirGrid {
     this.v=new Float32Array(this.width*(this.height+1));
     this.uNext=new Float32Array(this.u.length);
     this.vNext=new Float32Array(this.v.length);
-    this.pressure=new Float32Array(this.size);
-    this.pressureNext=new Float32Array(this.size);
+    this.pressure=new Float32Array(this.size+1);
+    this.pressureNext=new Float32Array(this.size+1);
     this.divergence=new Float32Array(this.size);
     this.solid=new Uint8Array(this.size);
+    this.exteriorCells=new Uint8Array(this.size);
+    this.hasExteriorCells=false;
+    this.pressureLeft=new Int32Array(this.size);this.pressureRight=new Int32Array(this.size);this.pressureUp=new Int32Array(this.size);this.pressureDown=new Int32Array(this.size);this.pressureNeighborCount=new Uint8Array(this.size);
+    this.pressureCells=new Int32Array(this.size);this.pressureCellCount=0;
     this.wallProximity=new Uint8Array(this.size);
     this.wallConfinement=new Uint8Array(this.size);
     this.topologyVersion=-1;
@@ -46,6 +50,8 @@ export class AirGrid {
       this.solid[i]=this.world.registry.fromIndex(this.world.material[i]).solid?1:0;
     }
 
+    this.buildExteriorMask();
+
     for(let y=0;y<this.height;y++)for(let x=0;x<this.width;x++){
       const i=this.cellIndex(x,y);
       if(this.solid[i]){
@@ -72,7 +78,34 @@ export class AirGrid {
       }
       this.wallConfinement[i]=nearest<4?4-nearest:0;
     }
+    this.buildPressureStencil();
     return true;
+  }
+
+  buildExteriorMask(){
+    const rooms=this.world.airRooms||[];
+    this.exteriorCells.fill(0);
+    this.hasExteriorCells=rooms.length>0;
+    if(!rooms.length)return;
+    for(let y=0;y<this.height;y++)for(let x=0;x<this.width;x++){
+      const inside=rooms.some(room=>x>room.x&&y>room.y&&x<room.x+(room.w??room.width)-1&&y<room.y+(room.h??room.height)-1);
+      if(!inside)this.exteriorCells[this.cellIndex(x,y)]=1;
+    }
+  }
+
+  buildPressureStencil(){
+    const {width,height,solid,pressureLeft:left,pressureRight:right,pressureUp:up,pressureDown:down,pressureNeighborCount:counts,pressureCells}=this;
+    const zero=this.size;left.fill(zero);right.fill(zero);up.fill(zero);down.fill(zero);counts.fill(0);
+    let pressureCellCount=0;
+    for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+      const i=y*width+x;if(solid[i])continue;pressureCells[pressureCellCount++]=i;let count=0;
+      if(x===0)count++;else if(!solid[i-1]){left[i]=i-1;count++;}
+      if(x===width-1)count++;else if(!solid[i+1]){right[i]=i+1;count++;}
+      if(y===0)count++;else if(!solid[i-width]){up[i]=i-width;count++;}
+      if(y===height-1)count++;else if(!solid[i+width]){down[i]=i+width;count++;}
+      counts[i]=count;
+    }
+    this.pressureCellCount=pressureCellCount;
   }
 
   cellVelocity(x,y){
@@ -120,13 +153,17 @@ export class AirGrid {
     return this.isSolid(x,top)||this.isSolid(x,bottom);
   }
 
-  syncWorldVelocity(){
+  syncWorldVelocity(diagnostics=null){
     const w=this.world;
+    let maxVelocity=0,sumVelocity=0,count=0,maxPressure=-Infinity,minPressure=Infinity,maxDivergence=0;
     for(let y=0;y<this.height;y++)for(let x=0;x<this.width;x++){
       const i=this.cellIndex(x,y);
       if(this.solid[i]){w.airX[i]=0;w.airY[i]=0;continue;}
-      w.airX[i]=.5*(this.u[this.uIndex(x,y)]+this.u[this.uIndex(x+1,y)]);
-      w.airY[i]=.5*(this.v[this.vIndex(x,y)]+this.v[this.vIndex(x,y+1)]);
+      const vx=.5*(this.u[this.uIndex(x,y)]+this.u[this.uIndex(x+1,y)]),vy=.5*(this.v[this.vIndex(x,y)]+this.v[this.vIndex(x,y+1)]);
+      w.airX[i]=vx;w.airY[i]=vy;
+      if(diagnostics){const speed=Math.hypot(vx,vy);maxVelocity=Math.max(maxVelocity,speed);sumVelocity+=speed;count++;maxPressure=Math.max(maxPressure,this.pressure[i]);minPressure=Math.min(minPressure,this.pressure[i]);maxDivergence=Math.max(maxDivergence,Math.abs(this.divergence[i]));}
     }
+    if(!diagnostics)return null;
+    return {maxVelocity,averageVelocity:count?sumVelocity/count:0,maxPressure:Number.isFinite(maxPressure)?maxPressure:0,minPressure:Number.isFinite(minPressure)?minPressure:0,maxDivergence};
   }
 }

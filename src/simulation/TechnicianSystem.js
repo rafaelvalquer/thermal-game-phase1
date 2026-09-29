@@ -16,9 +16,9 @@ export class TechnicianSystem {
     const rack=this.world.entitiesByType('serverRack')[0],position=this.nearestFree(rack?.x??0,rack?.y??0,true);
     if(!position)return {ok:false,reason:'Não há espaço livre para iniciar a patrulha.'};
     const worker=this.world.addEntity(new Technician(position.x,position.y));
-    worker.staffId='tech-'+worker.id;this.build.budget-=TECHNICIAN_HIRE_COST;this.build.onChange?.();this.world.datacenter?.persist();return {ok:true,worker};
+    worker.staffId='tech-'+worker.id;this.build.budget-=TECHNICIAN_HIRE_COST;this.build.onChange?.();this.world.datacenter?.markSaveDirty?.();return {ok:true,worker};
   }
-  fire(id){const worker=this.workers.find(item=>String(item.id)===String(id)||item.staffId===id);if(!worker)return false;this.world.removeEntity(worker);this.build.onChange?.();this.world.datacenter?.persist();return true;}
+  fire(id){const worker=this.workers.find(item=>String(item.id)===String(id)||item.staffId===id);if(!worker)return false;this.world.removeEntity(worker);this.build.onChange?.();this.world.datacenter?.markSaveDirty?.();return true;}
   nearestFree(x,y,adjacentOnly=false){
     let best=null,bestDistance=Infinity;
     for(let yy=0;yy<this.world.height;yy++)for(let xx=0;xx<this.world.width;xx++){
@@ -105,7 +105,7 @@ export class TechnicianSystem {
     if(!worker.toX&&!worker.toY){worker.toX=worker.x;worker.toY=worker.y;}
     if(worker.moveProgress<=0){if(!this.walkable(next.x,next.y,worker)){worker.path=[];worker.moveProgress=0;worker.action='patrolling';return;}worker.fromX=worker.x;worker.fromY=worker.y;worker.toX=next.x;worker.toY=next.y;worker.facing={x:Math.sign(next.x-worker.x),y:Math.sign(next.y-worker.y)};}
     worker.moveProgress=(worker.moveProgress||0)+dt*Math.max(.2,worker.moveSpeed||1.15);
-    if(worker.moveProgress>=1){worker.x=worker.toX;worker.y=worker.toY;worker.moveProgress=0;worker.pathIndex++;if(worker.pathIndex>=worker.path.length){worker.path=[];worker.pathIndex=0;}}
+    if(worker.moveProgress>=1){this.world.moveEntity(worker,worker.toX,worker.toY);worker.moveProgress=0;worker.pathIndex++;if(worker.pathIndex>=worker.path.length){worker.path=[];worker.pathIndex=0;}}
   }
   settleDay(day){if(day<=this.payrollDay)return 0;this.payrollDay=day;return this.payroll;}
 }

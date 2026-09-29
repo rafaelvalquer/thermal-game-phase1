@@ -1,16 +1,19 @@
 import { FLUID_TYPES, dirAngle, heatCss, thermalState, thermalGameplayCss, thermalGameplayState, waterCss } from './VisualTheme.js';
 import { EquipmentSpriteRenderer } from './sprites/EquipmentSpriteRenderer.js';
+import { ViewportCulling } from './ViewportCulling.js';
 
 export class EntityRenderer {
-  constructor(){this.sprites=new EquipmentSpriteRenderer();this.sprites.fallback=this;}
+  constructor(){this.sprites=new EquipmentSpriteRenderer();this.sprites.fallback=this;this.cachedOrder=[];this.cachedVersion=-1;}
   preloadSprites(){return this.sprites.preload();}
 
   draw(ctx,world,tile,mode,time=0,{selectedEntity=null,bounds=null,zoom=1}={}){
-    this.stats={spriteDraws:0,fallbacks:0,animated:0};
-    const ordered=[...world.entities].map((entity,index)=>({entity,index})).sort((a,b)=>(a.entity.y+this.sprites.visualFootY(a.entity))*tile-(b.entity.y+this.sprites.visualFootY(b.entity))*tile||a.index-b.index);
+    this.stats={spriteDraws:0,fallbacks:0,animated:0,visibleEntities:0};
+    if(this.cachedVersion!==world.entityVisualVersion){this.cachedOrder=[...world.entities].map((entity,index)=>({entity,index})).sort((a,b)=>(a.entity.y+this.sprites.visualFootY(a.entity))*tile-(b.entity.y+this.sprites.visualFootY(b.entity))*tile||a.index-b.index);this.cachedVersion=world.entityVisualVersion;}
+    const viewport=ViewportCulling.fromBounds(bounds,tile,3);
     const thermalMachines=[];
-    for(const {entity:e} of ordered){
-      if(bounds&&(e.x*tile<bounds.x-tile*3||e.y*tile<bounds.y-tile*3||e.x*tile>bounds.x+bounds.width+tile*3||e.y*tile>bounds.y+bounds.height+tile*3))continue;
+    for(const {entity:e} of this.cachedOrder){
+      if(!viewport.contains(e.x,e.y))continue;
+      this.stats.visibleEntities++;
       const visual=e.type==='technician'&&e.moveProgress>0?{...e,x:e.fromX+(e.toX-e.fromX)*e.moveProgress,y:e.fromY+(e.toY-e.fromY)*e.moveProgress}:e;
       if(this.sprites.draw(ctx,world,visual,tile,mode,time,{selected:e===selectedEntity})){if(e.type==='serverRack')this.rackOrientation(ctx,e,tile);this.stats.spriteDraws++;if(this.sprites.isAnimated(e))this.stats.animated++;if(mode==='thermal'&&['machine','serverRack','furnace'].includes(e.type))thermalMachines.push(e);continue;}
       this.stats.fallbacks++;
@@ -53,7 +56,7 @@ export class EntityRenderer {
   }
 
   drawPreview(ctx,world,tool,x,y,direction,tile,mode,time=0,valid=true,model=null){
-    const types={fan:'fan',exhaust:'exhaust',pipe:'pipe',pump:'pump',tank:'tank',radiator:'radiator',exchanger:'exchanger',sensor:'sensor',coolingUnit:'coolingUnit',industrialCoolingUnit:'coolingUnit',supplyVent:'supplyVent',serverRack:'serverRack'};
+    const types={fan:'fan',exhaust:'exhaust',pipe:'pipe',pump:'pump',tank:'tank',radiator:'radiator',exchanger:'exchanger',sensor:'sensor',coolingUnit:'coolingUnit',industrialCoolingUnit:'coolingUnit',supplyVent:'supplyVent',serverRack:'serverRack',solarPanel:'solarPanel'};
     if(!types[tool])return false;
     const entity={id:987654,type:types[tool],x,y,direction:{...direction},tier:tool==='industrialCoolingUnit'?'industrial':model,footprintLength:tool==='industrialCoolingUnit'||model==='industrial'?2:1,enabled:true,started:true,currentVelocity:.35,currentFlow:.15,
       circuitClosed:false,flowRate:0,waterTemperature:25,inletTemperature:25,outletTemperature:25,thermalPower:0,

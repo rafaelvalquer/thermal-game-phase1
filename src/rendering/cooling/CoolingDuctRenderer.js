@@ -1,7 +1,11 @@
+import { ViewportCulling } from '../ViewportCulling.js';
+
 const DIRS=[[1,0],[-1,0],[0,1],[0,-1]];
 export class CoolingDuctRenderer {
-  draw(ctx,world,tile,mode='normal',zoom=1){
+  draw(ctx,world,tile,mode='normal',zoom=1,bounds=null){
+    const viewport=ViewportCulling.fromBounds(bounds,tile,2);
     for(const duct of world.allUtilities().filter(item=>item.type==='duct')){
+      if(!viewport.contains(duct.x,duct.y))continue;
       const cx=(duct.x+.5)*tile,cy=(duct.y+.5)*tile,links=DIRS.filter(([dx,dy])=>{const adjacent=world.utilityAt(duct.x+dx,duct.y+dy,'duct');if(adjacent)return true;const entity=world.entityAt(duct.x+dx,duct.y+dy);return entity&&(['supplyVent','coolingUnit'].includes(entity.type))&&(entity.networkId===duct.networkId||entity.networkId?.split(',').includes(duct.networkId));});
       const color=mode==='normal'?'#819594':mode==='thermal'?'#34495e':duct.networkStatus==='READY'?'#38bdf8':'#8292a8',width=tile*(mode==='normal'?.34:.22);ctx.save();ctx.lineCap='square';ctx.lineJoin='miter';
       const stroke=()=>{ctx.beginPath();for(const [dx,dy] of links){ctx.moveTo(cx,cy);ctx.lineTo(cx+dx*tile*.55,cy+dy*tile*.55);}if(!links.length){ctx.moveTo(cx-tile*.36,cy);ctx.lineTo(cx+tile*.36,cy);}ctx.stroke();};

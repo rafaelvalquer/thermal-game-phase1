@@ -2,18 +2,23 @@ import { isPowered, powerEquipment } from './PowerState.js';
 import { BATTERY_ROUND_TRIP_EFFICIENCY } from '../entities/PowerBattery.js';
 
 const batteriesInPositionOrder=world=>world.entitiesByType('battery').sort((a,b)=>a.y-b.y||a.x-b.x||a.id-b.id);
+const solarPanels=world=>world.entitiesByType('solarPanel').sort((a,b)=>a.y-b.y||a.x-b.x||a.id-b.id);
 const nonBatteryLoad=world=>powerEquipment(world).reduce((sum,e)=>sum+(
   e.type!=='battery'&&isPowered(e)?Math.max(0,e.requestedPower??e.power??0):0
 ),0);
 
 export class BatteryDispatchSystem {
-  constructor(world,metrics){this.world=world;this.metrics=metrics;this.gridPowerW=0;this.chargePowerW=0;this.dischargePowerW=0;this.lastDispatchSeconds=0;this.dispatchLedger=[];}
+  constructor(world,metrics){this.world=world;this.metrics=metrics;this.gridPowerW=0;this.chargePowerW=0;this.gridChargePowerW=0;this.solarChargePowerW=0;this.solarGenerationW=0;this.dischargePowerW=0;this.lastDispatchSeconds=0;this.dispatchLedger=[];}
 
   dispatch(capacityW,dt,{disabled=false}={}){
-    const batteries=batteriesInPositionOrder(this.world),load=nonBatteryLoad(this.world),capacity=Number.isFinite(capacityW)&&capacityW>0?capacityW:Infinity;
+    const batteries=batteriesInPositionOrder(this.world),panels=solarPanels(this.world),load=nonBatteryLoad(this.world),capacity=Number.isFinite(capacityW)&&capacityW>0?capacityW:Infinity;
     const duration=Math.max(0,Number(dt)||0),eta=Math.sqrt(BATTERY_ROUND_TRIP_EFFICIENCY);
-    let remainingCharge=Math.max(0,capacity-load),remainingDischarge=Math.max(0,load-capacity);
-    this.chargePowerW=0;this.dischargePowerW=0;this.lastDispatchSeconds=duration;this.dispatchLedger=[];
+    const hour=this.world.datacenter?.clock?.hour??this.world.solarHour??12;
+    this.solarGenerationW=panels.reduce((sum,panel)=>sum+panel.updateGeneration(hour),0);
+    const netLoad=Math.max(0,load-this.solarGenerationW),solarSurplus=Math.max(0,this.solarGenerationW-load);
+    let remainingCharge=Math.max(0,solarSurplus+capacity-netLoad),remainingSolar=solarSurplus,remainingDischarge=Math.max(0,netLoad-capacity);
+    this.chargePowerW=0;this.gridChargePowerW=0;this.solarChargePowerW=0;this.dischargePowerW=0;this.lastDispatchSeconds=duration;this.dispatchLedger=[];
+    this.metrics.solarGenerationW=this.solarGenerationW;
     for(const battery of batteries){
       battery.chargePowerW=0;battery.dischargePowerW=0;battery.operationState=battery.enabled?'IDLE':'OFF';
     }
@@ -34,11 +39,11 @@ export class BatteryDispatchSystem {
           if(!isPowered(battery)||remainingCharge<=1e-9||battery.storedEnergyJ>=battery.capacityJ)continue;
           const input=Math.min(battery.maxChargePowerW,remainingCharge,(battery.capacityJ-battery.storedEnergyJ)/(eta*duration));
           if(input<=0)continue;
-          const stored=input*duration*eta,loss=input*duration-stored;
+          const solarInput=Math.min(input,remainingSolar),gridInput=input-solarInput,stored=input*duration*eta,loss=input*duration-stored;
           battery.storedEnergyJ=Math.min(battery.capacityJ,battery.storedEnergyJ+stored);
           battery.chargePowerW=input;battery.operationState=battery.storedEnergyJ>=battery.capacityJ-1?'FULL':'CHARGING';
           this.dispatchLedger.push({battery,energyDelta:stored,loss,previousState:'IDLE'});
-          this.addLossHeat(battery,loss);this.chargePowerW+=input;remainingCharge-=input;
+          this.addLossHeat(battery,loss);this.chargePowerW+=input;this.solarChargePowerW+=solarInput;this.gridChargePowerW+=gridInput;remainingSolar-=solarInput;remainingCharge-=input;
         }
       }
     }
@@ -47,7 +52,7 @@ export class BatteryDispatchSystem {
       else if(battery.storedEnergyJ<=0)battery.operationState='EMPTY';
     }
     this.gridPowerW=this.currentGridPowerW();
-    return {loadW:load,chargeW:this.chargePowerW,dischargeW:this.dischargePowerW,gridPowerW:this.gridPowerW};
+    return {loadW:load,solarGenerationW:this.solarGenerationW,chargeW:this.chargePowerW,solarChargeW:this.solarChargePowerW,gridChargeW:this.gridChargePowerW,dischargeW:this.dischargePowerW,gridPowerW:this.gridPowerW};
   }
 
   addLossHeat(battery,energy){
@@ -71,9 +76,9 @@ export class BatteryDispatchSystem {
 
   currentGridPowerW({breakerOpen=false}={}){
     if(breakerOpen)return 0;
-    const load=nonBatteryLoad(this.world),batteries=batteriesInPositionOrder(this.world);
-    const charging=batteries.reduce((sum,b)=>sum+(isPowered(b)?b.chargePowerW||0:0),0);
+    const load=nonBatteryLoad(this.world),generation=solarPanels(this.world).reduce((sum,panel)=>sum+(isPowered(panel)?panel.generationW||0:0),0),batteries=batteriesInPositionOrder(this.world);
+    const charging=this.gridChargePowerW;
     const discharging=batteries.reduce((sum,b)=>sum+(isPowered(b)?b.dischargePowerW||0:0),0);
-    return Math.max(0,load+charging-discharging);
+    return Math.max(0,load-generation+charging-discharging);
   }
 }

@@ -18,3 +18,4 @@ export { CoolingUnit } from './CoolingUnit.js';
 export { SupplyVent } from './SupplyVent.js';
 export { Technician } from './Technician.js';
 export { PowerBattery, BATTERY_CAPACITY_KWH, BATTERY_MAX_POWER_W, BATTERY_ROUND_TRIP_EFFICIENCY } from './PowerBattery.js';
+export { SolarPanel, SOLAR_PANEL_PEAK_POWER_W, SOLAR_PANEL_SUNRISE_HOUR, SOLAR_PANEL_SUNSET_HOUR, solarIrradiance } from './SolarPanel.js';

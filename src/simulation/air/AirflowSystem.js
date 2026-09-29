@@ -23,8 +23,11 @@ export class AirflowSystem {
     this.fans=new FanModel(this.grid);
     this.capture=new ExhaustCaptureSystem(this.grid);
     this.diagnostics=new AirDiagnostics(this.grid);
+    this.pendingCoolingMomentum=null;this.monitor=null;
     this.grid.syncTopology(true);
   }
+
+  queueCoolingMomentum(sources,dt){this.pendingCoolingMomentum=sources?.length?{sources,dt}:null;}
 
   update(dt){
     this.updateVelocity(dt);
@@ -40,25 +43,33 @@ export class AirflowSystem {
     this.velocity.advect(dt);
     this.applyRadiatorNaturalConvection(dt);
     this.fans.applyAll(dt);
+    if(this.pendingCoolingMomentum)this.applyCoolingMomentum(this.pendingCoolingMomentum.sources,this.pendingCoolingMomentum.dt);
+    this.pendingCoolingMomentum=null;
     this.applyCoolingUnitExhausts(dt);
     this.capture.apply(dt);
     this.drag.apply(dt);
     this.boundaries.enforce();
 
     this.pressure.computeDivergence();
-    this.pressure.solve(dt);
+    this.monitor?.count('pressureSolveCount');this.monitor?.begin('pressureMs');this.pressure.solve(dt);this.monitor?.end('pressureMs');
     this.pressure.project(dt);
     this.boundaries.enforce();
 
     this.pressure.computeDivergence();
     this.fans.updateAllDiagnostics();
-    g.syncWorldVelocity();
-    this.diagnostics.update();
+    const diagnostics=g.syncWorldVelocity({});
+    this.diagnostics.update(diagnostics);
+  }
+
+  applyCoolingMomentum(sources,dt){
+    const grid=this.grid;
+    for(const {vent} of sources){if(vent.flowRate<=0||!grid.inCell(vent.x,vent.y)||grid.isSolid(vent.x,vent.y))continue;const d=vent.direction||{x:0,y:1},area=vent.area??.5*2.5,velocity=vent.flowRate/Math.max(area,1e-6)*(vent.throwCoefficient??1);
+      if(d.x>0&&vent.x+1<grid.width)grid.u[grid.uIndex(vent.x+1,vent.y)]+=velocity;else if(d.x<0&&vent.x>0)grid.u[grid.uIndex(vent.x,vent.y)]-=velocity;else if(d.y>0&&vent.y+1<grid.height)grid.v[grid.vIndex(vent.x,vent.y+1)]+=velocity;else if(d.y<0&&vent.y>0)grid.v[grid.vIndex(vent.x,vent.y)]-=velocity;}
   }
 
   applyRadiatorNaturalConvection(dt){
     const g=this.grid,w=this.world;
-    for(const radiator of w.entitiesByType('radiator')){
+    for(const radiator of w.entitySetByType('radiator')){
       if(!isPowered(radiator))continue;
       const localAir=w.inBounds(radiator.x,radiator.y)?w.temperatureAt(radiator.x,radiator.y):radiator.waterTemperature;
       const delta=radiator.waterTemperature-localAir;
@@ -82,7 +93,7 @@ export class AirflowSystem {
     if(dt<=0)return;
     const w=this.world,out=w.environment.temperature;
     this.metrics.exhaustRejectedPower=0;
-    for(const e of w.entitiesByType('exhaust')){
+    for(const e of w.entitySetByType('exhaust')){
       e.heatRejectedPower=0;
       const connected=this.isExhaustConnectedToOutside(e);
       e.status=!connected?'BLOCKED':e.flowEfficiency<.2?'BLOCKED':e.flowEfficiency<.6?'HIGH RESISTANCE':'READY';
@@ -110,7 +121,7 @@ export class AirflowSystem {
 
   applyCoolingUnitExhausts(dt){
     const g=this.grid,w=this.world;
-    for(const unit of w.entitiesByType('coolingUnit')){
+    for(const unit of w.entitySetByType('coolingUnit')){
       if(!isPowered(unit)||!unit.indoor||(unit.heatRejected||0)<=0)continue;
       const d=unit.direction||{x:1,y:0},length=Math.max(1,unit.footprintLength||1),nextX=unit.x+d.x*length,nextY=unit.y+d.y*length;
       const outletBlocked=d.x?g.blockedU(d.x>0?unit.x+length:unit.x-length+1,unit.y):g.blockedV(unit.x,d.y>0?unit.y+length:unit.y-length+1);

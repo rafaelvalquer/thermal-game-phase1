@@ -1,13 +1,15 @@
+import { ViewportCulling } from './ViewportCulling.js';
+
 export class PressureRenderer {
-  draw(ctx,world,tile){
+  draw(ctx,world,tile,bounds=null){
     const pressure=world.airPressure;
     if(!pressure)return;
-    let maxAbs=5;
-    for(let i=0;i<pressure.length;i++)maxAbs=Math.max(maxAbs,Math.abs(pressure[i]));
+    const viewport=ViewportCulling.fromBounds(bounds,tile,1).tileBounds(world),diagnostics=world.airDiagnostics||{};
+    let maxAbs=Math.max(5,Math.abs(diagnostics.maxPressure||0),Math.abs(diagnostics.minPressure||0));
     maxAbs=Math.min(180,maxAbs);
 
     ctx.save();
-    for(let y=0;y<world.height;y++)for(let x=0;x<world.width;x++){
+    for(let y=viewport.minY;y<viewport.maxY;y++)for(let x=viewport.minX;x<viewport.maxX;x++){
       if(!world.isAir(x,y))continue;
       const p=pressure[world.index(x,y)];
       const n=Math.max(-1,Math.min(1,p/maxAbs));

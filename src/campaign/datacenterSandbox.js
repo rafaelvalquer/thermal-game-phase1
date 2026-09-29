@@ -11,7 +11,7 @@ export const datacenterSandbox={
   environment:{outdoorTemperature:25},budget:150000,powerLimit:100000,missionDuration:Infinity,objectiveStartAt:0,
   inventory:{wall:180,insulation:60,copper:20,fan:8,exhaust:4,sensor:12,coolingUnit:3,duct:200,supplyVent:16,
     serverRack:Infinity,demolish:Infinity},
-  datacenter:{initialCash:150000,powerCapacityKW:100,energyTariff:.85,coolingMaintenanceDaily:110,allBuildTools:true,unlimitedBuildInventory:true,
+  datacenter:{initialCash:150000,powerCapacityKW:100,energyTariff:.55,coolingMaintenanceDaily:110,allBuildTools:true,unlimitedBuildInventory:true,
     serverHall:{x:18,y:4,width:70,height:59},electricalRoom:{x:3,y:4,width:13,height:16}},
   zones:[
     {id:'server-hall',name:'Data Hall A · Sala de servidores',x:18,y:4,width:70,height:59,target:27,visualStyle:'server'},

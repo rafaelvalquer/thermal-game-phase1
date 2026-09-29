@@ -36,3 +36,16 @@ test('CPD exterior doors expel hot air while interior doors do not count as outd
   assert.ok(Math.abs(before-world.totalTileEnergy()-metrics.externalEnergy)<1e-6);
   assert.equal(world.temperatureAt(1,4),25,'exported hot air is not deposited outside the room');
 });
+
+test('air outside declared building rooms returns to ambient while indoor room heat remains',()=>{
+  const world=new World(14,9),metrics={externalEnergy:0};
+  MapBuilder.apply(world,{rooms:[{x:3,y:2,w:8,h:5}]});
+  const air=new AirflowSystem(world,metrics);
+  world.setTemperature(1,4,65);world.setTemperature(6,4,55);
+  const before=world.totalTileEnergy(),outdoorExcess=world.capacityAtIndex(world.index(1,4))*(65-world.environment.temperature);
+  air.advectHeat(.1);
+  assert.equal(world.temperatureAt(1,4),world.environment.temperature);
+  assert.equal(world.temperatureAt(6,4),55);
+  assert.ok(Math.abs(metrics.externalEnergy-outdoorExcess)<1e-6);
+  assert.ok(Math.abs(before-world.totalTileEnergy()-metrics.externalEnergy)<1e-6);
+});

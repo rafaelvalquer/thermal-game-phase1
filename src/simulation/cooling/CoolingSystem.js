@@ -12,7 +12,7 @@ export class CoolingSystem {
     this.world=world;this.airflow=airflow;this.metrics=metrics;this.builder=new CoolingNetworkBuilder(world);
     this.distribution=new CoolingDistributionSolver();this.performance=new CoolingPerformanceSolver();
     this.exchange=new CoolingAirExchange(world,airflow);this.heatRejection=new CoolingHeatRejection(world,metrics);this.diagnostics=new CoolingDiagnostics();
-    this.networks=[];this.units=[];this.momentumSources=[];this.pendingExchange=[];
+    this.networks=[];this.units=[];this.momentumSources=[];this.pendingExchange=[];this.lastTopologyVersion=-1;this.lastPowerSignature='';this.monitor=null;
     Object.assign(metrics,{coolingInstalledCapacity:0,coolingAvailableCapacity:0,coolingActiveCapacity:0,coolingDelivered:0,coolingPower:0,coolingHeatRejected:0,coolingReserveMargin:0});
   }
   rebuild(ignorePowerBlock=false){
@@ -25,13 +25,31 @@ export class CoolingSystem {
       unit.unitLabel=label;usedLabels.add(label);
     }
     this.world.coolingUnitLabelSequence=labelSequence;
-    for(const vent of this.world.entitiesByType('supplyVent')){vent.flowRate=0;vent.coolingDelivered=0;vent.networkId=null;vent.networkStatus='DISCONNECTED';}
     this.networks=this.builder.build();this.world.coolingSystem=this;this.momentumSources=[];this.heatRejection.reset();this.pendingExchange=[];
+    this.ducts=this.networks.flatMap(network=>network.ducts);
+    for(const network of this.networks)network.topologyPaths=network.paths.map(path=>({...path,unit:path.unit||network.sourceUnit}));
+    this.lastTopologyVersion=this.world.utilityTopologyVersion;this.lastPowerSignature=this.powerSignature(ignorePowerBlock);
+    this.monitor?.count('coolingRebuildCount');
+    this.refreshDistribution(ignorePowerBlock);
+    this.updateMetrics();
+  }
+  powerSignature(ignorePowerBlock=false){return this.world.entitiesByType('coolingUnit').map(unit=>String(unit.id)+':'+Number(isPowered(unit,ignorePowerBlock))).join('|');}
+  rebuildIfNeeded(ignorePowerBlock=false){
+    if(this.lastTopologyVersion!==this.world.utilityTopologyVersion){this.rebuild(ignorePowerBlock);return true;}
+    const signature=this.powerSignature(ignorePowerBlock);
+    if(this.lastPowerSignature!==signature){this.lastPowerSignature=signature;this.refreshDistribution(ignorePowerBlock);return true;}
+    return false;
+  }
+  refreshDistribution(ignorePowerBlock=false){
+    this.momentumSources=[];
+    for(const vent of this.world.entitiesByType('supplyVent')){vent.flowRate=0;vent.coolingDelivered=0;vent.networkId=null;vent.networkStatus='DISCONNECTED';}
+    for(const duct of this.ducts||[]){duct.flowRate=0;duct.airTemperature=25;duct.direction={x:0,y:0};}
+    for(const network of this.networks)network.availableCooling=0;
     for(const n of this.networks){
-      if(n.status!=='READY')continue;
+      if(n.status!=='READY'){n.paths=[];continue;}
       n.paths=n.sourceUnits.flatMap(unit=>{
         if(!isPowered(unit,ignorePowerBlock))return [];
-        const paths=n.paths.filter(path=>(path.unit||n.sourceUnit)===unit),automatic=paths.filter(path=>path.vent.flowMode==='auto');
+        const paths=(n.topologyPaths||[]).filter(path=>path.unit===unit),automatic=paths.filter(path=>path.vent.flowMode==='auto');
         const demands=automatic.map(path=>this.exchange.coolingDemand(path.vent)),hasHotRack=demands.some(value=>value>0);
         automatic.forEach((path,index)=>{path.autoWeight=hasHotRack?1+Math.min(20,demands[index]):1;});
         return this.distribution.solve({...n,paths},unit.maxAirFlow);
@@ -40,10 +58,15 @@ export class CoolingSystem {
       for(const path of n.paths)path.vent.flowRate+=path.flowRate;
       for(const vent of n.vents)if(vent.flowRate>0){vent.airTemperature=this.world.temperatureAt(vent.x,vent.y);this.momentumSources.push({vent,kind:'supply'});}
     }
-    this.updateMetrics();
+    for(const unit of this.units){
+      const connected=this.networks.filter(network=>network.sourceUnits.includes(unit));
+      const ready=connected.some(network=>network.status==='READY'&&network.paths.some(path=>path.unit===unit));
+      unit.status=isPowered(unit,ignorePowerBlock)?(ready?'READY':connected.map(network=>network.status).join(' / ')||'DISCONNECTED'):'OFF';
+    }
   }
   update(dt,{prepareOnly=false,ignorePowerBlock=false}={}){
-    this.rebuild(ignorePowerBlock);
+    if(!prepareOnly)this.pendingExchange=[];
+    if(!this.rebuildIfNeeded(ignorePowerBlock))this.refreshDistribution(ignorePowerBlock);
     const preview=new Map();
     const ventPlans=new Map(),plannedByUnit=new Map();
     for(const unit of this.units){
@@ -84,7 +107,7 @@ export class CoolingSystem {
       vent.dischargeVelocity=flow/Math.max(.01,vent.area||.08);
       vent.networkStatus='READY';
       const reservedCooling=cooling>0&&this.world.datacenter?Math.max(0,-this.exchange.transferMassEnergy(vent,dt,cooling,preview)):cooling;
-      if(cooling>0)this.pendingExchange.push({vent,contributions,reservedCooling});
+      if(cooling>0&&!prepareOnly)this.pendingExchange.push({vent,contributions,reservedCooling});
       for(const contribution of contributions){
         const share=cooling?contribution.cooling/cooling:0;
         plannedByUnit.set(contribution.unit,(plannedByUnit.get(contribution.unit)||0)+reservedCooling*share);
@@ -95,7 +118,7 @@ export class CoolingSystem {
       if(ignorePowerBlock)unit.requestedPower=plannedPower;
       unit.power=isPowered(unit)?plannedPower:0;
     }
-    if(!prepareOnly&&this.momentumSources.length)this.exchange.applyMomentum(this.momentumSources,dt);
+    if(!prepareOnly&&this.momentumSources.length)this.airflow.queueCoolingMomentum?.(this.momentumSources,dt);
     this.metrics.coolingDelivered=0;this.metrics.coolingPower=0;this.metrics.coolingHeatRejected=0;
   }
   exchangeRooms(dt){

@@ -8,6 +8,7 @@ export const AIR={
   cellSize:TILE_SIZE_METERS,
   roomHeight:2.5,
   pressureIterations:40,
+  fanMomentumBoost:1.25,
   wallDrag:0.005,
   wallDragQuadratic:0.0015,
   wallTurbulenceSuppression:4,

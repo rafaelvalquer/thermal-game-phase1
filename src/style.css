@@ -56,7 +56,10 @@
 .top-chart-head small{font-size:6px;color:#52637b;white-space:nowrap}
 .top-chart-head i{width:5px;height:2px;display:inline-block;vertical-align:middle;margin-left:3px}
 .top-chart-head .limit-dot{height:0;border-top:1px dashed #fbbf24}
-#history,#powerHistory{display:block;width:100%;height:38px}
+.top-chart-head .battery-use-dot{background:#fb923c}
+.top-chart-head .battery-stock-dot{background:#a78bfa}
+.power-summary{height:9px;overflow:hidden;color:#72849a;font:600 6px/9px ui-monospace,monospace;white-space:nowrap;text-overflow:ellipsis}
+#history,#powerHistory{display:block;width:100%;height:29px}
 .power-chart{border-color:#263447}
 @media(max-width:1120px){
   .topbar{grid-template-columns:170px minmax(100px,1fr) minmax(345px,365px) auto;gap:8px;padding-inline:10px}
@@ -79,7 +82,9 @@
   .top-chart-head{height:13px}
   .top-chart-head span{font-size:6px}
   .top-chart-head small{font-size:5px}
-  #history,#powerHistory{height:26px}
+  .power-summary{height:7px;font-size:5px;line-height:7px}
+  #history{height:26px}
+  #powerHistory{height:21px}
   .right-panel{display:none}
   .sim-controls{display:none}
   .mission-box{display:none}
