@@ -2,6 +2,7 @@ import { formatEnergy, formatPower } from '../utils/MathUtils.js';
 import { entityLabel, thermalState } from '../rendering/VisualTheme.js';
 import { SPRITES, spriteIdFor, spriteIconStyle } from '../rendering/sprites/SpriteManifest.js';
 import { CoolingAirExchange } from '../simulation/cooling/CoolingAirExchange.js';
+import { SOLAR_PANEL_PEAK_POWER_W } from '../entities/SolarPanel.js';
 
 const fluidTypes=['pipe','pump','tank','radiator','exchanger'];
 const airDuctTypes=['duct'];
@@ -40,7 +41,7 @@ export class Inspector {
       this.root.innerHTML='<div class="inspector-empty"><span>⌖</span><strong>Nenhuma seleção</strong><p>'+(simple?'Clique em um equipamento para ver temperatura, refrigeração e estado.':'Clique no mapa para ver temperatura, pressão, energia, fluxo e estado operacional.')+'</p></div>';
       return;
     }
-    if(t.kind==='entity'&&!world.entities.includes(t.entity)&&!world.allUtilities().includes(t.entity)){this.target=null;return this.update(world);}
+    if(t.kind==='entity'&&(world.getEntityById?.(t.entity.id)||world.entities?.find(entity=>entity.id===t.entity.id))!==t.entity){this.target=null;return this.update(world);}
     if(t.kind==='entity')return this.entity(world,t.entity);
     return this.tile(world,t.x,t.y);
   }
@@ -49,7 +50,7 @@ export class Inspector {
     let temperature=null,rows=[['Posição',e.x+', '+e.y]];
 
     if(e.type==='technician'){
-      const rack=world.entities.find(entity=>entity.type==='serverRack'&&entity.id===e.targetRackId),action=e.action||'patrolling';
+      const rack=world.getEntityById?.(e.targetRackId)||world.entities?.find(entity=>entity.id===e.targetRackId),action=e.action||'patrolling';
       const labels={patrolling:'EM PATRULHA',moving:'A CAMINHO',working:'EM ATENDIMENTO',cooldown:'EM INTERVALO'};
       rows.push(['Estado',labels[action]||'EM PATRULHA'],['Ação',action==='working'?'Inspecionando e otimizando troca térmica':action==='moving'?'Deslocando-se até a tarefa':action==='cooldown'?'Aguardando próximo atendimento':'Percorrendo a área acessível']);
       if(rack){rows.push(['Rack-alvo',rack.name||'Rack'],['Destino',e.goalX!=null?e.goalX+', '+e.goalY:rack.x+', '+rack.y]);if(action==='working')rows.push(['Melhoria','Troca térmica +20%'],['Progresso',(Math.max(0,Math.min(1,e.workProgress||0))*100).toFixed(0)+'%'],['Tempo restante',Math.max(0,e.boostRemaining||0).toFixed(1)+' s']);}
@@ -85,7 +86,7 @@ export class Inspector {
       );
       if(e.type==='pump')rows.push(['Saída da bomba',dirGlyph(e.direction)],['Drive hidráulico',String(e.hydraulicPower)]);
       if(e.type==='exchanger'){
-        const machine=world.entities.find(x=>x.id===e.machineId);
+        const machine=world.getEntityById?.(e.machineId)||world.entities?.find(entity=>entity.id===e.machineId);
         rows.push(['Máquina',machine?.name||'—'],['Ar captado',formatPower(e.airCoolingPower||0)],['Calor para água',formatPower(e.thermalPower||0)]);
         if(e.circuitClosed&&!world.entities.some(item=>item.type==='radiator'&&item.networkId===e.networkId))rows.push(['Diagnóstico','A água precisa de um radiador neste circuito para rejeitar o calor.']);
         else if(e.circuitClosed&&e.airCoolingPower===0&&world.isAir(e.x,e.y)&&e.waterTemperature>=world.temperatureAt(e.x,e.y))rows.push(['Diagnóstico','Água igual ou mais quente que o ar local; resfrie-a no radiador para captar calor.']);
@@ -108,7 +109,7 @@ export class Inspector {
       rows.push(['Estado operacional',stateLabel],['Energia armazenada',Number(e.storedEnergyKWh||0).toFixed(2)+' / 50.00 kWh'],['Carga',(Number(e.chargePercent)||0).toFixed(1)+'%'],['Potência de carga',formatPower(e.chargePowerW||0)],['Potência de descarga',formatPower(e.dischargePowerW||0)],['Limite por sentido','10.00 kW'],['Eficiência do ciclo','90%']);
     }
 
-    if(e.type==='solarPanel')rows.push(['Geração atual',formatPower(e.generationW||0)],['Potência de pico',formatPower(e.peakPowerW||2000)],['Período de geração','06h–18h · pico às 12h']);
+    if(e.type==='solarPanel')rows.push(['Geração atual',formatPower(e.generationW||0)],['Potência de pico',formatPower(e.peakPowerW||SOLAR_PANEL_PEAK_POWER_W)],['Período de geração','06h–18h · pico às 12h']);
 
     if(e.type==='fan'||e.type==='exhaust'){
       rows.push(['Direção',dirGlyph(e.direction)],['Vazão atual',Number(e.currentFlow||0).toFixed(2)+' m³/s']);

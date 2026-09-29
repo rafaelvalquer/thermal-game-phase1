@@ -2,64 +2,112 @@ import { FLUID_TYPES, dirAngle, heatCss, thermalState, thermalGameplayCss, therm
 import { EquipmentSpriteRenderer } from './sprites/EquipmentSpriteRenderer.js';
 import { ViewportCulling } from './ViewportCulling.js';
 
+const THERMAL_ENTITIES=new Set(['machine','serverRack','furnace']);
+const CLIMATE_ENTITIES=new Set(['coolingUnit','supplyVent']);
+
 export class EntityRenderer {
-  constructor(){this.sprites=new EquipmentSpriteRenderer();this.sprites.fallback=this;this.cachedOrder=[];this.cachedDynamicOrder=[];this.cachedVersion=-1;this.cachedStaticVersion=-1;this.cachedDynamicVersion=-1;this.staticEntities=[];this.dynamicEntities=[];}
+  constructor({CanvasClass=globalThis.OffscreenCanvas,clock=()=>globalThis.performance?.now?.()??Date.now(),maxStaticLayerPixels=8_000_000,staticLayerRefreshMs=50}={}){this.sprites=new EquipmentSpriteRenderer();this.sprites.fallback=this;this.cachedOrder=[];this.cachedDynamicOrder=[];this.cachedVersion=-1;this.cachedStaticVersion=-1;this.cachedDynamicVersion=-1;this.staticEntities=[];this.dynamicEntities=[];this.rackOrientationCanvases=new Map();this.CanvasClass=CanvasClass;this.clock=clock;this.maxStaticLayerPixels=maxStaticLayerPixels;this.staticLayerRefreshMs=staticLayerRefreshMs;this.staticLayerCanvas=null;this.staticLayerContext=null;this.staticLayerSignature=null;this.staticLayerUpdatedAt=-Infinity;this.staticLayerDrawCount=0;this.staticLayerFallbackCount=0;}
   preloadSprites(){return this.sprites.preload();}
 
-  draw(ctx,world,tile,mode,time=0,{selectedEntity=null,bounds=null,zoom=1}={}){
+  draw(ctx,world,tile,mode,time=0,{selectedEntity=null,bounds=null,zoom=1,deferThermalIndicators=false}={}){
     this.stats={spriteDraws:0,fallbacks:0,animated:0,visibleEntities:0};
     if(this.cachedStaticVersion!==world.staticVisualVersion||this.cachedVersion<0){
-      const previous=this.staticEntities;this.staticEntities=world.entities.filter(entity=>!entity.isTechnician);
+      this.staticEntities=world.entities.filter(entity=>!entity.isTechnician);
       this.cachedStaticVersion=world.staticVisualVersion;
-      if(previous.length||this.cachedVersion<0)this.cachedOrder=this.sorted(this.staticEntities,tile);
+      this.cachedOrder=this.sorted(this.staticEntities,tile);
     }
     if(this.cachedDynamicVersion!==world.dynamicVisualVersion||this.cachedVersion<0){this.dynamicEntities=world.entities.filter(entity=>entity.isTechnician);this.cachedDynamicOrder=this.sorted(this.dynamicEntities,tile);this.cachedDynamicVersion=world.dynamicVisualVersion;}
     this.cachedVersion=world.entityVisualVersion;
     const viewport=ViewportCulling.fromBounds(bounds,tile,3);
     const thermalMachines=[];
-    let staticIndex=0,dynamicIndex=0,staticDrawn=0,dynamicDrawn=0;
-    // Stable static depth order can be merged with the small, moving technician layer.
-    while(staticIndex<this.cachedOrder.length||dynamicIndex<this.cachedDynamicOrder.length){
-      const stat=this.cachedOrder[staticIndex],dynamic=this.cachedDynamicOrder[dynamicIndex];
-      const statDepth=stat?stat.depth*tile:-Infinity;
-      const dynamicDepth=dynamic?dynamic.depth*tile:-Infinity;
-      const item=dynamic&&(!stat||dynamicDepth<statDepth||dynamicDepth===statDepth&&dynamic.order<stat.order)?this.cachedDynamicOrder[dynamicIndex++]:this.cachedOrder[staticIndex++];
-      const e=item.entity;
-      if(!viewport.contains(e.x,e.y))continue;
-      this.stats.visibleEntities++;
-      const visual=e.type==='technician'&&e.moveProgress>0?{...e,x:e.fromX+(e.toX-e.fromX)*e.moveProgress,y:e.fromY+(e.toY-e.fromY)*e.moveProgress}:e;
-      if(this.sprites.draw(ctx,world,visual,tile,mode,time,{selected:e===selectedEntity})){if(e.type==='serverRack')this.rackOrientation(ctx,e,tile);this.stats.spriteDraws++;if(this.sprites.isAnimated(e))this.stats.animated++;if(mode==='thermal'&&['machine','serverRack','furnace'].includes(e.type))thermalMachines.push(e);continue;}
-      this.stats.fallbacks++;
-      const x=e.x*tile,y=e.y*tile,cx=x+tile/2,cy=y+tile/2;
-      ctx.save();
-      if(mode!=='thermal')this.shadow(ctx,x,y,tile,e.type);
-      if(e.type==='machine')this.machine(ctx,e,x,y,tile,time);
-      else if(e.type==='serverRack')this.serverRack(ctx,e,x,y,tile,time);
-      else if(e.type==='furnace')this.furnace(ctx,e,x,y,tile,time);
-      else if(e.type==='passiveHeat')this.passiveHeat(ctx,e,x,y,tile,time);
-      else if(e.type==='fan'||e.type==='exhaust')this.fan(ctx,e,cx,cy,tile,time);
-      else if(FLUID_TYPES.has(e.type))this.fluid(ctx,world,e,x,y,tile,mode,time);
-      else if(e.type==='sensor')this.sensor(ctx,e,cx,cy,tile,time);
-      else if(['coolingUnit','supplyVent'].includes(e.type))this.climateDevice(ctx,e,x,y,tile,time);
-      if(mode==='thermal'&&['machine','serverRack','furnace'].includes(e.type))thermalMachines.push(e);
-      ctx.restore();
-    }
-    if(mode==='thermal'){
-      const labels=[];
-      for(const entity of thermalMachines.sort((a,b)=>(b===selectedEntity)-(a===selectedEntity))){
-        const box={x:(entity.x+.5)*tile-21,y:entity.y*tile-16,w:42,h:15};
-        const show=entity===selectedEntity||(zoom>=.85&&!labels.some(b=>box.x<b.x+b.w&&box.x+box.w>b.x&&box.y<b.y+b.h&&box.y+box.h>b.y));
-        this.thermalIndicator(ctx,entity,tile,show);if(show)labels.push(box);
+    const useStaticLayer=typeof ctx.drawImage==='function'&&this.prepareStaticLayer(world,tile,mode,time,selectedEntity,viewport);
+    if(useStaticLayer){
+      ctx.imageSmoothingEnabled=false;ctx.drawImage(this.staticLayerCanvas,0,0);this.stats.spriteDraws++;
+      this.stats.fallbacks=this.staticLayerFallbackCount;
+      for(const item of this.cachedOrder){const e=item.entity;if(!viewport.contains(e.x,e.y))continue;this.stats.visibleEntities++;if(this.sprites.isAnimated(e))this.stats.animated++;if(mode==='thermal'&&THERMAL_ENTITIES.has(e.type))thermalMachines.push(e);}
+      for(const item of this.cachedDynamicOrder){const e=item.entity;if(!viewport.contains(e.x,e.y))continue;this.stats.visibleEntities++;this.drawEntity(ctx,world,e,tile,mode,time,selectedEntity,thermalMachines);}
+    }else{
+      let staticIndex=0,dynamicIndex=0;
+      // Stable depth order is kept when an offscreen static layer is unavailable.
+      while(staticIndex<this.cachedOrder.length||dynamicIndex<this.cachedDynamicOrder.length){
+        const stat=this.cachedOrder[staticIndex],dynamic=this.cachedDynamicOrder[dynamicIndex],statDepth=stat?stat.depth*tile:-Infinity,dynamicDepth=dynamic?dynamic.depth*tile:-Infinity;
+        const item=dynamic&&(!stat||dynamicDepth<statDepth||dynamicDepth===statDepth&&dynamic.order<stat.order)?this.cachedDynamicOrder[dynamicIndex++]:this.cachedOrder[staticIndex++],e=item.entity;
+        if(!viewport.contains(e.x,e.y))continue;this.stats.visibleEntities++;
+        this.drawEntity(ctx,world,e,tile,mode,time,selectedEntity,thermalMachines);
       }
     }
+    this.thermalIndicatorEntities=mode==='thermal'?thermalMachines:[];
+    if(mode==='thermal'&&!deferThermalIndicators)this.drawThermalIndicators(ctx,tile,{selectedEntity,zoom});
     this.drawTechnicianWork(ctx,world,tile,mode);
+  }
+
+  prepareStaticLayer(world,tile,mode,time,selectedEntity,viewport){
+    const width=Math.ceil(world.width*tile),height=Math.ceil(world.height*tile),pixels=width*height;
+    if(width<=0||height<=0||pixels>this.maxStaticLayerPixels)return false;
+    if(this.staticEntities.length){let visible=0;for(const item of this.cachedOrder)if(viewport.contains(item.entity.x,item.entity.y))visible++;if(visible/this.staticEntities.length<.65)return false;}
+    if(!this.staticLayerCanvas||this.staticLayerCanvas.width!==width||this.staticLayerCanvas.height!==height){
+      let canvas=null;try{if(typeof this.CanvasClass==='function')canvas=new this.CanvasClass(width,height);else if(typeof document!=='undefined')canvas=document.createElement('canvas');}catch{return false;}
+      if(!canvas)return false;canvas.width=width;canvas.height=height;const context=canvas.getContext?.('2d');if(!context)return false;
+      this.staticLayerCanvas=canvas;this.staticLayerContext=context;this.staticLayerSignature=null;
+    }
+    const selectedId=selectedEntity&&!selectedEntity.isTechnician&&selectedEntity.world===world?String(selectedEntity.id??''):'';
+    const signature=[world,width,height,tile,mode,this.cachedStaticVersion,selectedId];
+    const sameSignature=this.staticLayerSignature&&signature.every((value,index)=>value===this.staticLayerSignature[index]);
+    const now=this.clock();
+    if(!sameSignature||now-this.staticLayerUpdatedAt>=this.staticLayerRefreshMs){
+      const target=this.staticLayerContext;target.save?.();target.setTransform?.(1,0,0,1,0,0);target.clearRect(0,0,width,height);target.imageSmoothingEnabled=false;
+      let fallbacks=0;
+      for(const item of this.cachedOrder){const e=item.entity;target.save?.();if(!this.drawEntity(target,world,e,tile,mode,time,selectedEntity,[],false))fallbacks++;target.restore?.();}
+      target.restore?.();this.staticLayerSignature=signature;this.staticLayerUpdatedAt=now;this.staticLayerDrawCount++;this.staticLayerFallbackCount=fallbacks;
+    }
+    return true;
+  }
+
+  drawEntity(ctx,world,e,tile,mode,time,selectedEntity,thermalMachines,countStats=true){
+    const visual=e.type==='technician'&&e.moveProgress>0?{...e,x:e.fromX+(e.toX-e.fromX)*e.moveProgress,y:e.fromY+(e.toY-e.fromY)*e.moveProgress}:e;
+    if(this.sprites.draw(ctx,world,visual,tile,mode,time,{selected:e===selectedEntity})){
+      if(e.type==='serverRack')this.rackOrientation(ctx,e,tile);
+      if(countStats){this.stats.spriteDraws++;if(this.sprites.isAnimated(e))this.stats.animated++;}
+      if(mode==='thermal'&&THERMAL_ENTITIES.has(e.type))thermalMachines.push(e);
+      return true;
+    }
+    if(countStats)this.stats.fallbacks++;
+    const x=e.x*tile,y=e.y*tile,cx=x+tile/2,cy=y+tile/2;ctx.save();
+    if(mode!=='thermal')this.shadow(ctx,x,y,tile,e.type);
+    if(e.type==='machine')this.machine(ctx,e,x,y,tile,time);
+    else if(e.type==='serverRack')this.serverRack(ctx,e,x,y,tile,time);
+    else if(e.type==='furnace')this.furnace(ctx,e,x,y,tile,time);
+    else if(e.type==='passiveHeat')this.passiveHeat(ctx,e,x,y,tile,time);
+    else if(e.type==='fan'||e.type==='exhaust')this.fan(ctx,e,cx,cy,tile,time);
+    else if(FLUID_TYPES.has(e.type))this.fluid(ctx,world,e,x,y,tile,mode,time);
+    else if(e.type==='sensor')this.sensor(ctx,e,cx,cy,tile,time);
+    else if(CLIMATE_ENTITIES.has(e.type))this.climateDevice(ctx,e,x,y,tile,time);
+    ctx.restore();
+    if(mode==='thermal'&&THERMAL_ENTITIES.has(e.type))thermalMachines.push(e);
+    return false;
+  }
+
+  drawThermalIndicators(ctx,tile,{selectedEntity=null,zoom=1}={}){
+    const thermalMachines=this.thermalIndicatorEntities||[];
+    if(thermalMachines.length){
+      const bucketSize=32,labelBuckets=new Map();
+      const bucketKeys=box=>{const keys=[];for(let y=Math.floor(box.y/bucketSize);y<=Math.floor((box.y+box.h)/bucketSize);y++)for(let x=Math.floor(box.x/bucketSize);x<=Math.floor((box.x+box.w)/bucketSize);x++)keys.push(x+':'+y);return keys;};
+      const overlaps=box=>{for(const key of bucketKeys(box))for(const other of labelBuckets.get(key)||[])if(box.x<other.x+other.w&&box.x+box.w>other.x&&box.y<other.y+other.h&&box.y+box.h>other.y)return true;return false;};
+      const reserve=box=>{for(const key of bucketKeys(box)){let bucket=labelBuckets.get(key);if(!bucket)labelBuckets.set(key,bucket=[]);bucket.push(box);}};
+      for(const entity of thermalMachines.sort((a,b)=>(b===selectedEntity)-(a===selectedEntity))){
+        // Put the value above the rack cell, clear of the duct row crossing its top.
+        const width=Math.max(42,tile*.9),height=Math.max(12,tile*.72);
+        const box={x:(entity.x+.5)*tile-width/2,y:entity.y*tile-height-tile*.08,w:width,h:height};
+        const show=entity===selectedEntity||(zoom>=.85&&!overlaps(box));
+        this.thermalIndicator(ctx,entity,tile,show);if(show)reserve(box);
+      }
+    }
   }
 
   sorted(entities,tile){return entities.map((entity,index)=>({entity,index,order:entity.world?.entityOrder?.(entity)??index,depth:entity.y+this.sprites.visualFootY(entity)})).sort((a,b)=>a.depth-b.depth||a.order-b.order);}
 
   drawTechnicianWork(ctx,world,tile,mode){
-    const workers=world.entities.filter(entity=>entity.type==='technician'&&entity.action==='working'&&entity.targetRackId!=null);
-    for(const worker of workers){const rack=world.entities.find(entity=>entity.type==='serverRack'&&entity.id===worker.targetRackId);if(!rack)continue;
+    for(const worker of world.entitySetByType?.('technician')||world.entitiesByType?.('technician')||[]){if(worker.action!=='working'||worker.targetRackId==null)continue;const rack=world.getEntityById?.(worker.targetRackId)||world.entities?.find(entity=>entity.id===worker.targetRackId);if(!rack)continue;
       const width=Math.max(116,tile*3.5),height=30,left=(rack.x+.5)*tile-width/2;let top=rack.y*tile-height-3;
       if(mode==='thermal')top-=Math.max(12,tile*.72);if(top<0)top=rack.y*tile+tile+2;
       const progress=Math.max(0,Math.min(1,worker.workProgress||0));ctx.save();ctx.fillStyle='rgba(2,10,20,.95)';ctx.strokeStyle='#22d3ee';ctx.lineWidth=Math.max(1,tile*.025);ctx.fillRect(left,top,width,height);ctx.strokeRect(left+.5,top+.5,width-1,height-1);
@@ -86,14 +134,13 @@ export class EntityRenderer {
   }
 
   thermalIndicator(ctx,entity,tile,showLabel=true){
-    if(!['machine','serverRack','furnace'].includes(entity.type)||!Number.isFinite(entity.temperature))return;
+    if(!THERMAL_ENTITIES.has(entity.type)||!Number.isFinite(entity.temperature))return;
     const color=thermalGameplayState(entity.temperature);
     if(color){ctx.save();ctx.strokeStyle=color;ctx.lineWidth=Math.max(1.4,tile*.075);ctx.globalAlpha=.96;ctx.strokeRect(entity.x*tile+1.5,entity.y*tile+1.5,tile-3,tile-3);ctx.restore();}
     if(!showLabel)return;
-    const label=entity.temperature.toFixed(1)+'°',cx=(entity.x+.5)*tile,cy=(entity.y+.5)*tile;
+    const label=entity.temperature.toFixed(1)+'°',cx=(entity.x+.5)*tile;
     ctx.save();ctx.font='700 '+Math.max(8,tile*.38)+'px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';
-    const width=ctx.measureText(label).width+6,height=Math.max(12,tile*.72);let left=cx-width/2,top=entity.y*tile-height-2;
-    if(top<0)top=entity.y*tile+tile+2;
+    const width=ctx.measureText(label).width+6,height=Math.max(12,tile*.72);let left=cx-width/2,top=entity.y*tile-height-tile*.08;
     ctx.fillStyle='rgba(2,6,23,.94)';ctx.fillRect(left,top,width,height);
     ctx.strokeStyle='rgba(2,6,23,.8)';ctx.lineWidth=1;ctx.strokeRect(left+.5,top+.5,width-1,height-1);
     ctx.fillStyle=thermalGameplayCss(entity.temperature,1);ctx.fillText(label,cx,top+height/2);ctx.restore();
@@ -151,6 +198,24 @@ export class EntityRenderer {
   }
 
   rackOrientation(ctx,e,tile){
+    const x=e.x*tile,y=e.y*tile;
+    const intake=e.airIntakeDirection||{x:0,y:-1},exhaust=e.airExhaustDirection||{x:0,y:1};
+    const key=tile+':'+intake.x+','+intake.y+':'+exhaust.x+','+exhaust.y;
+    let image=this.rackOrientationCanvases.get(key);
+    if(image){ctx.drawImage(image,x,y,tile,tile);return;}
+    const Canvas=globalThis.OffscreenCanvas;
+    let canvas=typeof Canvas==='function'?new Canvas(tile,tile):null;
+    if(!canvas&&typeof document!=='undefined'){canvas=document.createElement('canvas');canvas.width=tile;canvas.height=tile;}
+    const overlay=canvas?.getContext?.('2d');
+    if(overlay){
+      overlay.imageSmoothingEnabled=false;
+      this.drawRackOrientation(overlay,{x:0,y:0,airIntakeDirection:intake,airExhaustDirection:exhaust},tile);
+      this.rackOrientationCanvases.set(key,canvas);ctx.drawImage(canvas,x,y,tile,tile);return;
+    }
+    this.drawRackOrientation(ctx,e,tile);
+  }
+
+  drawRackOrientation(ctx,e,tile){
     const x=e.x*tile,y=e.y*tile;
     const arrow=(d,color)=>{
       d=d||{x:0,y:0};const cx=x+tile/2,cy=y+tile/2,ex=cx+d.x*tile*.48,ey=cy+d.y*tile*.48;

@@ -29,7 +29,12 @@ export class VentCoverageCache {
 
   build(vent,radius){
     const world=this.world;
-    if(!world.inBounds(vent.x,vent.y)||!world.isAir(vent.x,vent.y))return {cells:[],rackCandidates:[]};
+    const returnAirStencil=[];
+    if(world.inBounds(vent.x,vent.y))for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+      const x=vent.x+dx,y=vent.y+dy;if(!world.inBounds(x,y)||!world.isAir(x,y))continue;
+      returnAirStencil.push({index:world.index(x,y),weight:1/(1+Math.hypot(dx,dy))});
+    }
+    if(!world.inBounds(vent.x,vent.y)||!world.isAir(vent.x,vent.y))return {cells:[],rackCandidates:[],returnAirStencil};
     const direction=vent.direction||{x:0,y:1},queue=[{x:vent.x,y:vent.y,distance:0}],seen=new Set([world.index(vent.x,vent.y)]),cells=[];
     for(let head=0;head<queue.length;head++){
       const cell=queue[head],dx=cell.x-vent.x,dy=cell.y-vent.y,forward=dx*direction.x+dy*direction.y;
@@ -56,6 +61,6 @@ export class VentCoverageCache {
       if(forward<1||forward>radius||lateral>1)continue;
       candidates.set(rack,{rack,rackId:rack.id,inletIndex:cell.index,x:cell.x,y:cell.y,distance:forward+lateral*.35});
     }
-    return {cells,rackCandidates:[...candidates.values()]};
+    return {cells,rackCandidates:[...candidates.values()],returnAirStencil};
   }
 }

@@ -15,12 +15,15 @@ export class SpriteManager {
     if(this.failed.has(definition.id))return Promise.resolve(false);
     return new Promise(resolve=>{
       const image=new this.ImageClass();let settled=false;
-      const finish=ok=>{
+      const finish=async ok=>{
         if(settled)return;settled=true;
         const dimensionsValid=Number(image.naturalWidth||image.width)>=definition.frameWidth*definition.frames&&
           Number(image.naturalHeight||image.height)>=definition.frameHeight*(definition.rows||1);
-        if(ok&&dimensionsValid)this.images.set(definition.id,image);
-        else{this.failed.add(definition.id);ok=false;}
+        if(ok&&dimensionsValid){
+          let drawable=image;
+          if(typeof globalThis.createImageBitmap==='function')try{drawable=await globalThis.createImageBitmap(image);}catch{}
+          this.images.set(definition.id,drawable);
+        }else{this.failed.add(definition.id);ok=false;}
         resolve(ok);
       };
       image.onload=()=>finish(true);image.onerror=()=>finish(false);image.src=definition.path;

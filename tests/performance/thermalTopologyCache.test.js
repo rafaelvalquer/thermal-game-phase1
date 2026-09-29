@@ -6,8 +6,9 @@ import { World } from '../../src/world/World.js';
 
 test('thermal conductance edges rebuild only when material topology changes',()=>{
   const world=new World(8,5),cache=new ThermalTopologyCache(world);
-  cache.ensureCurrent();const edges=cache.edges;
-  assert.ok(edges.length>0);cache.ensureCurrent();assert.equal(cache.rebuildCount,1);assert.equal(cache.edges,edges);
+  cache.ensureCurrent();const edgeA=cache.edgeA;
+  assert.ok(cache.edgeCount>0);assert.ok(edgeA instanceof Int32Array);assert.ok(cache.edgeB instanceof Int32Array);assert.ok(cache.conductance instanceof Float64Array);assert.ok(cache.equalizationScale instanceof Float64Array);
+  cache.ensureCurrent();assert.equal(cache.rebuildCount,1);assert.equal(cache.edgeA,edgeA);
   world.setTemperature(2,2,90);cache.ensureCurrent();assert.equal(cache.rebuildCount,1);
   world.setMaterial(2,2,'concrete');cache.ensureCurrent();assert.equal(cache.rebuildCount,2);
 });

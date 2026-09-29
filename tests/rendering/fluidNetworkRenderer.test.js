@@ -21,8 +21,18 @@ function closedPair(world,x,y,networkId,temperature){
   return {a,b};
 }
 
+function indexFluidNetworks(world){
+  const entities=world.entities.filter(entity=>entity.type==='pipe'),byPosition=new Map(entities.map(entity=>[world.index(entity.x,entity.y),entity])),seen=new Set(),networks=[];
+  for(const start of entities){if(seen.has(start.id))continue;const members=[],stack=[start];seen.add(start.id);
+    while(stack.length){const entity=stack.pop();members.push(entity);for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const neighbor=byPosition.get(world.index(entity.x+dx,entity.y+dy));if(neighbor&&!seen.has(neighbor.id)){seen.add(neighbor.id);stack.push(neighbor);}}}
+    const neighbors=new Map(members.map(entity=>[entity.id,[[1,0],[-1,0],[0,1],[0,-1]].map(([dx,dy])=>byPosition.get(world.index(entity.x+dx,entity.y+dy))).filter(Boolean)]));
+    networks.push({entities:members,neighbors});
+  }
+  world.fluidNetworks=networks;
+}
+
 test('fluid view animates temperature-colored markers in the real pump direction',()=>{
-  const world=new World(8,5),cold=closedPair(world,1,1,'loop-a',15),hot=closedPair(world,1,3,'loop-b',70),renderer=Object.create(Renderer.prototype);
+  const world=new World(8,5),cold=closedPair(world,1,1,'loop-a',15),hot=closedPair(world,1,3,'loop-b',70),renderer=Object.create(Renderer.prototype);indexFluidNetworks(world);
   renderer.tile=20;renderer.camera={zoom:1};
   const first=recordingContext(),later=recordingContext();
   renderer.drawFluidNetwork(first.ctx,world,.1,null,1);renderer.drawFluidNetwork(later.ctx,world,.55,null,1);
@@ -41,7 +51,7 @@ test('fluid view animates every directed branch and does not mark a closed T jun
   const world=new World(6,6),center=world.addEntity(new Pipe(2,2)),east=world.addEntity(new Pipe(3,2)),north=world.addEntity(new Pipe(2,1)),west=world.addEntity(new Pipe(1,2));
   for(const [x,y] of [[3,1],[3,3],[3,4],[2,4],[1,4],[1,3],[1,1]])world.addEntity(new Pipe(x,y));
   const links=[{from:center,to:east,flowRate:.6},{from:center,to:north,flowRate:.4},{from:west,to:center,flowRate:1}];
-  for(const entity of [center,east,north,west]){entity.networkId='closed-tee';entity.networkStatus='CLOSED';entity.circuitClosed=true;entity.flowRate=1;entity.flowLinks=links.filter(link=>link.from===entity||link.to===entity);}
+  for(const entity of [center,east,north,west]){entity.networkId='closed-tee';entity.networkStatus='CLOSED';entity.circuitClosed=true;entity.flowRate=1;entity.flowLinks=links.filter(link=>link.from===entity||link.to===entity);}indexFluidNetworks(world);
   const renderer=Object.create(Renderer.prototype);renderer.tile=20;renderer.camera={zoom:1};
   const result=recordingContext();renderer.drawFluidNetwork(result.ctx,world,.2,null,1);
   assert.ok(result.events.translations.length>=6,'particles animate along all three flowing connections');
@@ -51,7 +61,7 @@ test('fluid view animates every directed branch and does not mark a closed T jun
 });
 
 test('selecting a hydraulic device attenuates other loops and open circuits show fault styling',()=>{
-  const world=new World(8,5),first=closedPair(world,1,1,'loop-a',20),second=closedPair(world,1,3,'loop-b',25),renderer=Object.create(Renderer.prototype);
+  const world=new World(8,5),first=closedPair(world,1,1,'loop-a',20),second=closedPair(world,1,3,'loop-b',25),renderer=Object.create(Renderer.prototype);indexFluidNetworks(world);
   renderer.tile=20;renderer.camera={zoom:1};renderer.selectedEntity=first.a;
   let result=recordingContext();renderer.drawFluidNetwork(result.ctx,world,.2,first.a,1);
   assert.ok(result.events.alphas.includes(.14),'unrelated loop is visually dimmed');
@@ -60,4 +70,18 @@ test('selecting a hydraulic device attenuates other loops and open circuits show
   assert.ok(result.events.strokes.some(event=>event.style==='rgba(251,113,133,.88)'), 'invalid connections are red');
   assert.ok(result.events.fills.some(event=>event.style==='#7f1d1d'), 'open ends receive an alert marker');
   assert.ok(second.a.networkId==='loop-b');
+});
+
+test('fluid renderer walks cached topology edges linearly for a 200-element network',()=>{
+  const world=new World(202,3),entities=[];
+  for(let x=0;x<200;x++){const entity=world.addEntity(new Pipe(x,1));entity.networkId='long';entity.networkStatus='CLOSED';entity.circuitClosed=true;entities.push(entity);}
+  let neighborReads=0;const neighbors=new Map();
+  for(let i=0;i<entities.length;i++)neighbors.set(entities[i].id,i===0?[entities[1]]:i===entities.length-1?[entities[i-1]]:[entities[i-1],entities[i+1]]);
+  const countedNeighbors={get(id){neighborReads++;return neighbors.get(id);}};
+  const edges=entities.slice(0,-1).map((a,index)=>({a,b:entities[index+1],from:a,to:entities[index+1],flowRate:0}));
+  world.fluidNetworks=[{entities,neighbors:countedNeighbors,edges,links:edges,bounds:{minX:0,minY:1,maxX:199,maxY:1}}];
+  const renderer=Object.create(Renderer.prototype),measured={};renderer.tile=10;renderer.camera={zoom:1};renderer.monitor={set:(key,value)=>{measured[key]=value;}};
+  renderer.drawFluidNetwork(recordingContext().ctx,world,0,null,1);
+  assert.equal(measured.renderedFluidLinks,199);
+  assert.ok(neighborReads<=200,`expected one diagnostics lookup per entity, got ${neighborReads}`);
 });

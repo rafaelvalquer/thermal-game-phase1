@@ -152,6 +152,21 @@ test('sprite manager rejects a sheet that cannot contain all declared frames',as
   assert.equal(manager.get('pump'),null);
 });
 
+test('sprite manager rasterizes vector sheets once for fast repeated Canvas draws',async()=>{
+  class SheetImage{naturalWidth=384;naturalHeight=128;set src(_value){queueMicrotask(()=>this.onload?.());}}
+  const previous=globalThis.createImageBitmap,bitmap={width:384,height:128},calls=[];
+  globalThis.createImageBitmap=async image=>{assert.ok(image instanceof SheetImage);calls.push(image);return bitmap;};
+  try{
+    const manager=new SpriteManager({definitions:{pump:SPRITES.pump},ImageClass:SheetImage});
+    assert.deepEqual(await manager.loadAll(),{loaded:1,failed:0});
+    assert.equal(calls.length,1);assert.equal(manager.get('pump'),bitmap);
+    const draws=[],ctx={drawImage(...args){draws.push(args);}};
+    manager.draw(ctx,'pump',2,1,2,16,16);
+    manager.draw(ctx,'pump',3,2,3,16,16);
+    assert.equal(draws.length,2);assert.ok(draws.every(draw=>draw[0]===bitmap));
+  }finally{if(previous===undefined)delete globalThis.createImageBitmap;else globalThis.createImageBitmap=previous;}
+});
+
 test('equipment renderer layers connection linework, crisp sprite, ports, and state effects',()=>{
   const order=[];
   const renderer=new EquipmentSpriteRenderer({

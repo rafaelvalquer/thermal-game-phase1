@@ -2,13 +2,14 @@ import { Technician } from '../entities/Technician.js';
 import { NavigationGrid } from './staff/NavigationGrid.js';
 import { TechnicianPathfinder } from './staff/TechnicianPathfinder.js';
 import { TechnicianDispatcher } from './staff/TechnicianDispatcher.js';
+import { PatrolGraph } from './staff/PatrolGraph.js';
 
 const DIRECTIONS=[[1,0],[0,1],[-1,0],[0,-1]];
 export const TECHNICIAN_HIRE_COST=2000;
 export const TECHNICIAN_DAILY_WAGE=250;
 
 export class TechnicianSystem {
-  constructor(world,build){this.world=world;this.build=build;this.scanTimer=0;this.payrollDay=0;this.monitor=null;this.navigation=new NavigationGrid(world);this.pathfinder=new TechnicianPathfinder(world,this.navigation);this.dispatcher=new TechnicianDispatcher(this);}
+  constructor(world,build){this.world=world;this.build=build;this.scanTimer=0;this.payrollDay=0;this.monitor=null;this.navigation=new NavigationGrid(world);this.pathfinder=new TechnicianPathfinder(world,this.navigation);this.patrolGraph=new PatrolGraph(world,this.navigation);this.dispatcher=new TechnicianDispatcher(this);}
   set monitor(value){this._monitor=value;if(this.pathfinder)this.pathfinder.monitor=value;}
   get monitor(){return this._monitor||null;}
   get workers(){return this.world.entitiesByType('technician');}
@@ -42,14 +43,14 @@ export class TechnicianSystem {
       if(worker.action==='working'){
         worker.boostRemaining=Math.max(0,(worker.boostRemaining||0)-dt);
         worker.workProgress=Math.max(0,Math.min(1,1-worker.boostRemaining/8));
-        const rack=this.world.entities.find(e=>e.id===worker.targetRackId);
+        const rack=this.world.getEntityById(worker.targetRackId);
         if(rack)rack.staffBoostRemaining=worker.boostRemaining;
         if(worker.boostRemaining<=0){worker.workProgress=1;worker.action='cooldown';worker.cooldownRemaining=20;worker.targetRackId=null;worker.path=[];continue;}
         else{if(rack)this.faceRack(worker,rack);continue;}
       }
       worker.cooldownRemaining=Math.max(0,(worker.cooldownRemaining||0)-dt);
       if(worker.action==='moving'&&worker.targetRackId){
-        const rack=this.world.entities.find(e=>e.id===worker.targetRackId);
+        const rack=this.world.getEntityById(worker.targetRackId);
         if(!rack){worker.targetRackId=null;worker.action='patrolling';worker.path=[];}
         else if(worker.x===worker.goalX&&worker.y===worker.goalY){
           this.faceRack(worker,rack);
@@ -79,18 +80,12 @@ export class TechnicianSystem {
     return this.pathfinder.findPath(sx,sy,gx,gy,worker);
   }
   choosePatrol(worker){
-    const reachable=new Set(this.reachableCells(worker).map(point=>point.y*this.world.width+point.x)),targets=new Map();
-    for(const rack of this.world.entitiesByType('serverRack'))for(const [dx,dy] of DIRECTIONS){
-      const x=rack.x+dx,y=rack.y+dy,key=y*this.world.width+x;
-      if(reachable.has(key)&&this.walkable(x,y,worker))targets.set(key,{x,y});
-    }
-    const patrolPoints=[...targets.values()].sort((a,b)=>a.y-b.y||a.x-b.x);
+    if(this.patrolGraph.ensureCurrent())this.monitor?.count?.('patrolGraphRebuildCount');const patrolPoints=this.patrolGraph.pointsAt(worker.x,worker.y);
     if(!patrolPoints.length){worker.path=[];worker.pathIndex=0;worker.moveProgress=0;worker.goalX=worker.x;worker.goalY=worker.y;worker.action='patrolling';return;}
     for(let attempt=0;attempt<patrolPoints.length;attempt++){
-      const index=(worker.patrolIndex||0)%patrolPoints.length;worker.patrolIndex=(index+1)%patrolPoints.length;
-      const goal=patrolPoints[index];if(goal.x===worker.x&&goal.y===worker.y)continue;
+      const index=((worker.patrolIndex||0)+attempt)%patrolPoints.length,goal=patrolPoints[index];if(goal.x===worker.x&&goal.y===worker.y||!this.walkable(goal.x,goal.y,worker))continue;
       const path=this.findPath(worker.x,worker.y,goal.x,goal.y);
-      if(path?.length){worker.path=path;worker.pathIndex=0;worker.goalX=goal.x;worker.goalY=goal.y;worker.action='patrolling';return;}
+      if(path?.length){worker.patrolIndex=(index+1)%patrolPoints.length;worker.path=path;worker.pathIndex=0;worker.goalX=goal.x;worker.goalY=goal.y;worker.action='patrolling';return;}
     }
     worker.path=[];worker.pathIndex=0;worker.goalX=worker.x;worker.goalY=worker.y;worker.action='patrolling';
   }

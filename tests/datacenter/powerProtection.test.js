@@ -45,13 +45,13 @@ test('electrical thresholds include exactly 90, 100 and 110 percent and five phy
 test('130 kW cuts the largest rack before heat and billing, without automatically restoring it',()=>{
   const {world,dc,sim}=fixture();
   const largest=rack(world,60,2),other=rack(world,40,4);rack(world,30,6);
-  sim.update(1/60);
+  sim.step(1/60);
   assert.equal(largest.powerBlocked,true);assert.equal(largest.enabled,true);
   assert.equal(other.powerBlocked,false);assert.equal(sim.metrics.powerDraw,70000);
   assert.equal(largest.heatGenerationPower,0);assert.equal(largest.currentPowerKW,0);
   assert.equal(largest.heatOutputKW,0);assert.equal(largest.temperature,25);
   assert.equal(sim.metrics.powerEnergy,70000*6);assert.equal(dc.powerGrid.demandKW,130);
-  sim.update(1/60);assert.equal(largest.powerBlocked,true);
+  sim.step(1/60);assert.equal(largest.powerBlocked,true);
   assert.equal(dc.rearmPower().restored,0);
   assert.equal(dc.upgradePower(250).ok,true);assert.equal(largest.powerBlocked,true);
   assert.equal(dc.rearmPower().restored,1);assert.equal(largest.power,60000);
@@ -71,9 +71,9 @@ test('pause and speed affect protection without using the accelerated calendar',
   const {world,dc,sim}=fixture();const e=rack(world,105);
   sim.update(.1);assert.equal(dc.powerGrid.overloadSeconds,.1);
   sim.paused=true;sim.update(60);assert.equal(dc.powerGrid.overloadSeconds,.1);
-  sim.paused=false;sim.setSpeed(10);sim.update(.48);
+  sim.paused=false;sim.setSpeed(8);for(let frame=0;frame<36;frame++)sim.update(1/60);
   assert.ok(Math.abs(dc.powerGrid.overloadSeconds-4.9)<1e-9);assert.equal(e.powerBlocked,false);
-  sim.update(.011);assert.equal(e.powerBlocked,true);
+  sim.update(1/60);assert.equal(e.powerBlocked,true);
 });
 
 test('utility power contributes to demand and a general breaker blocks new equipment',()=>{
@@ -82,9 +82,9 @@ test('utility power contributes to demand and a general breaker blocks new equip
   const utility=world.addUtility(new Duct(5,4));utility.power=800;
   const off=world.addEntity(new Fan(6,6));off.enabled=false;
   const e=rack(world,10);
-  sim.update(1/60);assert.equal(dc.powerGrid.breakerOpen,true);assert.equal(sim.metrics.powerDraw,0);
+  sim.step(1/60);assert.equal(dc.powerGrid.breakerOpen,true);assert.equal(sim.metrics.powerDraw,0);
   assert.equal(pump.powerBlocked,true);assert.equal(e.powerBlocked,true);
-  const added=world.addEntity(new Fan(7,7));sim.update(1/60);
+  const added=world.addEntity(new Fan(7,7));sim.step(1/60);
   assert.equal(added.powerBlocked,true);assert.equal(sim.metrics.powerDraw,0);
   assert.equal(dc.rearmPower().ok,false);
   pump.power=50000;
@@ -92,7 +92,7 @@ test('utility power contributes to demand and a general breaker blocks new equip
   assert.equal(dc.rearmPower().ok,true);assert.equal(off.enabled,false);
   assert.equal(addedWhilePaused.powerBlocked,true);
   assert.equal(pump.powerBlocked,false);assert.equal(added.powerBlocked,false);
-  sim.update(1/60);assert.equal(sim.metrics.powerDraw,61100);
+  sim.step(1/60);assert.equal(sim.metrics.powerDraw,61100);
 });
 
 test('cool but disconnected racks accrue downtime only for their own contract',()=>{
@@ -102,7 +102,7 @@ test('cool but disconnected racks accrue downtime only for their own contract',(
   const a=rack(world,80,2),b=rack(world,50,5);
   Object.assign(a,{contractId:'a',maxPowerKW:80,loadProfile:'banking'});
   Object.assign(b,{contractId:'b',maxPowerKW:50,loadProfile:'banking'});
-  dc.clock.seconds=12*3600;sim.update(1/60);
+  dc.clock.seconds=12*3600;sim.step(1/60);
   assert.equal(a.powerBlocked,true);assert.equal(b.powerBlocked,false);
   assert.equal(dc.state.contracts[0].downtimeSeconds,6);assert.equal(dc.state.contracts[1].uptimeSeconds,6);
   assert.equal(a.uptime,0);assert.equal(b.uptime,100);
@@ -192,17 +192,17 @@ test('tolerated overload does not mark all contracts as SLA violations',()=>{
   const {world,dc,sim}=fixture();
   dc.state.contracts=[{id:'a',status:'active',maxInletTemperature:30,availability:99.9,activeSeconds:0,uptimeSeconds:0,downtimeSeconds:0}];
   Object.assign(rack(world,105),{contractId:'a',maxPowerKW:105,loadProfile:'banking'});
-  dc.clock.seconds=12*3600;sim.update(1/60);
+  dc.clock.seconds=12*3600;sim.step(1/60);
   assert.equal(dc.state.contracts[0].dailyViolation,undefined);assert.equal(dc.state.contracts[0].downtimeSeconds,0);
 });
 
 test('saves restore blocked racks, breaker state and overload elapsed time',()=>{
-  const first=fixture();rack(first.world,130);first.sim.update(1/60);first.dc.persist();
-  const restored=fixture(first.storage);restored.sim.update(1/60);
+  const first=fixture();rack(first.world,130);first.sim.step(1/60);first.dc.persist();
+  const restored=fixture(first.storage);restored.sim.step(1/60);
   assert.equal(restored.world.entitiesByType('serverRack')[0].powerBlocked,true);
   assert.equal(restored.sim.metrics.powerDraw,0);assert.equal(restored.dc.powerGrid.demandKW,130);
   restored.dc.powerGrid.breakerOpen=true;restored.dc.persist();
-  const general=fixture(first.storage);general.sim.update(1/60);assert.equal(general.dc.powerGrid.breakerOpen,true);
+  const general=fixture(first.storage);general.sim.step(1/60);assert.equal(general.dc.powerGrid.breakerOpen,true);
   const timer=fixture();rack(timer.world,105);timer.sim.update(.1);timer.dc.persist();
   const timed=fixture(timer.storage);assert.equal(timed.dc.powerGrid.overloadSeconds,.1);
   timed.sim.update(.1);assert.equal(timed.dc.powerGrid.overloadSeconds,.2);
@@ -214,7 +214,7 @@ test('legacy snapshots without protection fields are checked before generating h
   delete snapshot.state.powerProtection;
   for(const entity of snapshot.world.entities){delete entity.properties.powerBlocked;delete entity.properties.requestedPower;}
   first.storage.set(key,JSON.stringify(snapshot));
-  const restored=fixture(first.storage);restored.sim.update(1/60);
+  const restored=fixture(first.storage);restored.sim.step(1/60);
   assert.equal(restored.sim.metrics.powerDraw,0);assert.equal(restored.world.entities[0].heatGenerationPower,0);
 });
 
@@ -226,16 +226,16 @@ test('cooling demand is forecast without energy effects and preserved during sel
   const before=Array.from(world.energy);dc.preparePowerDemand(1/60);
   assert.deepEqual(Array.from(world.energy),before);assert.ok(unit.requestedPower>0);
   const demand=unit.requestedPower;
-  sim.update(1/60);assert.equal(unit.powerBlocked,false);assert.ok(unit.power>0);
+  sim.step(1/60);assert.equal(unit.powerBlocked,false);assert.ok(unit.power>0);
   assert.ok(unit.power<=demand+1e-6);assert.ok(sim.metrics.powerDraw<=100000);
   // Infrastructure alone exceeding capacity trips before cooling or fan forces.
-  dc.powerGrid.capacityKW=.001;sim.update(1/60);
+  dc.powerGrid.capacityKW=.001;sim.step(1/60);
   assert.equal(dc.powerGrid.breakerOpen,true);assert.equal(unit.power,0);
   assert.equal(unit.currentAirFlow,0);assert.equal(unit.currentCooling,0);assert.equal(sim.metrics.coolingDelivered,0);
 });
 
 test('dashboard exposes persistent cuts and binds manual rearm',()=>{
-  const {world,dc,sim}=fixture();rack(world,130);sim.update(1/60);
+  const {world,dc,sim}=fixture();rack(world,130);sim.step(1/60);
   let click;
   const root={innerHTML:'',querySelectorAll:()=>[],querySelector:selector=>selector==='[data-rearm]'?{addEventListener:(_,fn)=>{click=fn;}}:null};
   const messages=[],panel=new DataCenterDashboard(root,dc,message=>messages.push(message));
@@ -255,6 +255,6 @@ test('dashboard shows the physical countdown while overload is still tolerated',
 
 test('campaign simulations retain the previous behavior even above their power limit',()=>{
   const world=new World(6,6),level={id:'campaign-power',objectives:[],failures:[],events:[],missionDuration:Infinity,objectiveStartAt:0,powerLimit:100000,thermalSystems:{simpleCooling:false,waterCooling:false}};
-  world.thermalSystems=level.thermalSystems;const e=rack(world,130),sim=new Simulation(world,level);sim.initialize();sim.update(1/60);
+  world.thermalSystems=level.thermalSystems;const e=rack(world,130),sim=new Simulation(world,level);sim.initialize();sim.step(1/60);
   assert.equal(e.powerBlocked,false);assert.equal(sim.metrics.powerDraw,130000);assert.ok(e.heatGenerationPower>0);
 });

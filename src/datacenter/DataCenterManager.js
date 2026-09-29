@@ -296,16 +296,30 @@ export class DataCenterManager {
   markSaveDirty(debounceSeconds=2){
     this.saveDirty=true;this.saveDebounceRemaining=Math.max(0,Number(debounceSeconds)||0);
   }
-  persist(){
+  persist({syncBackup=false}={}){
     if(!this.build)return false;
     this.monitor?.begin('saveMs');
     this.state.cash=this.build.budget;this.state.clockSeconds=this.clock.seconds;this.state.day=this.clock.day;
     this.state.powerCapacityKW=this.powerGrid.capacityKW;
     this.state.powerProtection=this.powerGrid.snapshot();
     this.state.powerEnergyTotal=this.simulation?.metrics.powerEnergy||0;
-    try{const saved=this.saveSystem.save(this.saveSystem.capture(this.world,this.state,this.build));this.monitor?.set?.('saveBytes',this.saveSystem.lastSavedBytes||0);if(saved){this.saveTimer=0;this.saveDirty=false;this.saveDebounceRemaining=0;}return saved;}finally{this.monitor?.end('saveMs');}
+    this.state.saveRevision=(Number(this.state.saveRevision)||0)+1;
+    let saved=false;
+    try{
+      const snapshot=this.saveSystem.capture(this.world,this.state,this.build);
+      const result=syncBackup?this.saveSystem.save(snapshot):(this.saveSystem.saveAsync?.(snapshot)??this.saveSystem.save(snapshot));
+      if(result&&typeof result.then==='function'){
+        saved=true;this.lastSavePromise=result;
+        result.then(ok=>{if(!ok)this.lastSaveError=new Error('Não foi possível gravar o salvamento.');}).catch(error=>{this.lastSaveError=error;});
+      }else saved=Boolean(result);
+      if(saved){this.saveTimer=0;this.saveDirty=false;this.saveDebounceRemaining=0;}return saved;
+    }
+    finally{const duration=this.monitor?.end('saveMs')||0,bytes=this.saveSystem.lastSavedBytes||0,phases=this.saveSystem.lastCapturePhases||{};this.monitor?.set?.('saveCaptureMs',this.saveSystem.lastCaptureMs||0);this.monitor?.set?.('saveStateMs',phases.state||0);this.monitor?.set?.('saveTilesMs',phases.tiles||0);this.monitor?.set?.('saveEntitiesMs',phases.entities||0);this.monitor?.set?.('saveUtilitiesMs',phases.utilities||0);this.monitor?.set?.('saveBuildMs',phases.build||0);this.monitor?.set?.('saveSerializeMs',this.saveSystem.lastSerializeMs||0);this.monitor?.set?.('saveStorageMs',this.saveSystem.lastStorageMs||0);this.monitor?.set?.('saveBytes',bytes);this.monitor?.set?.('saveBytesEstimated',Boolean(this.saveSystem.lastSavedBytesEstimated));this.monitor?.recordSave?.(duration,bytes);}
   }
-  clearSave(){return this.saveSystem.clear();}
+  clearSave(){
+    if(!this.saveSystem.indexedDB?.open)return this.saveSystem.clear();
+    const result=this.saveSystem.clearAsync?.()??this.saveSystem.clear();this.saveSystem.clear();return result;
+  }
   load(){
     const snapshot=this.saveSystem.load();if(!snapshot)return false;
     this.snapshot=snapshot;this.saveSystem.restoreWorld(this.world,snapshot);

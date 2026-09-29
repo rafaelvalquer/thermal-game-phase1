@@ -1,6 +1,6 @@
 import { Entity } from './Entity.js';
 
-export const SOLAR_PANEL_PEAK_POWER_W=2000;
+export const SOLAR_PANEL_PEAK_POWER_W=10000;
 export const SOLAR_PANEL_SUNRISE_HOUR=6;
 export const SOLAR_PANEL_SUNSET_HOUR=18;
 

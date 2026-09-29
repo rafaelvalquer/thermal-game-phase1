@@ -183,8 +183,8 @@ test('sandbox runs one game day in four real minutes and 24x advances it in ten 
   world.datacenter={update:dt=>steps.push(dt),afterThermalStep:dt=>steps.push(dt)};
   const level={id:'clock-test',thermalSystems:world.thermalSystems,objectives:[],failures:[],events:[],missionDuration:Infinity,objectiveStartAt:0,powerLimit:1e9};
   const simulation=new Simulation(world,level);simulation.initialize();
-  simulation.update(1/60);assert.equal(steps[0],6);assert.equal(steps[1],6);
-  simulation.setSpeed(24);simulation.update(1/60);assert.equal(steps[2],144);
+  simulation.update(.05);assert.equal(steps[0],18);assert.equal(steps[1],18);
+  simulation.setSpeed(24);simulation.update(1/60);assert.equal(steps.slice(2).filter((_value,index)=>index%2===0).reduce((sum,value)=>sum+value,0),144);
 });
 
 test('accepted contracts create client racks whose variable load becomes electrical draw and heat',()=>{

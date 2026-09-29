@@ -22,6 +22,7 @@ export class AirGrid {
     this.hasExteriorCells=false;
     this.pressureLeft=new Int32Array(this.size);this.pressureRight=new Int32Array(this.size);this.pressureUp=new Int32Array(this.size);this.pressureDown=new Int32Array(this.size);this.pressureNeighborCount=new Uint8Array(this.size);
     this.pressureCells=new Int32Array(this.size);this.pressureCellCount=0;
+    this.interiorPressureCells=new Int32Array(this.size);this.interiorPressureCellCount=0;
     this.wallProximity=new Uint8Array(this.size);
     this.wallConfinement=new Uint8Array(this.size);
     this.topologyVersion=-1;
@@ -94,18 +95,21 @@ export class AirGrid {
   }
 
   buildPressureStencil(){
-    const {width,height,solid,pressureLeft:left,pressureRight:right,pressureUp:up,pressureDown:down,pressureNeighborCount:counts,pressureCells}=this;
+    const {width,height,solid,exteriorCells,pressureLeft:left,pressureRight:right,pressureUp:up,pressureDown:down,pressureNeighborCount:counts,pressureCells,interiorPressureCells}=this;
     const zero=this.size;left.fill(zero);right.fill(zero);up.fill(zero);down.fill(zero);counts.fill(0);
-    let pressureCellCount=0;
+    let pressureCellCount=0,interiorPressureCellCount=0;
     for(let y=0;y<height;y++)for(let x=0;x<width;x++){
-      const i=y*width+x;if(solid[i])continue;pressureCells[pressureCellCount++]=i;let count=0;
-      if(x===0)count++;else if(!solid[i-1]){left[i]=i-1;count++;}
-      if(x===width-1)count++;else if(!solid[i+1]){right[i]=i+1;count++;}
-      if(y===0)count++;else if(!solid[i-width]){up[i]=i-width;count++;}
-      if(y===height-1)count++;else if(!solid[i+width]){down[i]=i+width;count++;}
+      const i=y*width+x;if(solid[i])continue;pressureCells[pressureCellCount++]=i;
+      if(exteriorCells[i])continue;
+      interiorPressureCells[interiorPressureCellCount++]=i;let count=0;
+      if(x===0)count++;else if(!solid[i-1]){if(exteriorCells[i-1])count++;else{left[i]=i-1;count++;}}
+      if(x===width-1)count++;else if(!solid[i+1]){if(exteriorCells[i+1])count++;else{right[i]=i+1;count++;}}
+      if(y===0)count++;else if(!solid[i-width]){if(exteriorCells[i-width])count++;else{up[i]=i-width;count++;}}
+      if(y===height-1)count++;else if(!solid[i+width]){if(exteriorCells[i+width])count++;else{down[i]=i+width;count++;}}
       counts[i]=count;
     }
     this.pressureCellCount=pressureCellCount;
+    this.interiorPressureCellCount=interiorPressureCellCount;
   }
 
   cellVelocity(x,y){

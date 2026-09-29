@@ -5,16 +5,20 @@ import { EnergySystem } from './EnergySystem.js';
 import { MissionRuntime } from '../campaign/MissionRuntime.js';
 import { CoolingSystem } from './cooling/CoolingSystem.js';
 import { BatteryDispatchSystem } from './BatteryDispatchSystem.js';
+import { PhysicsScheduler } from './PhysicsScheduler.js';
+import { ThermalStatisticsSampler } from './thermal/ThermalStatisticsSampler.js';
 
 export class Simulation {
   constructor(world,level,{monitor=null}={}){
     this.monitor=monitor;
     this.world=world;this.level=level;this.elapsed=0;this.paused=false;this.speed=1;
+    this.physicsScheduler=new PhysicsScheduler();
     this.datacenter=world.datacenter||null;
     this.metrics={generatedHeat:0,externalEnergy:0,powerDraw:0,powerEnergy:0,solarGenerationW:0,energyBalance:0,maxTemp:25,maxAirTemp:25,maxMachineTemp:25,avgTemp:25,airTemperatureSum:0,airCellCount:0};
     this.metrics.maxTempEver=25;this.metrics.maxPowerEver=0;
     this.thermal=new ThermalSystem(world,this.metrics);
     this.thermal.monitor=monitor;
+    this.thermalStatistics=new ThermalStatisticsSampler(world,this.metrics,{monitor});
     this.airflow=new AirflowSystem(world,this.metrics);
     this.airflow.monitor=monitor;
     const systems=level.thermalSystems;
@@ -24,6 +28,7 @@ export class Simulation {
     this.cooling=this.simpleCooling?new CoolingSystem(world,this.airflow,this.metrics):null;
     if(this.cooling)this.cooling.monitor=monitor;if(this.fluid)this.fluid.monitor=monitor;
     this.energySystem=new EnergySystem(world,this.metrics);
+    this.energySystem.monitor=monitor;
     this.batteryDispatch=new BatteryDispatchSystem(world,this.metrics);this.batteryDispatch.monitor=monitor;world.batteryDispatch=this.batteryDispatch;
     this.mission=new MissionRuntime(world,level,this.metrics);
     this.technicians=world.technicianSystem||null;
@@ -37,13 +42,18 @@ export class Simulation {
   update(dt){
     if(this.paused||this.mission.state!=='running')return;
     this.monitor?.begin('simulationMs');
-    try{let remaining=dt*this.speed;
-      while(remaining>0&&!this.paused){
-        const untilMidnight=this.datacenter?.clock?(86400-this.datacenter.clock.daySeconds)/360:Infinity;
-        const step=Math.min(remaining,untilMidnight);
-        this.step(step);
-        remaining=Math.max(0,remaining-step);
-      }
+    try{
+      this.physicsScheduler.advance(dt,this.speed,{
+        untilBoundary:()=>this.datacenter?.clock?(86400-this.datacenter.clock.daySeconds)/360:Infinity,
+        canAdvance:()=>!this.paused&&this.mission.state==='running',
+        onStep:step=>this.step(step),
+      });
+      this.monitor?.count('physicsSubsteps',this.physicsScheduler.lastSubsteps);
+      this.monitor?.set('physicsSubstepsMax',this.physicsScheduler.maxSubstepsObserved);
+      this.monitor?.set('physicsStepSeconds',this.physicsScheduler.lastStepSeconds);
+      this.monitor?.set('physicsBacklogSeconds',this.physicsScheduler.backlogSeconds);
+      this.monitor?.count('physicsDroppedSeconds',this.physicsScheduler.droppedSeconds-(this.lastReportedPhysicsDroppedSeconds||0));
+      this.lastReportedPhysicsDroppedSeconds=this.physicsScheduler.droppedSeconds;
     }finally{this.monitor?.end('simulationMs');}
   }
 
@@ -65,6 +75,7 @@ export class Simulation {
     this.monitor?.begin('coolingMs');this.cooling?.exchangeRooms(dt);this.monitor?.end('coolingMs');
     this.monitor?.begin('fluidMs');this.fluid?.update(dt);this.monitor?.end('fluidMs');
     this.monitor?.begin('airflowMs');this.airflow.applyExhaust(dt);this.monitor?.end('airflowMs');
+    this.thermalStatistics.sample();
     if(!this.datacenter)this.batteryDispatch.dispatch(this.level.powerLimit,dt);
     this.energySystem.update(dt,{billingDt:calendarDt});
     this.metrics.externalRejectedPower=(this.metrics.externalEnergy-externalBefore)/dt;

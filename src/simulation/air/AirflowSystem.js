@@ -10,16 +10,18 @@ import { FanModel } from './FanModel.js';
 import { AirDiagnostics } from './AirDiagnostics.js';
 import { ExhaustCaptureSystem } from './ExhaustCaptureSystem.js';
 import { AIR } from './AirConstants.js';
+import { AirFaceTopologyCache } from './AirFaceTopologyCache.js';
 
 export class AirflowSystem {
   constructor(world,metrics){
     this.world=world;this.metrics=metrics;
     this.grid=new AirGrid(world);
+    this.faceTopology=new AirFaceTopologyCache(this.grid);
     this.boundaries=new AirBoundarySystem(this.grid);
-    this.velocity=new AirVelocitySolver(this.grid);
-    this.pressure=new AirPressureSolver(this.grid);
-    this.drag=new AirDragSystem(this.grid);
-    this.thermal=new AirThermalAdvection(this.grid,metrics);
+    this.velocity=new AirVelocitySolver(this.grid,this.faceTopology);
+    this.pressure=new AirPressureSolver(this.grid,{topology:this.faceTopology});
+    this.drag=new AirDragSystem(this.grid,this.faceTopology);
+    this.thermal=new AirThermalAdvection(this.grid,metrics,this.faceTopology);
     this.fans=new FanModel(this.grid);
     this.capture=new ExhaustCaptureSystem(this.grid);
     this.diagnostics=new AirDiagnostics(this.grid);
@@ -52,6 +54,9 @@ export class AirflowSystem {
 
     this.pressure.computeDivergence();
     this.monitor?.count('pressureSolveCount');this.monitor?.begin('pressureMs');this.pressure.solve(dt);this.monitor?.end('pressureMs');
+    this.monitor?.count('pressureIterationsUsed',this.pressure.iterationsUsed);
+    this.monitor?.set('pressureIterationsMax',this.pressure.iterationsUsed);
+    if(this.pressure.earlyExit)this.monitor?.count('pressureEarlyExitCount');
     this.pressure.project(dt);
     this.boundaries.enforce();
 
@@ -87,7 +92,7 @@ export class AirflowSystem {
     }
   }
 
-  advectHeat(dt){this.thermal.advect(dt);}
+  advectHeat(dt){this.thermal.advect(dt);this.monitor?.count('advectionSubstepsUsed',this.thermal.substepsUsed||0);this.monitor?.set('advectionSubstepsMax',this.thermal.substepsUsed||0);}
 
   applyExhaust(dt){
     if(dt<=0)return;

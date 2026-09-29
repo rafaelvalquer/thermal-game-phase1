@@ -5,12 +5,15 @@ import './staff.css';
 import { Game } from './game/Game.js';
 import { CampaignManager } from './campaign/CampaignManager.js';
 import { CampaignScreen } from './ui/CampaignScreen.js';
+import { createBrowserBenchmarkLevel } from './dev/BrowserPerformanceBenchmark.js';
+import { DataCenterSaveSystem } from './datacenter/DataCenterSaveSystem.js';
 
 const app=document.querySelector('#app');
 const campaign=new CampaignManager();
 
 const gameShell=(level)=>{
   const isDatacenter=Boolean(level.datacenterSandbox),speeds=isDatacenter?[1,2,4,8,24]:[1,2,4];
+  const benchmarkHud=level.performanceBenchmark?'<section class="benchmark-hud" aria-live="polite"><strong>BENCHMARK DE NAVEGADOR · '+level.performanceBenchmark+'</strong><pre id="benchmarkOutput">Amostrando Canvas e simulação…</pre><button id="benchmarkDownload" disabled>Baixar relatório JSON</button></section>':'';
   return [
   '<div class="shell">',
     '<header class="topbar">',
@@ -26,6 +29,7 @@ const gameShell=(level)=>{
     '</aside>',
     '<main class="viewport-wrap">',
       '<canvas id="game"></canvas>',
+      benchmarkHud,
       '<div class="sprite-loading" role="status">CARREGANDO EQUIPAMENTOS<span><i></i></span></div>',
       '<div class="view-switcher"><button class="active" data-mode="normal">◫ Normal</button><button data-mode="thermal">△ Térmico</button><button data-mode="airflow">〰 Airflow</button><button data-mode="cooling" class="hidden">❄ Climatização</button><button data-mode="pressure">◌ Pressão</button><button data-mode="fluid">≈ Fluido</button></div>',
       '<div id="airflowModes" class="airflow-submodes hidden"><button data-airflow-mode="vectors">Vetores</button><button class="active" data-airflow-mode="streamlines">Streamlines</button><button data-airflow-mode="particles">Partículas</button></div>',
@@ -45,17 +49,32 @@ const gameShell=(level)=>{
 ].join('');
 };
 
+let startSequence=0;
 function startLevel(level,{fresh=false}={}){
+  const sequence=++startSequence;
   if(fresh)window.__thermalLab?.datacenter?.clearSave();
   window.__thermalLab?.loop.stop();
   app.innerHTML=gameShell(level);
-  const game=new Game(document.querySelector('#game'),level,campaign);game.start().then(()=>{if(window.__thermalLab===game)document.querySelector('.sprite-loading')?.classList.add('loaded');});window.__thermalLab=game;
+  window.__thermalLab=null;
+  const initialize=async()=>{
+    let saveSystem=null;
+    if(level.datacenterSandbox){
+      saveSystem=level.performanceBenchmarkSave?new DataCenterSaveSystem({key:'thermal-lab-performance-benchmark-save-v1'}):new DataCenterSaveSystem();
+      if(fresh||level.performanceBenchmarkSave)await saveSystem.clearAsync();else await saveSystem.loadAsync();
+    }
+    if(sequence!==startSequence)return;
+    const game=new Game(document.querySelector('#game'),level,campaign,{saveSystem});
+    game.start().then(()=>{if(window.__thermalLab===game)document.querySelector('.sprite-loading')?.classList.add('loaded');});window.__thermalLab=game;
+  };
+  initialize().catch(error=>{if(sequence===startSequence){const toast=document.querySelector('#toast');if(toast){toast.textContent='Falha ao carregar salvamento: '+error.message;toast.classList.add('show');}}});
 }
 
 const screen=new CampaignScreen(app,campaign,startLevel);
-screen.render();
+const query=new URLSearchParams(location.search),benchmarkName=query.get('benchmark');
+if(benchmarkName)startLevel(createBrowserBenchmarkLevel(benchmarkName,{sandboxSave:query.get('save')==='1'}));
+else screen.render();
 window.__thermalCampaign=campaign;
 window.__thermalStartLevel=startLevel;
-window.__thermalShowCampaign=()=>{window.__thermalLab?.datacenter?.persist();window.__thermalLab?.loop.stop();window.__thermalLab=null;screen.render();};
-window.addEventListener('pagehide',()=>window.__thermalLab?.datacenter?.persist());
+window.__thermalShowCampaign=()=>{const game=window.__thermalLab;if(game?.level?.performanceBenchmarkSave)game.datacenter?.clearSave();else game?.datacenter?.persist({syncBackup:true});game?.loop.stop();window.__thermalLab=null;screen.render();};
+window.addEventListener('pagehide',()=>{const game=window.__thermalLab;if(game?.level?.performanceBenchmarkSave)game?.datacenter?.clearSave();else game?.datacenter?.persist({syncBackup:true});});
 window.__thermalShowBriefing=level=>{window.__thermalShowCampaign();screen.briefing.show(level);};

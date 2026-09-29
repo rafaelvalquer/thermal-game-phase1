@@ -1,8 +1,10 @@
 import { isPowered } from './PowerState.js';
-import { CARDINALS, keyOf, manhattan } from '../utils/GridUtils.js';
+import { CARDINALS, keyOf } from '../utils/GridUtils.js';
 import { clamp } from '../utils/MathUtils.js';
 import { WATER_CP } from '../utils/Constants.js';
 import { HydraulicSolver, MIN_FLOW } from './fluid/HydraulicSolver.js';
+import { FluidAirStencilCache } from './fluid/FluidAirStencilCache.js';
+import { ExchangerTargetCache } from './fluid/ExchangerTargetCache.js';
 
 const FLUID_TYPES=new Set(['pipe','pump','tank','radiator','exchanger']);
 
@@ -10,13 +12,14 @@ export class FluidSystem {
   constructor(world,metrics){
     this.world=world;
     this.metrics=metrics;
-    this.networks=[];this.lastTopologyVersion=-1;this.monitor=null;this.hydraulic=new HydraulicSolver();
+    this.networks=[];this.lastTopologyVersion=-1;this.monitor=null;this.hydraulic=new HydraulicSolver();this.airStencils=new FluidAirStencilCache(world);this.exchangerTargets=new ExchangerTargetCache(world);
+    world.fluidSystem=this;world.fluidNetworks=this.networks;
   }
   set monitor(value){this._monitor=value;if(this.hydraulic)this.hydraulic.monitor=value;}
   get monitor(){return this._monitor||null;}
 
   update(dt){
-    if(this.lastTopologyVersion!==this.world.fluidTopologyVersion){this.networks=this.buildNetworks();this.lastTopologyVersion=this.world.fluidTopologyVersion;this.monitor?.count('fluidRebuildCount');}
+    if(this.lastTopologyVersion!==this.world.fluidTopologyVersion){this.networks=this.buildNetworks();this.world.fluidNetworks=this.networks;this.lastTopologyVersion=this.world.fluidTopologyVersion;this.monitor?.count('fluidRebuildCount');}
     for(const network of this.networks)this.hydraulic.solveIfNeeded(network);
     this.exchangeMachines(dt);
     this.radiate(dt);
@@ -60,13 +63,17 @@ export class FluidSystem {
         resistance:0,
         pump:null,
         hydraulicSignature:null,
+        bounds:{minX:Infinity,minY:Infinity,maxX:-Infinity,maxY:-Infinity},
+        runtime:{indexById:new Map(),temperatures:new Float64Array(members.length),energyDelta:new Float64Array(members.length),incomingFlow:new Float64Array(members.length),incomingTemperatureFlow:new Float64Array(members.length)},
       };
 
-      for(const entity of members){
+      for(let memberIndex=0;memberIndex<members.length;memberIndex++){
+        const entity=members[memberIndex];network.runtime.indexById.set(entity.id,memberIndex);
+        network.bounds.minX=Math.min(network.bounds.minX,entity.x);network.bounds.minY=Math.min(network.bounds.minY,entity.y);network.bounds.maxX=Math.max(network.bounds.maxX,entity.x);network.bounds.maxY=Math.max(network.bounds.maxY,entity.y);
         const neighbors=[];
         for(const [dx,dy] of CARDINALS){
           const candidate=byPos.get(keyOf(entity.x+dx,entity.y+dy));
-          if(candidate&&members.includes(candidate))neighbors.push(candidate);
+          if(candidate)neighbors.push(candidate);
         }
         network.neighbors.set(entity.id,neighbors);
         this.resetEntityDiagnostics(entity,network.id);
@@ -100,30 +107,33 @@ export class FluidSystem {
   solveNetwork(network){return this.hydraulic.solveNetwork(network);}
 
   transport(network,dt){
+    this.monitor?.begin?.('fluidTransportMs');
+    try{return this.transportNetwork(network,dt);}finally{this.monitor?.end?.('fluidTransportMs');}
+  }
+
+  transportNetwork(network,dt){
     if(!network.closed||network.flowRate<=MIN_FLOW)return;
-    const temperatures=new Map(network.entities.map(entity=>[entity.id,entity.waterTemperature])),deltas=new Map(network.entities.map(entity=>[entity.id,0])),incoming=new Map(network.entities.map(entity=>[entity.id,{flow:0,temperatureFlow:0}]));
+    const runtime=network.runtime,{temperatures,energyDelta,incomingFlow,incomingTemperatureFlow,indexById}=runtime;
+    for(let i=0;i<network.entities.length;i++){temperatures[i]=network.entities[i].waterTemperature;energyDelta[i]=0;incomingFlow[i]=0;incomingTemperatureFlow[i]=0;}
     for(const link of network.links){
-      const movedMass=link.flowRate*dt,energy=movedMass*WATER_CP*temperatures.get(link.from.id);
-      deltas.set(link.from.id,deltas.get(link.from.id)-energy);deltas.set(link.to.id,deltas.get(link.to.id)+energy);
-      const input=incoming.get(link.to.id);input.flow+=link.flowRate;input.temperatureFlow+=link.flowRate*temperatures.get(link.from.id);
+      const from=indexById.get(link.from.id),to=indexById.get(link.to.id),flow=link.flowRate,energy=flow*dt*WATER_CP*temperatures[from];
+      energyDelta[from]-=energy;energyDelta[to]+=energy;incomingFlow[to]+=flow;incomingTemperatureFlow[to]+=flow*temperatures[from];
     }
-    for(const entity of network.entities){
-      const input=incoming.get(entity.id);if(input.flow>MIN_FLOW)entity.inletTemperature=input.temperatureFlow/input.flow;
-      entity.energy+=deltas.get(entity.id);entity.outletTemperature=entity.waterTemperature;
+    for(let i=0;i<network.entities.length;i++){
+      const entity=network.entities[i];if(incomingFlow[i]>MIN_FLOW)entity.inletTemperature=incomingTemperatureFlow[i]/incomingFlow[i];
+      entity.energy+=energyDelta[i];entity.outletTemperature=entity.waterTemperature;
     }
   }
 
   exchangeMachines(dt){
-    const machines=this.world.entities.filter(e=>e.isHeatMachine);
     for(const exchanger of this.world.entitiesByType('exchanger')){
       exchanger.thermalPower=0;
       exchanger.machineId=null;
       exchanger.airCoolingPower=0;
       if(dt<=0||!isPowered(exchanger)||!exchanger.circuitClosed||exchanger.flowRate<=MIN_FLOW)continue;
 
-      const machine=machines
-        .filter(m=>manhattan(m,exchanger)<=1)
-        .sort((a,b)=>b.temperature-a.temperature)[0];
+      let machine=null;
+      for(const candidate of this.exchangerTargets.adjacentMachines(exchanger))if(!machine||candidate.temperature>machine.temperature)machine=candidate;
       if(machine){
         exchanger.machineId=machine.id;
         const deltaT=machine.temperature-exchanger.waterTemperature;
@@ -146,20 +156,7 @@ export class FluidSystem {
   }
 
   nearbyExchangerAir(exchanger){
-    const world=this.world;
-    if(!world.isAir(exchanger.x,exchanger.y))return [];
-    const queue=[{x:exchanger.x,y:exchanger.y,distance:0}],seen=new Set([keyOf(exchanger.x,exchanger.y)]),cells=[];
-    for(let head=0;head<queue.length;head++){
-      const {x,y,distance}=queue[head];
-      cells.push({index:world.index(x,y),weight:1/(1+distance)});
-      if(distance>=2)continue;
-      for(const [dx,dy] of CARDINALS){
-        const nx=x+dx,ny=y+dy,key=keyOf(nx,ny);
-        if(seen.has(key)||!world.inBounds(nx,ny)||!world.isAir(nx,ny))continue;
-        seen.add(key);queue.push({x:nx,y:ny,distance:distance+1});
-      }
-    }
-    return cells;
+    return this.airStencils.exchangerCells(exchanger);
   }
 
   exchangeAir(exchanger,dt){
@@ -185,16 +182,7 @@ export class FluidSystem {
   }
 
   radiatorCells(radiator){
-    const cells=[];
-    let weightSum=0;
-    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
-      const x=radiator.x+dx,y=radiator.y+dy;
-      if(!this.world.inBounds(x,y)||!this.world.isAir(x,y))continue;
-      const weight=dx===0&&dy===0?4:(dx===0||dy===0?2:1);
-      cells.push({x,y,index:this.world.index(x,y),weight});
-      weightSum+=weight;
-    }
-    return {cells,weightSum};
+    return this.airStencils.radiatorStencil(radiator);
   }
 
   radiate(dt){

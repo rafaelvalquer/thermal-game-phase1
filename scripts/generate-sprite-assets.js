@@ -88,9 +88,18 @@ function artwork(type,frame,off,width=32,sheetRow=0){
     rect(9,16,14,8,P.ink);rect(10,17,12,6,P.shadow);rect(11,18,10,4,P.steel);rect(15,18,2,3,P.yellow);rect(14,20,4,1,P.copperLight);
     for(let i=0;i<4;i++){rect(8,25+i%2,3,2,P.mid);rect(21,25+i%2,3,2,P.mid);}led(24,5,frame);bolt(6,4);bolt(25,26);
   }else if(type==='solarPanel'){
-    panel(2,11,28,13);for(let x=5;x<30;x+=3)rect(x,13,1,9,P.cyan);for(let y=15;y<24;y+=4)rect(3,y,26,1,P.cyan);
-    rect(8,24,2,5,P.steel);rect(23,24,2,5,P.steel);rect(7,29,19,1,P.mid);
-    rect(24,2,4,4,P.yellow);rect(25,0,2,2,P.yellow);rect(25,7,2,2,P.yellow);rect(21,3,2,2,P.yellow);rect(29,3,2,2,P.yellow);
+    // Four photovoltaic columns carry a short reflection only while generating.
+    panel(2,6,28,18);rect(3,8,26,14,P.ink);
+    for(let row=0;row<2;row++)for(let col=0;col<4;col++){
+      const cx=5+col*6,cy=9+row*6,lit=!off&&col===frame;
+      rect(cx,cy,5,5,P.dark);rect(cx+1,cy+1,3,3,off?P.shadow:lit?P.cyan:P.water);
+      rect(cx+1,cy+1,3,1,off?P.steel:lit?P.shine:P.cyan);
+      dot(cx+1,cy+3,off?P.dark:lit?P.shine:P.mid);
+    }
+    rect(3,7,26,1,P.light);rect(4,22,24,1,P.mid);
+    rect(8,24,2,5,P.steel);rect(22,24,2,5,P.steel);rect(7,29,18,1,P.ink);rect(9,28,14,1,P.mid);
+    rect(15,24,2,4,off?P.mid:P.copperLight);rect(16,27,5,1,off?P.mid:P.copper);
+    rect(26,23,2,1,off?P.shadow:P.green);bolt(3,6);bolt(27,6);
   }else if(type.startsWith('cooling')){
     const compact=type==='coolingCompact',industrial=type==='coolingIndustrial';
     panel(2,5,width-4,23);ports();

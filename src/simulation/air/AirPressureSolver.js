@@ -1,9 +1,13 @@
 import { AIR } from './AirConstants.js';
+import { AirFaceTopologyCache } from './AirFaceTopologyCache.js';
 
 export class AirPressureSolver {
-  constructor(grid,{iterations=AIR.pressureIterations}={}){
+  constructor(grid,options={}){
     this.grid=grid;
-    this.iterations=iterations;
+    this.topology=options.topology||new AirFaceTopologyCache(grid);
+    this.iterations=options.iterations??AIR.pressureIterations;
+    this.adaptive=options.adaptive??!Object.hasOwn(options,'iterations');
+    this.iterationsUsed=0;this.earlyExit=false;
   }
 
   computeDivergence(){
@@ -19,23 +23,28 @@ export class AirPressureSolver {
   }
 
   solve(dt){
-    const g=this.grid,rhsScale=AIR.density*g.dx*g.dx/Math.max(dt,1e-6),cells=g.pressureCells,cellCount=g.pressureCellCount;
+    const g=this.grid,rhsScale=AIR.density*g.dx*g.dx/Math.max(dt,1e-6),cells=this.adaptive?g.interiorPressureCells:g.pressureCells,cellCount=this.adaptive?g.interiorPressureCellCount:g.pressureCellCount;
     const left=g.pressureLeft,right=g.pressureRight,up=g.pressureUp,down=g.pressureDown,counts=g.pressureNeighborCount,divergence=g.divergence;
     let pressure=g.pressure,pressureNext=g.pressureNext;
     pressureNext.set(pressure);
     const exteriorPressure=0;
     pressure[g.size]=exteriorPressure;pressureNext[g.size]=exteriorPressure;
 
-    for(let iter=0;iter<this.iterations;iter++){
+    const maxIterations=this.adaptive?AIR.pressureMaxIterations:this.iterations;
+    this.iterationsUsed=0;this.earlyExit=false;
+    for(let iter=0;iter<maxIterations;iter++){
+      let maxDelta=0;
       for(let cell=0;cell<cellCount;cell++){
         const i=cells[cell];
-        if(g.exteriorCells[i]){pressureNext[i]=exteriorPressure;continue;}
         const sum=pressure[left[i]]+pressure[right[i]]+pressure[up[i]]+pressure[down[i]];
         const count=counts[i];
-        pressureNext[i]=count?(sum-rhsScale*divergence[i])/count:0;
+        const next=count?(sum-rhsScale*divergence[i])/count:0;
+        pressureNext[i]=next;maxDelta=Math.max(maxDelta,Math.abs(next-pressure[i]));
       }
       const swap=pressure;pressure=pressureNext;pressureNext=swap;
       pressure[g.size]=exteriorPressure;pressureNext[g.size]=exteriorPressure;
+      this.iterationsUsed=iter+1;
+      if(this.adaptive&&this.iterationsUsed>=AIR.pressureMinIterations&&this.iterationsUsed%AIR.pressureCheckInterval===0&&maxDelta<AIR.pressureTolerance){this.earlyExit=true;break;}
     }
     g.pressure=pressure;g.pressureNext=pressureNext;g.world.airPressure=pressure;
   }
@@ -58,18 +67,16 @@ export class AirPressureSolver {
       if(!g.blockedV(x,g.height))g.v[bottomFace]+=scale*g.pressure[bottom];
     }
 
-    for(let y=0;y<g.height;y++)for(let x=1;x<g.width;x++){
-      const ui=g.uIndex(x,y);
-      if(g.blockedU(x,y)){g.u[ui]=0;continue;}
-      const pL=g.pressure[g.cellIndex(x-1,y)],pR=g.pressure[g.cellIndex(x,y)];
-      g.u[ui]-=scale*(pR-pL);
+    const topology=this.topology;topology.ensure();
+    for(let face=0;face<topology.velocityUFaces.length;face++){
+      const ui=topology.velocityUFaces[face],left=g.cellIndex(topology.velocityUX[face]-1,topology.velocityUY[face]),right=left+1;
+      g.u[ui]-=scale*(g.pressure[right]-g.pressure[left]);
     }
 
-    for(let y=1;y<g.height;y++)for(let x=0;x<g.width;x++){
-      const vi=g.vIndex(x,y);
-      if(g.blockedV(x,y)){g.v[vi]=0;continue;}
-      const pT=g.pressure[g.cellIndex(x,y-1)],pB=g.pressure[g.cellIndex(x,y)];
-      g.v[vi]-=scale*(pB-pT);
+    for(let face=0;face<topology.velocityVFaces.length;face++){
+      const x=topology.velocityVX[face],y=topology.velocityVY[face],vi=topology.velocityVFaces[face];
+      const top=g.cellIndex(x,y-1),bottom=top+g.width;
+      g.v[vi]-=scale*(g.pressure[bottom]-g.pressure[top]);
     }
   }
 }

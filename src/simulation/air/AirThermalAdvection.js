@@ -1,47 +1,50 @@
 import { AIR, AIR_FACE_AREA } from './AirConstants.js';
+import { AirFaceTopologyCache } from './AirFaceTopologyCache.js';
 
 export class AirThermalAdvection {
-  constructor(grid,metrics){
+  constructor(grid,metrics,faceTopology=null){
     this.grid=grid;this.metrics=metrics;
     this.exteriorCells=grid.exteriorCells;
-    this.airMetricTopologyVersion=-1;this.airMetricIndices=new Int32Array(0);
-    this.exteriorUFaces=new Set();this.exteriorVFaces=new Set();
+    this.faceTopology=faceTopology||new AirFaceTopologyCache(grid);
     this.exteriorOpeningFaces=(grid.world.airExteriorOpenings||[]).map(({x,y,direction})=>{
       if(direction.x){
-        const index=grid.uIndex(direction.x>0?x+1:x,y);this.exteriorUFaces.add(index);
+        const index=grid.uIndex(direction.x>0?x+1:x,y);
         return {x,y,kind:'u',index,sign:direction.x};
       }
-      const index=grid.vIndex(x,direction.y>0?y+1:y);this.exteriorVFaces.add(index);
+      const index=grid.vIndex(x,direction.y>0?y+1:y);
       return {x,y,kind:'v',index,sign:direction.y};
     });
   }
 
   advect(dt){
-    if(dt<=0){this.sampleAirMetrics();return;}
-    const g=this.grid,{width,height}=g;
+    this.faceTopology.ensure();
+    if(dt<=0){this.substepsUsed=0;return;}
+    const g=this.grid,topology=this.faceTopology;
     let maxOutgoing=0;
-    for(let y=0;y<height;y++)for(let x=0;x<width;x++){
-      const i=y*width+x;if(g.solid[i])continue;
-      const out=Math.max(0,-g.u[y*(width+1)+x])+Math.max(0,g.u[y*(width+1)+x+1])+Math.max(0,-g.v[i])+Math.max(0,g.v[i+width]);
+    for(let c=0;c<topology.airCellCount;c++){
+      const i=topology.airCells[c],x=i%g.width,y=(i/g.width)|0;
+      const out=Math.max(0,-g.u[g.uIndex(x,y)])+Math.max(0,g.u[g.uIndex(x+1,y)])+Math.max(0,-g.v[g.vIndex(x,y)])+Math.max(0,g.v[g.vIndex(x,y+1)]);
       maxOutgoing=Math.max(maxOutgoing,out);
     }
     const steps=Math.max(1,Math.ceil(maxOutgoing*dt/(g.dx*.8)));
+    this.substepsUsed=steps;
     for(let step=0;step<steps;step++)this.advectStep(dt/steps);
   }
 
   advectStep(dt){
     const g=this.grid,w=g.world,{width,height,solid}=g;
+    const topology=this.faceTopology;
     w.nextEnergy.set(w.energy);
 
-    for(let y=0;y<height;y++)for(let x=1;x<width;x++){
-      const face=y*(width+1)+x,left=y*width+x-1,right=left+1;if(solid[left]||solid[right]||this.exteriorUFaces.has(face))continue;
+    for(let f=0;f<topology.openUCount;f++){
+      const face=topology.openUFaces[f],left=topology.openULeft[f],right=topology.openURight[f];
       const u=g.u[face];
       if(Math.abs(u)<AIR.minRenderableVelocity)continue;
       this.exchangeAcrossFace(left,right,u,dt,AIR_FACE_AREA);
     }
 
-    for(let y=1;y<height;y++)for(let x=0;x<width;x++){
-      const face=y*width+x,top=face-width,bottom=face;if(solid[top]||solid[bottom]||this.exteriorVFaces.has(face))continue;
+    for(let f=0;f<topology.openVCount;f++){
+      const face=topology.openVFaces[f],top=topology.openVTop[f],bottom=topology.openVBottom[f];
       const v=g.v[face];
       if(Math.abs(v)<AIR.minRenderableVelocity)continue;
       this.exchangeAcrossFace(top,bottom,v,dt,AIR_FACE_AREA);
@@ -68,28 +71,18 @@ export class AirThermalAdvection {
   }
 
   sampleAirMetrics(){
-    const g=this.grid,w=g.world;
-    if(this.airMetricTopologyVersion!==w.thermalStatisticsVersion){
-      let count=0;for(let i=0;i<g.size;i++)if(w.isAirIndex(i))count++;
-      const indices=new Int32Array(count);let cursor=0;for(let i=0;i<g.size;i++)if(w.isAirIndex(i))indices[cursor++]=i;
-      this.airMetricIndices=indices;this.airMetricTopologyVersion=w.thermalStatisticsVersion;
-    }
-    let sum=0,max=-Infinity;for(const i of this.airMetricIndices){const temperature=w.temperatureAtIndex(i);sum+=temperature;max=Math.max(max,temperature);}
-    const count=this.airMetricIndices.length;this.metrics.airTemperatureSum=sum;this.metrics.maxAirTemp=count?max:0;this.metrics.airCellCount=count;
+    return null;
   }
 
   refreshExteriorAir(){
-    const g=this.grid,w=g.world,ambient=w.environment.temperature;let sum=0,max=-Infinity,count=0;
+    const g=this.grid,w=g.world,ambient=w.environment.temperature;
     // Tiles outside declared room footprints model the unlimited outdoor
     // atmosphere, so transported heat cannot accumulate beside the building.
-    for(let i=0;i<g.size;i++){
-      if(this.exteriorCells[i]&&!g.solid[i]){
-        const target=w.capacityAtIndex(i)*ambient,q=w.nextEnergy[i]-target;
-        if(Math.abs(q)>=1e-10){w.nextEnergy[i]=target;w.environment.energyReceived+=q;this.metrics.externalEnergy=(this.metrics.externalEnergy||0)+q;}
-      }
-      if(w.isAirIndex(i)){const temperature=w.nextEnergy[i]/w.capacityAtIndex(i);sum+=temperature;max=Math.max(max,temperature);count++;}
+    const topology=this.faceTopology;
+    for(let c=0;c<topology.exteriorAirCellCount;c++){
+      const i=topology.exteriorAirCells[c],target=w.capacityAtIndex(i)*ambient,q=w.nextEnergy[i]-target;
+      if(Math.abs(q)>=1e-10){w.nextEnergy[i]=target;w.environment.energyReceived+=q;this.metrics.externalEnergy=(this.metrics.externalEnergy||0)+q;}
     }
-    this.metrics.airTemperatureSum=sum;this.metrics.maxAirTemp=count?max:0;this.metrics.airCellCount=count;
   }
 
   exchangeOutdoor(x,y,outwardVelocity,dt){

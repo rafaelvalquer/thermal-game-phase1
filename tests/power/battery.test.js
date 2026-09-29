@@ -109,16 +109,19 @@ test('solar follows a fixed daylight curve and can be switched off',()=>{
   const panel=new SolarPanel(1,1);
   assert.equal(solarIrradiance(0),0);assert.equal(solarIrradiance(6),0);assert.equal(solarIrradiance(18),0);
   assert.equal(solarIrradiance(12),1);assert.ok(solarIrradiance(9)>0&&solarIrradiance(9)<1);
-  assert.equal(panel.updateGeneration(12),2000);panel.enabled=false;assert.equal(panel.updateGeneration(12),0);
+  assert.equal(panel.peakPowerW,10000);assert.equal(panel.updateGeneration(12),10000);
+  assert.ok(Math.abs(panel.updateGeneration(9)-Math.sqrt(50_000_000))<1e-8);
+  panel.enabled=false;assert.equal(panel.updateGeneration(12),0);panel.enabled=true;panel.powerBlocked=true;assert.equal(panel.updateGeneration(12),0);
+  const oldSavePanel=new SolarPanel(2,2,{peakPowerW:2000});assert.equal(oldSavePanel.peakPowerW,10000,'legacy saved peak values use the new default');
 });
 
 test('solar offsets load first and its unused surplus charges batteries without grid export',()=>{
   const world=new World(6,6),m=metrics(),panel=new SolarPanel(1,1),load=new Fan(2,1),battery=new PowerBattery(3,1);
   load.power=1000;world.solarHour=12;world.addEntity(panel);world.addEntity(load);
   const dispatch=new BatteryDispatchSystem(world,m),covered=dispatch.dispatch(10000,60);
-  assert.equal(covered.solarGenerationW,2000);assert.equal(covered.gridPowerW,0);assert.equal(covered.dischargeW,0);
+  assert.equal(covered.solarGenerationW,10000);assert.equal(covered.gridPowerW,0);assert.equal(covered.dischargeW,0);
   world.addEntity(battery);const surplus=dispatch.dispatch(10000,3600);
-  assert.equal(surplus.solarChargeW,1000);assert.equal(surplus.gridChargeW,9000);assert.equal(surplus.gridPowerW,8000);
+  assert.equal(surplus.solarChargeW,9000);assert.equal(surplus.gridChargeW,1000);assert.equal(surplus.gridPowerW,0);
   assert.ok(battery.storedEnergyKWh>0);
   battery.storedEnergyJ=battery.capacityJ;const full=dispatch.dispatch(10000,60);
   assert.equal(full.gridPowerW,0);assert.equal(full.solarChargeW,0);
@@ -130,7 +133,7 @@ test('solar generation is included in power protection before rack shedding',()=
   world.addEntity(panel);world.addEntity(rack);
   const dispatch=new BatteryDispatchSystem(world,metrics()),grid=new PowerGridSystem({capacityKW:10});world.batteryDispatch=dispatch;
   dispatch.dispatch(10000,1);grid.update(world,1);
-  assert.equal(rack.powerBlocked,false);assert.equal(grid.effectiveKW,9);
+  assert.equal(rack.powerBlocked,false);assert.equal(grid.effectiveKW,1);
 });
 
 test('solar panel builds, inspects through the entity model, and survives a save roundtrip',()=>{

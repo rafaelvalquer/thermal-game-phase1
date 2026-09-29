@@ -31,6 +31,7 @@ export class Renderer {
     this.staticMap=new StaticMapCache();
     this.entities=new EntityRenderer();this.effects=new EffectsRenderer();
     this.coolingDucts=new CoolingDuctRenderer();this.coolingFlow=new CoolingFlowRenderer();this.coolingOverlay=new CoolingOverlayRenderer();this.coolingUnits=new CoolingUnitRenderer();
+    this.coolingFlow.monitor=monitor;this.coolingFlow.geometryCache.monitor=monitor;
     this.distortionBuffer=new ThermalDistortionBuffer();this.heatHaze=new HeatHazeRenderer({quality:VisualSettings.heatHazeQuality,maxRegions:VisualSettings.maxHazeRegions});
     this.visualQuality=new VisualQualityManager();
   }
@@ -61,15 +62,24 @@ export class Renderer {
       scene.scale(this.camera.zoom,this.camera.zoom);
       scene.translate(-this.camera.x,-this.camera.y);
       scene.imageSmoothingEnabled=false;
+      this.monitor?.begin('renderTilesMs');
       if(this.mode==='normal')this.staticMap.draw(scene,world,this.tile,this.zones||[],this.tileRenderer,bounds);
       else this.tileRenderer.draw(scene,world,this.tile,this.zones||[],this.mode,bounds);
-      if(this.mode==='thermal')this.heatmap.draw(scene,world,this.tile,bounds);
-      // In thermal view, keep duct overlays behind racks and their temperature labels.
-      if(this.mode==='thermal')this.coolingDucts.draw(scene,world,this.tile,this.mode,this.camera.zoom,bounds);
-      this.entities.draw(scene,world,this.tile,this.mode,time,{selectedEntity:this.selectedEntity,bounds,zoom:this.camera.zoom});
+      this.monitor?.end('renderTilesMs');
+      // Put the thermal field above duct linework so rack temperatures remain
+      // legible where ducts cross the heatmap. Equipment sprites stay on top.
+      if(this.mode==='thermal'){this.monitor?.begin('renderDuctsMs');this.coolingDucts.draw(scene,world,this.tile,this.mode,this.camera.zoom,bounds);this.monitor?.end('renderDuctsMs');}
+      if(this.mode==='thermal')this.monitor?.set('renderedDucts',this.coolingDucts.stats?.renderedDucts||0);
+      if(this.mode==='thermal'){this.monitor?.begin('renderHeatmapMs');this.heatmap.draw(scene,world,this.tile,bounds,this.camera.zoom,uiTime);this.monitor?.end('renderHeatmapMs');}
+      this.monitor?.begin('renderEntitiesMs');
+      this.entities.draw(scene,world,this.tile,this.mode,time,{selectedEntity:this.selectedEntity,bounds,zoom:this.camera.zoom,deferThermalIndicators:this.mode==='thermal'});
+      this.monitor?.end('renderEntitiesMs');
       this.monitor?.set('visibleEntities',this.entities.stats?.visibleEntities||0);this.monitor?.set('totalEntities',world.entities.length);
-      if(this.mode!=='thermal')this.coolingDucts.draw(scene,world,this.tile,this.mode,this.camera.zoom,bounds);
+      this.monitor?.set('staticEntities',this.entities.staticEntities.length);this.monitor?.set('dynamicEntities',this.entities.dynamicEntities.length);
+      if(this.mode!=='thermal'){this.monitor?.begin('renderDuctsMs');this.coolingDucts.draw(scene,world,this.tile,this.mode,this.camera.zoom,bounds);this.monitor?.end('renderDuctsMs');this.monitor?.set('renderedDucts',this.coolingDucts.stats?.renderedDucts||0);}
+      this.monitor?.begin('renderEffectsMs');
       this.effects.draw(scene,world,this.tile,this.mode,time,bounds);
+      this.monitor?.end('renderEffectsMs');
       if(this.buildSystem?.selected)this.drawBuildPreview(scene,world,uiTime);
       this.drawRecentPlacement(scene,uiTime);
       scene.restore();
@@ -86,7 +96,7 @@ export class Renderer {
     ctx.translate(-this.camera.x,-this.camera.y);
     this.drawZones(ctx);
     if(this.mode==='pressure')this.pressure.draw(ctx,world,this.tile,bounds);
-    if(this.mode==='fluid')this.drawFluidNetwork(ctx,world,time);
+    if(this.mode==='fluid'){this.monitor?.begin('fluidRenderMs');this.drawFluidNetwork(ctx,world,time,this.selectedEntity,this.camera.zoom,bounds);this.monitor?.end('fluidRenderMs');}
     if(this.mode==='cooling'&&simulation.cooling){
       this.coolingOverlay.draw(ctx,world,this.tile,time,this.camera.zoom,this.selectedEntity,bounds);
       this.coolingFlow.draw(ctx,simulation.cooling.networks,this.tile,time,this.camera.zoom,this.selectedEntity,bounds);
@@ -103,25 +113,34 @@ export class Renderer {
     this.drawTechnicianRoute(ctx,world);
     if(this.selectedEntity?.type==='supplyVent')this.drawVentCoverage(ctx,world,this.selectedEntity);
     if(this.selectedEntity?.type==='exchanger'){
-      const machine=world.entities.find(e=>e.id===this.selectedEntity.machineId)||world.entities.find(e=>e.isHeatMachine&&Math.abs(e.x-this.selectedEntity.x)+Math.abs(e.y-this.selectedEntity.y)===1);
+      const machine=world.getEntityById(this.selectedEntity.machineId)||this.adjacentHeatMachine(world,this.selectedEntity.x,this.selectedEntity.y);
       if(machine)this.outlineEntity(ctx,machine,'#fb923c',time,1.2);
     }
     this.drawHover(ctx,world,uiTime);
     if(this.debug)this.drawDebug(ctx,world);
     ctx.restore();
 
+    // Rack temperature labels are the final world layer, above ducts and overlays.
+    if(this.mode==='thermal'){
+      this.monitor?.begin('renderThermalLabelsMs');
+      ctx.save();ctx.scale(this.camera.zoom,this.camera.zoom);ctx.translate(-this.camera.x,-this.camera.y);
+      this.entities.drawThermalIndicators(ctx,this.tile,{selectedEntity:this.selectedEntity,zoom:this.camera.zoom});
+      ctx.restore();this.monitor?.end('renderThermalLabelsMs');
+    }
     this.drawSelectionCard(ctx,simulation,width,height);
     this.drawEventBanner(ctx,simulation,width);
     this.drawLegend(ctx,simulation,width);
     if(this.debug)this.drawVisualPhysicsDebug(ctx,time,world,simulation.metrics);
     if(this.debug)this.drawPerformanceOverlay(ctx);
-    if(this.monitor){const settings=this.visualQuality.update(this.monitor.snapshot().fps);this.heatHaze.quality=settings.quality;this.heatHaze.maxRegions=settings.maxRegions;this.heatHaze.detector.maxRegions=settings.maxRegions;}
-    this.monitor?.end('renderMs');this.monitor?.endFrame();
+    if(this.monitor){const settings=this.visualQuality.update(this.monitor.currentFps());this.heatHaze.quality=settings.quality;this.heatHaze.maxRegions=settings.maxRegions;this.heatHaze.detector.maxRegions=settings.maxRegions;}
+    this.monitor?.end('renderMs');
   }
 
   drawPerformanceOverlay(ctx){
-    const p=this.monitor?.snapshot();if(!p)return;
-    const n=value=>Number(value||0).toFixed(1),lines=['PERFORMANCE',`FPS              ${p.fps.toFixed(0)}`,`Frame            ${n(p.frameTime)} ms`,`Simulation       ${n(p.simulationMs)} ms`,` Airflow         ${n(p.airflowMs)} ms`,` Pressure        ${n(p.pressureMs)} ms`,` Cooling         ${n(p.coolingMs)} ms`,`  prepare        ${n(p.coolingPrepareMs)} ms`,`  exchange       ${n(p.coolingExchangeMs)} ms`,`  vent coverage  ${n(p.ventCoverageMs)} ms`,`  partial recalc ${n(p.coolingPartialRecalcCount)}/s`,` Thermal         ${n(p.thermalMs)} ms`,`  conduct        ${n(p.thermalConductMs)} ms`,` Racks           ${n(p.rackMs)} ms`,` Staff           ${n(p.technicianDispatchMs)} ms`,`  pathfinding    ${n(p.technicianPathfindingMs)} ms`,` Fluid           ${n(p.fluidMs)} ms`,`  hydraulic      ${n(p.hydraulicSolveMs)} ms`,` Power snapshot  ${n(p.powerSnapshotMs)} ms`,` Render          ${n(p.renderMs)} ms`,` UI              ${n(p.uiMs)} ms`,`  graphs         ${n(p.uiGraphMs)} ms`,` Save            ${n(p.saveMs)} ms`,`  bytes          ${p.saveBytes}`,`Entities visible ${p.visibleEntities} / ${p.totalEntities}`,`Pressure solves  ${p.pressureSolveCount.toFixed(1)}/s`,`Cooling rebuilds ${p.coolingRebuildCount.toFixed(1)}/s`,`Cooling prepares ${p.coolingPrepareCount.toFixed(1)}/s`,`Plan reuse       ${p.coolingFrameReuseCount.toFixed(1)}/s`,`Vent geometry    ${p.ventCoverageCalculationCount.toFixed(1)}/s`,`Staff dispatches ${p.technicianDispatchCount.toFixed(1)}/s`,`Paths calculated ${p.pathsCalculated.toFixed(1)}/s`,`Hydraulic solves ${p.hydraulicSolveCount.toFixed(1)}/s`,`Thermal topology ${p.thermalTopologyRebuildCount.toFixed(1)}/s`,`Fluid rebuilds   ${p.fluidRebuildCount.toFixed(1)}/s`];
+    const p=this.monitor?.snapshot({includePercentiles:true});if(!p)return;
+    const n=value=>Number(value||0).toFixed(1),lines=['PERFORMANCE',`FPS p50/p95low   ${n(p.fpsP50)} / ${n(p.fpsP95Low)}`,`Frame p50/p95    ${n(p.frameTimeP50)} / ${n(p.frameTimeP95)} ms`,`Long/severe      ${p.longFrameCount.toFixed(1)} / ${p.severeFrameCount.toFixed(1)} per sec`,`Simulation       ${n(p.simulationMs)} ms`,` Physics ticks   ${n(p.physicsSubstepsAvg)} avg / ${p.physicsSubstepsMax} max`,` Backlog/dropped ${n(p.physicsBacklogSeconds)} s / ${p.physicsDroppedSeconds.toFixed(1)}s/s`,` Airflow         ${n(p.airflowMs)} ms`,` Pressure        ${n(p.pressureMs)} ms`,`  iterations     ${n(p.pressureIterationsAvg)} avg / ${p.pressureIterationsMax} max`,`  early exits    ${n(p.pressureEarlyExitPercent)}%`,` Cooling         ${n(p.coolingMs)} ms`,`  control        ${p.coolingControlUpdates.toFixed(1)}/s`,`  prepare        ${n(p.coolingPrepareMs)} ms`,`  exchange       ${n(p.coolingExchangeMs)} ms`,`  vent coverage  ${n(p.ventCoverageMs)} ms`,`  partial recalc ${n(p.coolingPartialRecalcCount)}/s`,` Thermal         ${n(p.thermalMs)} ms`,`  statistics     ${n(p.thermalStatsMs)} ms`,`  conduct        ${n(p.thermalConductMs)} ms`,` Racks           ${n(p.rackMs)} ms`,` Staff           ${n(p.technicianDispatchMs)} ms`,`  pathfinding    ${n(p.technicianPathfindingMs)} ms`,`  patrol rebuild ${n(p.patrolGraphRebuildCount)}/s`,` Fluid           ${n(p.fluidMs)} ms`,`  transport      ${n(p.fluidTransportMs)} ms`,`  render         ${n(p.fluidRenderMs)} ms`,`  hydraulic      ${n(p.hydraulicSolveMs)} ms`,` Power snapshot  ${n(p.powerSnapshotMs)} ms`,` Energy/account  ${n(p.energyAccountingMs)} ms`,` Render          ${n(p.renderMs)} ms`,`  tiles ${n(p.renderTilesMs)} · heatmap ${n(p.renderHeatmapMs)} · ducts ${n(p.renderDuctsMs)}`,`  entities ${n(p.renderEntitiesMs)} · effects ${n(p.renderEffectsMs)} · labels ${n(p.renderThermalLabelsMs)}`,`  fluid links ${p.renderedFluidLinks}`,` UI              ${n(p.uiMs)} ms`,`  graphs         ${n(p.uiGraphMs)} ms`,` Save            ${n(p.saveMs)} ms`,`  bytes          ${p.saveBytes}`,`Entities visible ${p.visibleEntities} / ${p.totalEntities} · static ${p.staticEntities} · dynamic ${p.dynamicEntities}`,`Pressure solves  ${p.pressureSolveCount.toFixed(1)}/s`,`Cooling rebuilds ${p.coolingRebuildCount.toFixed(1)}/s`,`Cooling prepares ${p.coolingPrepareCount.toFixed(1)}/s`,`Plan reuse       ${p.coolingFrameReuseCount.toFixed(1)}/s`,`Vent geometry    ${p.ventCoverageCalculationCount.toFixed(1)}/s`,`Staff dispatches ${p.technicianDispatchCount.toFixed(1)}/s`,`Paths calculated ${p.pathsCalculated.toFixed(1)}/s`,`Hydraulic solves ${p.hydraulicSolveCount.toFixed(1)}/s`,`Thermal topology ${p.thermalTopologyRebuildCount.toFixed(1)}/s`,`Fluid rebuilds   ${p.fluidRebuildCount.toFixed(1)}/s`];
+    lines.splice(3,0,`Loop work/update ${n(p.gameLoopWorkMs)} / ${n(p.gameLoopUpdateMs)} ms · ${n(p.gameLoopUpdates)} updates/s`);
+    lines.splice(4,0,`GC ${p.gcSupported?`${n(p.gcCount)}/s · ${n(p.gcMs)} ms`:'indisponível'} · heap ${p.heapUsedBytes==null?'n/d':(p.heapUsedBytes/1048576).toFixed(1)+' MB'} · quedas ${n(p.heapDropCount)}/s`);
     const x=this.canvas.width/this.dpr-234,y=18,w=220,h=lines.length*12+12;ctx.save();ctx.setTransform(this.dpr,0,0,this.dpr,0,0);ctx.fillStyle='rgba(2,6,23,.92)';ctx.fillRect(x,y,w,h);ctx.strokeStyle='rgba(71,85,105,.8)';ctx.strokeRect(x+.5,y+.5,w-1,h-1);ctx.font='9px ui-monospace,monospace';lines.forEach((line,index)=>{ctx.fillStyle=index===0?'#67e8f9':'#cbd5e1';ctx.fillText(line,x+7,y+13+index*12);});ctx.restore();
   }
 
@@ -191,7 +210,7 @@ export class Renderer {
     if(tool==='supplyVent')this.drawVentCoverage(ctx,world,{x:p.x,y:p.y,direction:this.buildSystem.direction()},{preview:true});
 
     if(tool==='exchanger'){
-      const machine=world.entities.find(e=>e.isHeatMachine&&Math.abs(e.x-p.x)+Math.abs(e.y-p.y)===1);
+      const machine=this.adjacentHeatMachine(world,p.x,p.y);
       if(machine)this.outlineEntity(ctx,machine,'#fb923c',time,1.2);
     }
     ctx.save();ctx.fillStyle=valid?'rgba(34,197,94,.1)':'rgba(239,68,68,.14)';ctx.strokeStyle=valid?'#4ade80':'#f87171';
@@ -323,13 +342,19 @@ export class Renderer {
     ctx.restore();
   }
 
-  drawFluidNetwork(ctx,world,time,selected=this.selectedEntity,zoom=this.camera.zoom||1){
-    const fluid=world.entities.filter(e=>FLUID_TYPES.has(e.type));
+  drawFluidNetwork(ctx,world,time,selected=this.selectedEntity,zoom=this.camera.zoom||1,bounds=null){
+    const networks=world.fluidNetworks||world.fluidSystem?.networks||[],viewport=bounds?ViewportCulling.fromBounds(bounds,this.tile,2):null;
     const selectingFluid=Boolean(selected&&FLUID_TYPES.has(selected.type)),selectedNetwork=selectingFluid?selected.networkId:null;
+    let renderedLinks=0;
     ctx.save();ctx.lineCap='round';ctx.lineJoin='round';
 
-    for(const a of fluid)for(const b of fluid){
-      if(a.id>=b.id||Math.abs(a.x-b.x)+Math.abs(a.y-b.y)!==1)continue;
+    for(const network of networks){
+      if(viewport&&network.bounds&&(network.bounds.maxX<viewport.minX||network.bounds.minX>viewport.maxX||network.bounds.maxY<viewport.minY||network.bounds.minY>viewport.maxY))continue;
+      const topologyLinks=network.edges||network.links||this.fluidTopologyLinks(network);
+      for(const link of topologyLinks){
+      const a=link.a||link.from,b=link.b||link.to;
+      if(!a||!b||viewport&&(!viewport.contains(a.x,a.y)||!viewport.contains(b.x,b.y)))continue;
+      renderedLinks++;
       const ax=(a.x+.5)*this.tile,ay=(a.y+.5)*this.tile,bx=(b.x+.5)*this.tile,by=(b.y+.5)*this.tile;
       const valid=a.circuitClosed&&b.circuitClosed&&a.networkId===b.networkId;
       const t=((a.waterTemperature??25)+(b.waterTemperature??25))/2;
@@ -341,7 +366,7 @@ export class Renderer {
       ctx.strokeStyle=valid?waterCss(t,.95):'rgba(251,113,133,.88)';
       ctx.lineWidth=this.tile*.22;ctx.stroke();
 
-      const flowLink=(a.flowLinks||[]).find(link=>(link.from===a&&link.to===b)||(link.from===b&&link.to===a));
+      const flowLinks=a.flowLinks||[],flowLink=link.from&&link.to?link:flowLinks.find(item=>(item.from===a&&item.to===b)||(item.from===b&&item.to===a));
       let from=flowLink?.from||null,to=flowLink?.to||null,edgeFlow=flowLink?.flowRate||0;
       if(!flowLink&&a.downstreamId===b.id){from=a;to=b;edgeFlow=a.flowRate||0;}
       else if(!flowLink&&b.downstreamId===a.id){from=b;to=a;edgeFlow=b.flowRate||0;}
@@ -359,21 +384,32 @@ export class Renderer {
         }
       }
       ctx.globalAlpha=1;
+      }
     }
-    for(const e of fluid){
-      const neighbors=[[1,0],[-1,0],[0,1],[0,-1]].filter(([dx,dy])=>{const n=world.entityAt(e.x+dx,e.y+dy);return n&&FLUID_TYPES.has(n.type);});
+    for(const network of networks){
+      if(viewport&&network.bounds&&(network.bounds.maxX<viewport.minX||network.bounds.minX>viewport.maxX||network.bounds.maxY<viewport.minY||network.bounds.minY>viewport.maxY))continue;
+      for(const e of network.entities){
+      if(viewport&&!viewport.contains(e.x,e.y))continue;
+      const neighborCount=(network.neighbors.get(e.id)||[]).length;
       const focused=!selectingFluid||(selectedNetwork?e.networkId===selectedNetwork:e===selected);
       const fault=e.networkStatus&&e.networkStatus!=='CLOSED';
-      const isOpenEnd=neighbors.length<2;
-      const isJunction=neighbors.length>2;
+      const isOpenEnd=neighborCount<2;
+      const isJunction=neighborCount>2;
       const needsAttention=(e.type==='pump'&&(!e.circuitClosed||(e.flowRate||0)<.02))||((e.type==='pipe'||e.type==='radiator'||e.type==='exchanger'||e.type==='tank')&&(isOpenEnd||(isJunction&&!e.circuitClosed)));
       if(!needsAttention)continue;
       const x=(e.x+.5)*this.tile,y=(e.y+.5)*this.tile-this.tile*.28;
       ctx.globalAlpha=focused?1:.16;ctx.fillStyle='#7f1d1d';ctx.strokeStyle=fault?'#fb7185':'#fbbf24';ctx.lineWidth=Math.max(1,1/zoom);
       ctx.beginPath();ctx.arc(x,y,this.tile*.18,0,Math.PI*2);ctx.fill();ctx.stroke();
       ctx.fillStyle='#fff7ed';ctx.font='900 '+Math.max(7,this.tile*.22)+'px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('!',x,y);
+      }
     }
-    ctx.globalAlpha=1;ctx.restore();
+    ctx.globalAlpha=1;ctx.restore();this.monitor?.set('renderedFluidLinks',renderedLinks);
+  }
+
+  fluidTopologyLinks(network){
+    const links=[];
+    for(const a of network.entities||[])for(const b of network.neighbors?.get(a.id)||[])if(a.id<b.id)links.push({a,b});
+    return links;
   }
 
   drawSelection(ctx){
@@ -386,7 +422,7 @@ export class Renderer {
   drawTechnicianRoute(ctx,world){
     const worker=this.selectedEntity;
     if(worker?.type!=='technician'||worker.action!=='moving'||worker.targetRackId==null)return false;
-    const rack=world.entities.find(entity=>entity.type==='serverRack'&&entity.id===worker.targetRackId);
+    const rack=world.getEntityById?.(worker.targetRackId)||world.entities.find(entity=>entity.type==='serverRack'&&entity.id===worker.targetRackId);
     if(!rack)return false;
     const tile=this.tile,progress=Math.max(0,Math.min(1,worker.moveProgress||0));
     const current={x:((worker.fromX??worker.x)+((worker.toX??worker.x)-(worker.fromX??worker.x))*progress+.5)*tile,y:((worker.fromY??worker.y)+((worker.toY??worker.y)-(worker.fromY??worker.y))*progress+.5)*tile};
@@ -395,6 +431,11 @@ export class Renderer {
     ctx.save();ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='rgba(34,211,238,.95)';ctx.lineWidth=Math.max(2.2,2.6/(this.camera.zoom||1));ctx.setLineDash([tile*.22,tile*.14]);ctx.beginPath();ctx.moveTo(points[0].x,points[0].y);for(const point of points.slice(1))ctx.lineTo(point.x,point.y);ctx.stroke();ctx.setLineDash([]);
     const goal=points.at(-1);ctx.fillStyle='#67e8f9';ctx.strokeStyle='#082f49';ctx.lineWidth=Math.max(1,1/(this.camera.zoom||1));ctx.beginPath();ctx.arc(goal.x,goal.y,Math.max(3,tile*.13),0,Math.PI*2);ctx.fill();ctx.stroke();
     ctx.strokeStyle='rgba(251,146,60,.96)';ctx.lineWidth=Math.max(2,2/(this.camera.zoom||1));ctx.setLineDash([tile*.13,tile*.1]);ctx.strokeRect(rack.x*tile+1,rack.y*tile+1,tile-2,tile-2);ctx.setLineDash([]);ctx.restore();return true;
+  }
+
+  adjacentHeatMachine(world,x,y){
+    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const entity=world.entityAt(x+dx,y+dy);if(entity?.isHeatMachine)return entity;}
+    return null;
   }
 
   drawHover(ctx,world,time){
@@ -415,7 +456,7 @@ export class Renderer {
       ctx.strokeStyle='#7dd3fc';ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+d.x*(distance*.85),cy+d.y*(distance*.85));ctx.stroke();
     }
     if(selected==='exchanger'){
-      const machine=world.entities.find(e=>e.isHeatMachine&&Math.abs(e.x-x)+Math.abs(e.y-y)===1);
+      const machine=this.adjacentHeatMachine(world,x,y);
       if(machine)this.outlineEntity(ctx,machine,'#fb923c',time,1.2);
     }
     ctx.restore();

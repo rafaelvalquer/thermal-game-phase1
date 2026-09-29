@@ -43,7 +43,7 @@ export class PowerGridSystem {
     if(this.breakerOpen){for(const e of equipment)if(e.enabled)e.powerBlocked=true;this.refresh(world);return;}
     let draw=world.batteryDispatch?.currentGridPowerW()??fallbackOperatingLoad(equipment);
     this.overloadSeconds=draw>capacity?this.overloadSeconds+dt:0;
-    if(draw>capacity*1.1||(draw>capacity&&this.overloadSeconds>=5)){
+    if(draw>capacity*1.1||(draw>capacity&&this.overloadSeconds+1e-9>=5)){
       const racks=[...(world.powerEquipmentSetByType?.('serverRack')||equipment.filter(e=>e.type==='serverRack'))].filter(isPowered).sort((a,b)=>demand(b)-demand(a)||positionOrder(a,b));
       let changed=false;
       for(const rack of racks){if(draw<=capacity)break;draw-=demand(rack);rack.powerBlocked=true;changed=true;}

@@ -21,9 +21,9 @@ export class CoolingAirExchange {
     });
   }
   returnTemperature(vent){
-    const w=this.world,cells=[];
-    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const x=vent.x+dx,y=vent.y+dy;if(w.inBounds(x,y)&&w.isAir(x,y)){const distance=Math.hypot(dx,dy);cells.push({x,y,weight:1/(1+distance)});}}
-    const total=cells.reduce((sum,cell)=>sum+cell.weight,0);return total?cells.reduce((sum,cell)=>sum+w.temperatureAt(cell.x,cell.y)*cell.weight,0)/total:w.environment.temperature;
+    const w=this.world,stencil=this.coverage.get(vent).returnAirStencil;let total=0,weighted=0;
+    for(const cell of stencil){total+=cell.weight;weighted+=w.temperatureAtIndex(cell.index)*cell.weight;}
+    return total?weighted/total:w.environment.temperature;
   }
   transferMassEnergy(vent,dt,maxCooling=Infinity,preview=null){
     if(!vent.flowRate||dt<=0)return 0;

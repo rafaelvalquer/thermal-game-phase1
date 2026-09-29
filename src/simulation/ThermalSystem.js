@@ -32,11 +32,12 @@ export class ThermalSystem {
 
   conduct(dt){
     const w=this.world;this.monitor?.begin?.('thermalConductMs');this.topology.ensureCurrent();w.nextEnergy.set(w.energy);w.heatFlux.fill(0);
-    for(const {a,b,conductance} of this.topology.edges){
-      const Ta=w.temperatureAtIndex(a),Tb=w.temperatureAtIndex(b),dT=Ta-Tb;if(Math.abs(dT)<1e-7)continue;
-      let q=conductance*dT*dt;
-      const ca=w.capacityAtIndex(a),cb=w.capacityAtIndex(b),qEq=Math.abs(dT)/(1/ca+1/cb);
-      q=clamp(q,-qEq*C.maxConductionEqualizationFraction,qEq*C.maxConductionEqualizationFraction);
+    const edgeA=this.topology.edgeA,edgeB=this.topology.edgeB,conductance=this.topology.conductance,equalizationScale=this.topology.equalizationScale,inverseCapacity=this.topology.inverseCapacity,fraction=C.maxConductionEqualizationFraction;
+    for(let edge=0;edge<this.topology.edgeCount;edge++){
+      const a=edgeA[edge],b=edgeB[edge],dT=w.energy[a]*inverseCapacity[a]-w.energy[b]*inverseCapacity[b];if(Math.abs(dT)<1e-7)continue;
+      let q=conductance[edge]*dT*dt;
+      const limit=Math.abs(dT)*equalizationScale[edge]*fraction;
+      q=clamp(q,-limit,limit);
       w.nextEnergy[a]-=q;w.nextEnergy[b]+=q;w.heatFlux[a]+=Math.abs(q/dt);w.heatFlux[b]+=Math.abs(q/dt);
     }
     w.energy.set(w.nextEnergy);

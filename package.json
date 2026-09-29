@@ -7,6 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "benchmark:datacenter": "node scripts/benchmark-datacenter.js",
+    "benchmark:gate": "node scripts/benchmark-datacenter.js --ticks=1000 --gate",
     "benchmark:fluid": "node scripts/benchmark-fluid.js",
     "benchmark:technicians": "node scripts/benchmark-technicians.js",
     "benchmark:smoke": "node scripts/benchmark-smoke.js",

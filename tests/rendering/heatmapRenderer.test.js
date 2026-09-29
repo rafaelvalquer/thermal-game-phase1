@@ -22,6 +22,23 @@ test('phase 1 temperatures change to stable gameplay colors at each decision poi
   assert.equal(new Set(fills).size,5);
 });
 
+test('thermal heatmap is above ducts while rack temperature labels are the final scene layer',async()=>{
+  const source=await readFile(new URL('../../src/rendering/Renderer.js',import.meta.url),'utf8');
+  const ducts=source.indexOf("this.coolingDucts.draw(scene,world,this.tile,this.mode,this.camera.zoom,bounds)");
+  const heatmap=source.indexOf("this.heatmap.draw(scene,world,this.tile,bounds,this.camera.zoom,uiTime)");
+  const entities=source.indexOf("this.entities.draw(scene,world,this.tile,this.mode,time");
+  const effects=source.indexOf("this.effects.draw(scene,world,this.tile,this.mode,time,bounds)");
+  const hover=source.indexOf("this.drawHover(ctx,world,uiTime)");
+  const indicators=source.indexOf("this.entities.drawThermalIndicators(ctx,this.tile");
+  const selectionCard=source.indexOf("this.drawSelectionCard(ctx,simulation,width,height)");
+  assert.ok(ducts>=0&&heatmap>ducts&&entities>heatmap,
+    'draw ducts first, then the thermal field, then equipment sprites');
+  assert.ok(indicators>effects&&indicators>entities&&indicators>hover&&indicators<selectionCard,
+    'draw rack temperature labels above all world overlays and below the UI cards');
+  assert.match(source,/ctx\.scale\(this\.camera\.zoom,this\.camera\.zoom\);ctx\.translate\(-this\.camera\.x,-this\.camera\.y\);\s*this\.entities\.drawThermalIndicators\(ctx/,
+    'temperature labels use the same camera transform as the map');
+});
+
 test('gameplay renderer and UI no longer expose thermal autoscale',async()=>{
   const renderer=await readFile(new URL('../../src/rendering/Renderer.js',import.meta.url),'utf8');
   const main=await readFile(new URL('../../src/main.js',import.meta.url),'utf8');

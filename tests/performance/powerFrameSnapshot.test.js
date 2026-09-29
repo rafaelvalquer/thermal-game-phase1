@@ -17,8 +17,8 @@ test('power frame snapshot centralizes loads, solar generation, and grid power',
   const snapshot=dispatch.snapshot;
   assert.equal(snapshot.rackPowerW,12000);assert.equal(snapshot.coolingPowerW,3000);assert.equal(snapshot.fluidPowerW,500);
   assert.equal(snapshot.solarGenerationW,solar.peakPowerW);assert.equal(snapshot.grossLoadW,15500);
-  assert.equal(snapshot.gridPowerW,13500);assert.equal(snapshot.overloaded,true);assert.equal(snapshot.reserveW,-3500);
+  assert.equal(snapshot.gridPowerW,5500);assert.equal(snapshot.overloaded,false);assert.equal(snapshot.reserveW,4500);
   const grid=new PowerGridSystem({capacityKW:10});grid.refresh(world);
-  assert.equal(grid.demandKW,13.5);assert.equal(grid.effectiveKW,13.5);
+  assert.equal(grid.demandKW,5.5);assert.equal(grid.effectiveKW,5.5);
   assert.strictEqual(dispatch.snapshot,snapshot,'all consumers read the same frame object');
 });

@@ -28,13 +28,14 @@ export class World {
     this.airDiagnostics={maxVelocity:0,averageVelocity:0,maxPressure:0,minPressure:0,maxDivergence:0};
     this.airTopologyVersion=0;
     this.rackTopologyVersion=0;
+    this.heatMachineTopologyVersion=0;
     this.navigationTopologyVersion=0;
     this.utilityTopologyVersion=0;
     this.fluidTopologyVersion=0;this.materialTopologyVersion=0;this.thermalStatisticsVersion=0;this.entityVisualVersion=0;this.staticVisualVersion=0;this.dynamicVisualVersion=0;
     this.heatFlux=new Float32Array(this.size);
     this.tileMap=new TileMap(this);
-    this.entities=[];this.entityByCell=new Map();this.entitiesByTypeIndex=new Map();this.heatMachines=new Set();this.passiveHeatSources=new Set();
-    this.powerEquipmentIndex=new Set();this.powerEquipmentByType=new Map();
+    this.entities=[];this.entityByCell=new Map();this.entityById=new Map();this.utilityById=new Map();this.entitiesByTypeIndex=new Map();this.utilitiesByType=new Map();this.heatMachines=new Set();this.passiveHeatSources=new Set();
+    this.powerEquipmentIndex=new Set();this.powerEquipmentByType=new Map();this.wasteHeatEquipmentIndex=new Set();
     this.entityOrderIndex=new WeakMap();this.entityOrderSequence=0;
     this.utilityLayer=new Map();
     this.environment={temperature:OUTDOOR_TEMP,energyReceived:0};
@@ -94,9 +95,10 @@ export class World {
   addEnergyAt(x,y,joules){if(this.inBounds(x,y))this.energy[this.index(x,y)]+=joules;}
   bumpUtilityTopology(){this.utilityTopologyVersion++;}
   addEntity(entity){
-    this.entities.push(entity);entity.world=this;this.entityVisualVersion++;if(entity.isTechnician)this.dynamicVisualVersion++;else this.staticVisualVersion++;this.entityOrderIndex.set(entity,++this.entityOrderSequence);
+    this.entities.push(entity);entity.world=this;this.entityById.set(entity.id,entity);this.entityVisualVersion++;if(entity.isTechnician)this.dynamicVisualVersion++;else this.staticVisualVersion++;this.entityOrderIndex.set(entity,++this.entityOrderSequence);
     let typed=this.entitiesByTypeIndex.get(entity.type);if(!typed)this.entitiesByTypeIndex.set(entity.type,typed=new Set());typed.add(entity);
     this.indexPowerEquipment(entity);
+    if(entity.isHeatMachine)this.heatMachineTopologyVersion++;
     if(entity.isHeatMachine)this.heatMachines.add(entity);if(entity.isPassiveHeatSource)this.passiveHeatSources.add(entity);
     if(occupiesEntityCell(entity))for(const cell of entityFootprintCells(entity))if(this.inBounds(cell.x,cell.y)){const index=this.index(cell.x,cell.y);if(!this.entityByCell.has(index))this.entityByCell.set(index,entity);}
     if(entity.isTechnician)this.navigationGrid?.addTechnician(entity);else if(occupiesEntityCell(entity))this.navigationTopologyVersion++;
@@ -106,18 +108,19 @@ export class World {
   }
   removeEntity(entity){
     const position=this.entities.indexOf(entity);if(position<0)return false;
-    this.entities.splice(position,1);this.entityVisualVersion++;if(entity.isTechnician)this.dynamicVisualVersion++;else this.staticVisualVersion++;
-    this.entitiesByTypeIndex.get(entity.type)?.delete(entity);
+    this.entities.splice(position,1);this.entityById.delete(entity.id);this.entityVisualVersion++;if(entity.isTechnician)this.dynamicVisualVersion++;else this.staticVisualVersion++;
+    this.entitiesByTypeIndex.get(entity.type)?.delete(entity);this.wasteHeatEquipmentIndex.delete(entity);
+    if(entity.isHeatMachine)this.heatMachineTopologyVersion++;
     this.rebuildPowerEquipmentIndex();
     this.heatMachines.delete(entity);this.passiveHeatSources.delete(entity);
     if(occupiesEntityCell(entity))for(const cell of entityFootprintCells(entity))if(this.inBounds(cell.x,cell.y)){const index=this.index(cell.x,cell.y);if(this.entityByCell.get(index)===entity){this.entityByCell.delete(index);const replacement=this.entities.find(candidate=>occupiesEntityCell(candidate)&&entityFootprintCells(candidate).some(item=>this.inBounds(item.x,item.y)&&this.index(item.x,item.y)===index));if(replacement)this.entityByCell.set(index,replacement);}}
     if(entity.isTechnician)this.navigationGrid?.removeTechnician(entity);else if(occupiesEntityCell(entity))this.navigationTopologyVersion++;
     if(COOLING_ENTITIES.has(entity.type))this.bumpUtilityTopology();if(FLUID_ENTITIES.has(entity.type))this.fluidTopologyVersion++;
-    if(entity.type==='serverRack')this.rackTopologyVersion++;
+    if(entity.type==='serverRack')this.rackTopologyVersion++;if(entity.isHeatMachine)this.heatMachineTopologyVersion++;
     return true;
   }
   clearEntities(){
-    const removed=this.entities;this.entities=[];this.entityByCell.clear();this.entitiesByTypeIndex.clear();this.heatMachines.clear();this.passiveHeatSources.clear();this.entityVisualVersion++;if(removed.some(entity=>entity.isTechnician))this.dynamicVisualVersion++;if(removed.some(entity=>!entity.isTechnician))this.staticVisualVersion++;
+    const removed=this.entities;this.entities=[];this.entityById.clear();this.entityByCell.clear();this.entitiesByTypeIndex.clear();this.heatMachines.clear();this.passiveHeatSources.clear();this.wasteHeatEquipmentIndex.clear();this.entityVisualVersion++;if(removed.some(entity=>entity.isTechnician))this.dynamicVisualVersion++;if(removed.some(entity=>!entity.isTechnician))this.staticVisualVersion++;
     if(removed.some(entity=>COOLING_ENTITIES.has(entity.type)))this.bumpUtilityTopology();
     if(removed.some(entity=>FLUID_ENTITIES.has(entity.type)))this.fluidTopologyVersion++;
     if(removed.some(entity=>entity.type==='serverRack'))this.rackTopologyVersion++;
@@ -128,7 +131,7 @@ export class World {
   clearUtilities(){
     if(!this.utilityLayer.size)return false;
     const hadFluid=Array.from(this.utilityLayer.values()).flat().some(utility=>FLUID_UTILITIES.has(utility.type));
-    this.utilityLayer.clear();this.rebuildPowerEquipmentIndex();this.bumpUtilityTopology();if(hadFluid)this.fluidTopologyVersion++;return true;
+    this.utilityLayer.clear();this.utilityById.clear();this.utilitiesByType.clear();this.rebuildPowerEquipmentIndex();this.bumpUtilityTopology();if(hadFluid)this.fluidTopologyVersion++;return true;
   }
   moveEntity(entity,x,y){
     if(!this.entities.includes(entity)||entity.x===x&&entity.y===y)return false;
@@ -147,30 +150,34 @@ export class World {
     if(!this.inBounds(utility.x,utility.y))return null;
     const index=this.index(utility.x,utility.y),items=this.utilityLayer.get(index)||[];
     if(!utilityCanShareTile(utility.type,items))return null;
-    utility.world=this;items.push(utility);this.utilityLayer.set(index,items);this.indexPowerEquipment(utility);this.bumpUtilityTopology();if(FLUID_UTILITIES.has(utility.type))this.fluidTopologyVersion++;return utility;
+    utility.world=this;items.push(utility);this.utilityLayer.set(index,items);this.utilityById.set(utility.id,utility);let typed=this.utilitiesByType.get(utility.type);if(!typed)this.utilitiesByType.set(utility.type,typed=new Set());typed.add(utility);this.indexPowerEquipment(utility);this.bumpUtilityTopology();if(FLUID_UTILITIES.has(utility.type))this.fluidTopologyVersion++;return utility;
   }
   removeUtility(utility){
     const index=this.index(utility.x,utility.y),items=this.utilityLayer.get(index)||[];
     const next=items.filter(item=>item!==utility);
     if(next.length)this.utilityLayer.set(index,next);else this.utilityLayer.delete(index);
-    if(next.length!==items.length){this.bumpUtilityTopology();if(FLUID_UTILITIES.has(utility.type))this.fluidTopologyVersion++;}
+    if(next.length!==items.length){this.utilityById.delete(utility.id);const typed=this.utilitiesByType.get(utility.type);typed?.delete(utility);if(typed&&!typed.size)this.utilitiesByType.delete(utility.type);this.bumpUtilityTopology();if(FLUID_UTILITIES.has(utility.type))this.fluidTopologyVersion++;}
     if(next.length!==items.length)this.rebuildPowerEquipmentIndex();
   }
   indexPowerEquipment(equipment){
+    if(equipment?.wasteHeatFraction>0)this.wasteHeatEquipmentIndex.add(equipment);
     if(!equipment||(!POWER_EQUIPMENT_TYPES.has(equipment.type)&&!equipment.isHeatMachine&&!('power' in equipment)&&!('requestedPower' in equipment)&&!('generationW' in equipment)))return;
     this.onPowerEquipmentIndexed?.(equipment);
     this.powerEquipmentIndex.add(equipment);let typed=this.powerEquipmentByType.get(equipment.type);
     if(!typed)this.powerEquipmentByType.set(equipment.type,typed=new Set());typed.add(equipment);
   }
   rebuildPowerEquipmentIndex(){
-    this.powerEquipmentIndex.clear();this.powerEquipmentByType.clear();
+    this.powerEquipmentIndex.clear();this.powerEquipmentByType.clear();this.wasteHeatEquipmentIndex.clear();
     for(const equipment of this.entities)this.indexPowerEquipment(equipment);
     for(const utilities of this.utilityLayer.values())for(const equipment of utilities)this.indexPowerEquipment(equipment);
   }
   powerEquipmentSetByType(type){return this.powerEquipmentByType.get(type)||EMPTY_ENTITY_SET;}
+  wasteHeatEquipment(){return this.wasteHeatEquipmentIndex;}
+  utilitySetByType(type){return this.utilitiesByType.get(type)||EMPTY_ENTITY_SET;}
   powerEquipment(){return this.powerEquipmentIndex;}
   allUtilities(){return [...this.utilityLayer.values()].flat();}
   entityAt(x,y){return this.inBounds(x,y)?this.entityByCell.get(this.index(x,y)):undefined;}
+  getEntityById(id){return this.entityById.get(id)||this.utilityById.get(id)||null;}
   entitySetByType(type){return this.entitiesByTypeIndex.get(type)||EMPTY_ENTITY_SET;}
   entityOrder(entity){return this.entityOrderIndex.get(entity)||0;}
   entitiesByType(type){return [...this.entitySetByType(type)];}

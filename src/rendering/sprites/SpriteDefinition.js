@@ -1,10 +1,14 @@
+const FAILURE_STATUSES=new Set(['OVERLOAD','OVERHEAT','FAULT']);
+const WARNING_STATUSES=new Set(['HOT','WARNING','HIGH RESISTANCE','RESTRICTED']);
+const FAN_TYPES=new Set(['fan','exhaust']);
+
 export function getVisualState(entity){
   if(entity?.enabled===false)return 'off';
   if(entity?.powerBlocked)return 'critical';
   const status=String(entity?.status||'').toUpperCase();
-  if(['OVERLOAD','OVERHEAT','FAULT'].includes(status)||entity?.critical)return 'critical';
+  if(FAILURE_STATUSES.has(status)||entity?.critical)return 'critical';
   if(status==='CANCELLED'||status==='OFF'||status==='POWER_OFF')return 'off';
-  if(['HOT','WARNING','HIGH RESISTANCE','RESTRICTED'].includes(status)||entity?.warning)return 'warning';
+  if(WARNING_STATUSES.has(status)||entity?.warning)return 'warning';
   const networkStatus=String(entity?.networkStatus||'').toUpperCase();
   if(networkStatus&&networkStatus!=='READY'&&networkStatus!=='CLOSED')return 'critical';
   const threshold=entity?.failureTemperature??entity?.overheatThreshold??80;
@@ -13,10 +17,11 @@ export function getVisualState(entity){
   if(status==='HIGH HEAD')return 'critical';
   if(temp>=threshold*.85)return 'warning';
   const active=entity?.type==='pump'?(entity.circuitClosed&&entity.flowRate>.02)
-    :['fan','exhaust'].includes(entity?.type)?(entity.currentVelocity||0)>.04
+    :FAN_TYPES.has(entity?.type)?(entity.currentVelocity||0)>.04
     :entity?.type==='radiator'?(entity.thermalPower||0)>100
     :entity?.type==='exchanger'?Math.abs(entity.thermalPower||0)>100
     :entity?.type==='supplyVent'?(entity.flowRate||0)>.02
+    :entity?.type==='solarPanel'?(entity.generationW||0)>0
     :entity?.type==='tank'?true
     :entity?.type==='sensor'?true
     :entity?.type==='furnace'?entity.started!==false

@@ -8,7 +8,7 @@ const isDuct=e=>e?.type==='duct';
 export class CoolingNetworkBuilder {
   constructor(world){this.world=world;}
   build(){
-    const world=this.world,ducts=world.allUtilities().filter(isDuct),vents=world.entitiesByType('supplyVent'),units=world.entitiesByType('coolingUnit');
+    const world=this.world,ducts=world.utilitySetByType?Array.from(world.utilitySetByType('duct')):world.allUtilities().filter(isDuct),vents=world.entitiesByType('supplyVent'),units=world.entitiesByType('coolingUnit');
     const at=new Map(ducts.map(d=>[world.index(d.x,d.y),d])),seen=new Set(),networks=[];
     for(const seed of ducts){
       const si=world.index(seed.x,seed.y);if(seen.has(si))continue;

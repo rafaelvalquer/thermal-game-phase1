@@ -12,17 +12,22 @@ import { extendPipePath } from '../building/PipePath.js';
 import { STRUCTURE_TOOLS } from '../building/BuildCatalog.js';
 import { DUCT_TOOLS } from '../building/PlacementValidator.js';
 import { DataCenterManager } from '../datacenter/DataCenterManager.js';
+import { DataCenterSaveSystem } from '../datacenter/DataCenterSaveSystem.js';
 import { TechnicianSystem } from '../simulation/TechnicianSystem.js';
 import { technicianAt } from '../entities/Technician.js';
 import { PerformanceMonitor } from '../performance/PerformanceMonitor.js';
+import { BrowserPerformanceBenchmark } from '../dev/BrowserPerformanceBenchmark.js';
 
 export class Game {
-  constructor(canvas,level,campaign){
+  constructor(canvas,level,campaign,{saveSystem=null}={}){
     this.canvas=canvas;this.level=level.datacenterSandbox?{...level,powerLimit:level.datacenter.powerCapacityKW*1000}:level;this.campaign=campaign;
     this.levelManager=new LevelManager();this.world=this.levelManager.load(this.level);
-    this.datacenter=this.level.datacenterSandbox?new DataCenterManager(this.world,this.level):null;
+    const benchmarkSaveSystem=this.level.performanceBenchmarkSave?new DataCenterSaveSystem({key:'thermal-lab-performance-benchmark-save-v1'}):undefined;
+    const activeSaveSystem=saveSystem||benchmarkSaveSystem;
+    this.datacenter=this.level.datacenterSandbox?new DataCenterManager(this.world,this.level,activeSaveSystem?{saveSystem:activeSaveSystem}:{}):null;
     if(this.datacenter)this.level.powerLimit=this.datacenter.powerGrid.capacityKW*1000;
     this.performance=new PerformanceMonitor();this.sim=new Simulation(this.world,this.level,{monitor:this.performance});
+    this.browserBenchmark=this.level.performanceBenchmark?new BrowserPerformanceBenchmark(this.level.performanceBenchmark,this.performance):null;
     this.build=new BuildSystem(this.world,this.sim,{budget:this.datacenter?.cash??this.level.budget,inventory:this.level.inventory});
     this.staff=new TechnicianSystem(this.world,this.build);this.staff.monitor=this.performance;this.world.technicianSystem=this.staff;this.sim.technicians=this.staff;
     if(this.datacenter)this.staff.payrollDay=this.datacenter.state.lastSettledDay||0;
@@ -32,8 +37,9 @@ export class Game {
     this.assetsReady=this.renderer.preloadSprites();
     this.input=new InputManager(canvas);this.mouse=new MouseController(canvas,this.camera,this.renderer.tile);this.hover={x:0,y:0};
     this.setupInput();this.sim.initialize();this.ui=new UIManager(this,campaign);this.setSpeed(1);this.centerCamera();
+    document.querySelector('#benchmarkDownload')?.addEventListener('click',()=>this.browserBenchmark?.download());
     this.camera.setBounds(this.world.width*this.renderer.tile,this.world.height*this.renderer.tile);
-    this.loop=new GameLoop(dt=>this.update(dt),()=>this.render());
+    this.loop=new GameLoop(dt=>this.update(dt),()=>this.render(),{monitor:this.performance});
   }
 
   setupInput(){
@@ -98,7 +104,16 @@ export class Game {
     this.sim.update(dt);this.performance.begin('uiMs');this.ui?.update(dt);this.performance.end('uiMs');this.datacenter?.updateAutoSave(dt);
   }
 
-  render(){this.renderer.draw(this.world,this.sim);}
+  render(){
+    this.renderer.draw(this.world,this.sim);
+    const report=this.browserBenchmark?.frame();
+    if(report){
+      const output=document.querySelector('#benchmarkOutput'),download=document.querySelector('#benchmarkDownload');
+      if(output)output.textContent=`${report.elapsedSeconds}s · ${report.sampledFrames} quadros\nFPS p50 ${report.fpsP50.toFixed(1)} · FPS p95 baixo ${report.fpsP95Low.toFixed(1)}\nQuadro p50/p95 ${report.frameTimeP50.toFixed(1)} / ${report.frameTimeP95.toFixed(1)} ms\nLoop ${report.gameLoopWorkMs.toFixed(1)} ms · updates ${report.gameLoopUpdateMs.toFixed(1)} ms · ${report.gameLoopUpdates.toFixed(1)} atualizações/s\nSimulação ${report.simulationMs.toFixed(1)} ms · render ${report.renderMs.toFixed(1)} ms · UI ${report.uiMs.toFixed(1)} ms\nRender: mapa ${report.renderTilesMs.toFixed(1)} · heatmap ${report.renderHeatmapMs.toFixed(1)} · dutos ${report.renderDuctsMs.toFixed(1)} ms\nRender: entidades ${report.renderEntitiesMs.toFixed(1)} · efeitos ${report.renderEffectsMs.toFixed(1)} · labels ${report.renderThermalLabelsMs.toFixed(1)} ms\nEntidades ${report.visibleEntities}/${report.totalEntities} · dutos ${report.renderedDucts} · links fluido ${report.renderedFluidLinks}\nQuadros longos/graves ${report.longFrameCount.toFixed(1)} / ${report.severeFrameCount.toFixed(1)} por segundo\nBacklog de física ${report.physicsBacklogSeconds.toFixed(2)} s`;
+      if(output){const gc=report.gcSupported?`${report.gcCount.toFixed(1)} eventos/s · ${report.gcMs.toFixed(1)} ms`:'GC sem suporte do navegador',heap=report.heapUsedBytes==null?'n/d':(report.heapUsedBytes/1048576).toFixed(1)+' MB',saveSize=report.saveBytesEstimated?'B estimados':'B';output.textContent+=`\n${gc} · heap ${heap} · quedas ${report.heapDropCount.toFixed(1)}/s · save/quadro ${report.saveMs.toFixed(2)} ms · evento p50/p95/máx ${report.saveDurationP50Ms.toFixed(1)}/${report.saveDurationP95Ms.toFixed(1)}/${report.saveDurationMaxMs.toFixed(1)} ms · captura ${report.saveCaptureMs.toFixed(1)} ms (estado/tiles/entidades/utilidades/build ${report.saveStateMs.toFixed(1)}/${report.saveTilesMs.toFixed(1)}/${report.saveEntitiesMs.toFixed(1)}/${report.saveUtilitiesMs.toFixed(1)}/${report.saveBuildMs.toFixed(1)}) · JSON/storage ${report.saveSerializeMs.toFixed(1)}/${report.saveStorageMs.toFixed(1)} ms (${report.saveEventsPerSec.toFixed(2)}/s, ${report.saveBytes} ${saveSize}) · paths ${report.coolingPathAllocations.toFixed(1)}/s`;}
+      if(download)download.disabled=false;
+    }
+  }
 
   toast(text){
     const t=document.querySelector('#toast');if(!t)return;t.textContent=text;t.classList.add('show');
