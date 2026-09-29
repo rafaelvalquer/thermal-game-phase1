@@ -3,15 +3,28 @@ import { EquipmentSpriteRenderer } from './sprites/EquipmentSpriteRenderer.js';
 import { ViewportCulling } from './ViewportCulling.js';
 
 export class EntityRenderer {
-  constructor(){this.sprites=new EquipmentSpriteRenderer();this.sprites.fallback=this;this.cachedOrder=[];this.cachedVersion=-1;}
+  constructor(){this.sprites=new EquipmentSpriteRenderer();this.sprites.fallback=this;this.cachedOrder=[];this.cachedDynamicOrder=[];this.cachedVersion=-1;this.cachedStaticVersion=-1;this.cachedDynamicVersion=-1;this.staticEntities=[];this.dynamicEntities=[];}
   preloadSprites(){return this.sprites.preload();}
 
   draw(ctx,world,tile,mode,time=0,{selectedEntity=null,bounds=null,zoom=1}={}){
     this.stats={spriteDraws:0,fallbacks:0,animated:0,visibleEntities:0};
-    if(this.cachedVersion!==world.entityVisualVersion){this.cachedOrder=[...world.entities].map((entity,index)=>({entity,index})).sort((a,b)=>(a.entity.y+this.sprites.visualFootY(a.entity))*tile-(b.entity.y+this.sprites.visualFootY(b.entity))*tile||a.index-b.index);this.cachedVersion=world.entityVisualVersion;}
+    if(this.cachedStaticVersion!==world.staticVisualVersion||this.cachedVersion<0){
+      const previous=this.staticEntities;this.staticEntities=world.entities.filter(entity=>!entity.isTechnician);
+      this.cachedStaticVersion=world.staticVisualVersion;
+      if(previous.length||this.cachedVersion<0)this.cachedOrder=this.sorted(this.staticEntities,tile);
+    }
+    if(this.cachedDynamicVersion!==world.dynamicVisualVersion||this.cachedVersion<0){this.dynamicEntities=world.entities.filter(entity=>entity.isTechnician);this.cachedDynamicOrder=this.sorted(this.dynamicEntities,tile);this.cachedDynamicVersion=world.dynamicVisualVersion;}
+    this.cachedVersion=world.entityVisualVersion;
     const viewport=ViewportCulling.fromBounds(bounds,tile,3);
     const thermalMachines=[];
-    for(const {entity:e} of this.cachedOrder){
+    let staticIndex=0,dynamicIndex=0,staticDrawn=0,dynamicDrawn=0;
+    // Stable static depth order can be merged with the small, moving technician layer.
+    while(staticIndex<this.cachedOrder.length||dynamicIndex<this.cachedDynamicOrder.length){
+      const stat=this.cachedOrder[staticIndex],dynamic=this.cachedDynamicOrder[dynamicIndex];
+      const statDepth=stat?stat.depth*tile:-Infinity;
+      const dynamicDepth=dynamic?dynamic.depth*tile:-Infinity;
+      const item=dynamic&&(!stat||dynamicDepth<statDepth||dynamicDepth===statDepth&&dynamic.order<stat.order)?this.cachedDynamicOrder[dynamicIndex++]:this.cachedOrder[staticIndex++];
+      const e=item.entity;
       if(!viewport.contains(e.x,e.y))continue;
       this.stats.visibleEntities++;
       const visual=e.type==='technician'&&e.moveProgress>0?{...e,x:e.fromX+(e.toX-e.fromX)*e.moveProgress,y:e.fromY+(e.toY-e.fromY)*e.moveProgress}:e;
@@ -41,6 +54,8 @@ export class EntityRenderer {
     }
     this.drawTechnicianWork(ctx,world,tile,mode);
   }
+
+  sorted(entities,tile){return entities.map((entity,index)=>({entity,index,order:entity.world?.entityOrder?.(entity)??index,depth:entity.y+this.sprites.visualFootY(entity)})).sort((a,b)=>a.depth-b.depth||a.order-b.order);}
 
   drawTechnicianWork(ctx,world,tile,mode){
     const workers=world.entities.filter(entity=>entity.type==='technician'&&entity.action==='working'&&entity.targetRackId!=null);

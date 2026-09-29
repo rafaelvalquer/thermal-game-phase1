@@ -1,17 +1,23 @@
 import { isPowered, powerEquipment } from './PowerState.js';
 import { BATTERY_ROUND_TRIP_EFFICIENCY } from '../entities/PowerBattery.js';
+import { PowerFrameSnapshot } from './power/PowerFrameSnapshot.js';
 
 const batteriesInPositionOrder=world=>world.entitiesByType('battery').sort((a,b)=>a.y-b.y||a.x-b.x||a.id-b.id);
 const solarPanels=world=>world.entitiesByType('solarPanel').sort((a,b)=>a.y-b.y||a.x-b.x||a.id-b.id);
-const nonBatteryLoad=world=>powerEquipment(world).reduce((sum,e)=>sum+(
-  e.type!=='battery'&&isPowered(e)?Math.max(0,e.requestedPower??e.power??0):0
-),0);
+const category=type=>type==='serverRack'?'rack':type==='coolingUnit'||type==='fan'||type==='exhaust'||type==='supplyVent'?'cooling':type==='pump'||type==='pipe'||type==='tank'||type==='radiator'||type==='exchanger'?'fluid':'auxiliary';
+const emptyLoads=()=>({rack:0,cooling:0,fluid:0,auxiliary:0});
 
 export class BatteryDispatchSystem {
-  constructor(world,metrics){this.world=world;this.metrics=metrics;this.gridPowerW=0;this.chargePowerW=0;this.gridChargePowerW=0;this.solarChargePowerW=0;this.solarGenerationW=0;this.dischargePowerW=0;this.lastDispatchSeconds=0;this.dispatchLedger=[];}
+  constructor(world,metrics){this.world=world;this.metrics=metrics;this.gridPowerW=0;this.chargePowerW=0;this.gridChargePowerW=0;this.solarChargePowerW=0;this.solarGenerationW=0;this.dischargePowerW=0;this.lastDispatchSeconds=0;this.dispatchLedger=[];this.dispatchGeneration=0;this.snapshot=new PowerFrameSnapshot();}
+  set monitor(value){this._monitor=value;}
+  get monitor(){return this._monitor||null;}
 
   dispatch(capacityW,dt,{disabled=false}={}){
-    const batteries=batteriesInPositionOrder(this.world),panels=solarPanels(this.world),load=nonBatteryLoad(this.world),capacity=Number.isFinite(capacityW)&&capacityW>0?capacityW:Infinity;
+    this.dispatchGeneration++;
+    const equipment=powerEquipment(this.world),requestedLoads=emptyLoads(),operatingLoads=emptyLoads();
+    for(const item of equipment){if(item.type==='battery'||item.type==='solarPanel'||!item.enabled)continue;const watts=Math.max(0,item.requestedPower??item.power??0);requestedLoads[category(item.type)]+=watts;if(isPowered(item))operatingLoads[category(item.type)]+=watts;}
+    const load=operatingLoads.rack+operatingLoads.cooling+operatingLoads.fluid+operatingLoads.auxiliary;
+    const batteries=batteriesInPositionOrder(this.world),panels=solarPanels(this.world),capacity=Number.isFinite(capacityW)&&capacityW>0?capacityW:Infinity;
     const duration=Math.max(0,Number(dt)||0),eta=Math.sqrt(BATTERY_ROUND_TRIP_EFFICIENCY);
     const hour=this.world.datacenter?.clock?.hour??this.world.solarHour??12;
     this.solarGenerationW=panels.reduce((sum,panel)=>sum+panel.updateGeneration(hour),0);
@@ -51,7 +57,12 @@ export class BatteryDispatchSystem {
       if(battery.storedEnergyJ>=battery.capacityJ-1)battery.operationState='FULL';
       else if(battery.storedEnergyJ<=0)battery.operationState='EMPTY';
     }
-    this.gridPowerW=this.currentGridPowerW();
+    this.gridPowerW=disabled?0:Math.max(0,load-this.solarGenerationW+this.gridChargePowerW-this.dischargePowerW);
+    this.snapshot.clear();
+    this.monitor?.begin?.('powerSnapshotMs');
+    this.snapshot.capture({requestedLoads,operatingLoads,solarGenerationW:this.solarGenerationW,batteryChargeW:this.chargePowerW,batteryDischargeW:this.dischargePowerW,
+      gridChargeW:this.gridChargePowerW,solarChargeW:this.solarChargePowerW,gridPowerW:this.gridPowerW,capacityW:capacity,generation:this.dispatchGeneration});
+    this.monitor?.end?.('powerSnapshotMs');
     return {loadW:load,solarGenerationW:this.solarGenerationW,chargeW:this.chargePowerW,solarChargeW:this.solarChargePowerW,gridChargeW:this.gridChargePowerW,dischargeW:this.dischargePowerW,gridPowerW:this.gridPowerW};
   }
 
@@ -76,9 +87,12 @@ export class BatteryDispatchSystem {
 
   currentGridPowerW({breakerOpen=false}={}){
     if(breakerOpen)return 0;
-    const load=nonBatteryLoad(this.world),generation=solarPanels(this.world).reduce((sum,panel)=>sum+(isPowered(panel)?panel.generationW||0:0),0),batteries=batteriesInPositionOrder(this.world);
-    const charging=this.gridChargePowerW;
-    const discharging=batteries.reduce((sum,b)=>sum+(isPowered(b)?b.dischargePowerW||0:0),0);
-    return Math.max(0,load-generation+charging-discharging);
+    if(this.snapshot.valid&&this.snapshot.generation===this.dispatchGeneration)return this.snapshot.gridPowerW;
+    const equipment=powerEquipment(this.world);let load=0,generation=0;
+    for(const e of equipment){
+      if(e.type==='solarPanel'){if(isPowered(e))generation+=e.generationW||0;continue;}
+      if(e.type==='battery'||!isPowered(e))continue;load+=Math.max(0,e.requestedPower??e.power??0);
+    }
+    return Math.max(0,load-generation+this.gridChargePowerW-this.dischargePowerW);
   }
 }

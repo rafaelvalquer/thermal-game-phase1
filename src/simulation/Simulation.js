@@ -11,9 +11,10 @@ export class Simulation {
     this.monitor=monitor;
     this.world=world;this.level=level;this.elapsed=0;this.paused=false;this.speed=1;
     this.datacenter=world.datacenter||null;
-    this.metrics={generatedHeat:0,externalEnergy:0,powerDraw:0,powerEnergy:0,solarGenerationW:0,energyBalance:0,maxTemp:25,maxAirTemp:25,maxMachineTemp:25,avgTemp:25};
+    this.metrics={generatedHeat:0,externalEnergy:0,powerDraw:0,powerEnergy:0,solarGenerationW:0,energyBalance:0,maxTemp:25,maxAirTemp:25,maxMachineTemp:25,avgTemp:25,airTemperatureSum:0,airCellCount:0};
     this.metrics.maxTempEver=25;this.metrics.maxPowerEver=0;
     this.thermal=new ThermalSystem(world,this.metrics);
+    this.thermal.monitor=monitor;
     this.airflow=new AirflowSystem(world,this.metrics);
     this.airflow.monitor=monitor;
     const systems=level.thermalSystems;
@@ -23,7 +24,7 @@ export class Simulation {
     this.cooling=this.simpleCooling?new CoolingSystem(world,this.airflow,this.metrics):null;
     if(this.cooling)this.cooling.monitor=monitor;if(this.fluid)this.fluid.monitor=monitor;
     this.energySystem=new EnergySystem(world,this.metrics);
-    this.batteryDispatch=new BatteryDispatchSystem(world,this.metrics);world.batteryDispatch=this.batteryDispatch;
+    this.batteryDispatch=new BatteryDispatchSystem(world,this.metrics);this.batteryDispatch.monitor=monitor;world.batteryDispatch=this.batteryDispatch;
     this.mission=new MissionRuntime(world,level,this.metrics);
     this.technicians=world.technicianSystem||null;
     this.history=[];this.historyTimer=0;this.visualTime=0;
@@ -56,7 +57,9 @@ export class Simulation {
     this.monitor?.begin('rackMs');this.world.datacenter?.update(calendarDt);this.technicians?.update(dt);this.monitor?.end('rackMs');
     this.lastPhysicsDt=dt;
     this.monitor?.begin('coolingMs');this.world.datacenter?.protectPower?.(dt,calendarDt);this.monitor?.end('coolingMs');
-    this.monitor?.begin('coolingMs');this.cooling?.update(dt);this.monitor?.end('coolingMs');
+    this.monitor?.begin('coolingMs');
+    if(this.world.datacenter)this.cooling?.applyPowerResult(dt);else this.cooling?.update(dt);
+    this.monitor?.end('coolingMs');
     this.monitor?.begin('airflowMs');this.airflow.updateVelocity(dt);this.monitor?.end('airflowMs');
     this.monitor?.begin('thermalMs');this.thermal.update(dt,this.elapsed);this.airflow.advectHeat(dt);this.monitor?.end('thermalMs');
     this.monitor?.begin('coolingMs');this.cooling?.exchangeRooms(dt);this.monitor?.end('coolingMs');
@@ -73,11 +76,8 @@ export class Simulation {
   sampleSensors(){for(const s of this.world.entitiesByType('sensor'))if(this.world.inBounds(s.x,s.y))s.sample(this.world.temperatureAt(s.x,s.y));}
 
   updateMetrics(){
-    let sum=0,maxAir=-Infinity,count=0;
-    for(let i=0;i<this.world.size;i++){
-      if(!this.world.isAirIndex(i))continue;
-      const t=this.world.temperatureAtIndex(i);sum+=t;maxAir=Math.max(maxAir,t);count++;
-    }
+    let sum=this.metrics.airTemperatureSum||0,maxAir=this.metrics.maxAirTemp||0,count=this.metrics.airCellCount||0;
+    if(!count){sum=0;maxAir=-Infinity;for(let i=0;i<this.world.size;i++)if(this.world.isAirIndex(i)){const temperature=this.world.temperatureAtIndex(i);sum+=temperature;maxAir=Math.max(maxAir,temperature);count++;}}
     let machineCoolingPower=0,maxMachineTemp=-Infinity,machineCount=0;
     for(const machine of this.world.heatMachines){
       machineCoolingPower+=machine.coolingPower;machine.thermalBalance=machine.coolingPower-machine.heatGenerationPower;
@@ -85,7 +85,7 @@ export class Simulation {
       maxMachineTemp=Math.max(maxMachineTemp,machine.temperature);machineCount++;
     }
     this.metrics.machineCoolingPower=machineCoolingPower;
-    this.metrics.maxAirTemp=count?maxAir:0;
+    this.metrics.airTemperatureSum=sum;this.metrics.airCellCount=count;this.metrics.maxAirTemp=count?maxAir:0;
     this.metrics.maxMachineTemp=machineCount?maxMachineTemp:0;
     this.metrics.maxTemp=Math.max(this.metrics.maxAirTemp,this.metrics.maxMachineTemp);
     this.metrics.avgTemp=count?sum/count:0;

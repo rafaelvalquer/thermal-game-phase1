@@ -33,7 +33,7 @@ function serializeEntity(entity){
 }
 
 export class DataCenterSaveSystem {
-  constructor({storage=storageDefault(),key=STORAGE_KEY}={}){this.storage=storage;this.key=key;}
+  constructor({storage=storageDefault(),key=STORAGE_KEY}={}){this.storage=storage;this.key=key;this.lastSavedBytes=0;}
   load(){
     try{
       const raw=this.storage?this.storage.getItem(this.key):memoryStorage.get(this.key);
@@ -45,6 +45,7 @@ export class DataCenterSaveSystem {
     try{
       const raw=JSON.stringify(value);
       if(this.storage)this.storage.setItem(this.key,raw);else memoryStorage.set(this.key,raw);
+      this.lastSavedBytes=typeof TextEncoder!=='undefined'?new TextEncoder().encode(raw).byteLength:raw.length;
       return true;
     }catch{return false;}
   }
@@ -61,7 +62,7 @@ export class DataCenterSaveSystem {
   restoreWorld(world,snapshot){
     if(!snapshot?.world)return false;
     world.material.set(snapshot.world.materials);world.energy.set(snapshot.world.energy);world.rebuildMaterialProperties();
-    world.airTopologyVersion++;world.materialTopologyVersion++;
+    world.airTopologyVersion++;
     world.clearEntities();world.clearUtilities();
     for(const definition of snapshot.world.entities||[]){
       const properties={...(definition.properties||{})};

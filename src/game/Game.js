@@ -24,7 +24,7 @@ export class Game {
     if(this.datacenter)this.level.powerLimit=this.datacenter.powerGrid.capacityKW*1000;
     this.performance=new PerformanceMonitor();this.sim=new Simulation(this.world,this.level,{monitor:this.performance});
     this.build=new BuildSystem(this.world,this.sim,{budget:this.datacenter?.cash??this.level.budget,inventory:this.level.inventory});
-    this.staff=new TechnicianSystem(this.world,this.build);this.world.technicianSystem=this.staff;this.sim.technicians=this.staff;
+    this.staff=new TechnicianSystem(this.world,this.build);this.staff.monitor=this.performance;this.world.technicianSystem=this.staff;this.sim.technicians=this.staff;
     if(this.datacenter)this.staff.payrollDay=this.datacenter.state.lastSettledDay||0;
     this.datacenter?.attach(this.build,this.sim);
     this.camera=new Camera();this.renderer=new Renderer(canvas,this.camera,{monitor:this.performance});this.renderer.buildSystem=this.build;this.renderer.zones=this.level.zones||[];this.renderer.level=this.level;

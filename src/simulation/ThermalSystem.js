@@ -1,11 +1,13 @@
 import { isPowered } from './PowerState.js';
-import { TILE_AREA, TILE_SIZE_METERS } from '../utils/Constants.js';
-import { harmonicMean, clamp } from '../utils/MathUtils.js';
+import { clamp } from '../utils/MathUtils.js';
 import { SimulationConfig as C } from './SimulationConfig.js';
 import { AIR_FACE_AREA } from './air/AirConstants.js';
+import { ThermalTopologyCache } from './thermal/ThermalTopologyCache.js';
 
 export class ThermalSystem {
-  constructor(world, metrics){this.world=world;this.metrics=metrics;}
+  constructor(world, metrics){this.world=world;this.metrics=metrics;this.topology=new ThermalTopologyCache(world);}
+  set monitor(value){this._monitor=value;this.topology.monitor=value;}
+  get monitor(){return this._monitor||null;}
   heatMachines(){return this.world.heatMachines;}
   update(dt,elapsed){this.applyHeatSources(dt,elapsed);this.conduct(dt);this.exchangeMachines(dt);this.passiveOutdoorExchange(dt);}
 
@@ -29,20 +31,16 @@ export class ThermalSystem {
   }
 
   conduct(dt){
-    const w=this.world;w.nextEnergy.set(w.energy);w.heatFlux.fill(0);const dirs=[[1,0],[0,1]];
-    for(let y=0;y<w.height;y++)for(let x=0;x<w.width;x++){
-      const i=w.index(x,y),Ti=w.temperatureAtIndex(i),ki=w.thermalConductivity[i];
-      for(const [dx,dy] of dirs){
-        const nx=x+dx,ny=y+dy;if(!w.inBounds(nx,ny))continue;
-        const j=w.index(nx,ny),Tj=w.temperatureAtIndex(j),dT=Ti-Tj;if(Math.abs(dT)<1e-7)continue;
-        const k=harmonicMean(ki,w.thermalConductivity[j]);if(k<=0)continue;
-        let q=k*TILE_AREA*dT/TILE_SIZE_METERS*dt*C.conductionScale;
-        const ci=w.capacityAtIndex(i),cj=w.capacityAtIndex(j),qEq=Math.abs(dT)/(1/ci+1/cj);
-        q=clamp(q,-qEq*C.maxConductionEqualizationFraction,qEq*C.maxConductionEqualizationFraction);
-        w.nextEnergy[i]-=q;w.nextEnergy[j]+=q;w.heatFlux[i]+=Math.abs(q/dt);w.heatFlux[j]+=Math.abs(q/dt);
-      }
+    const w=this.world;this.monitor?.begin?.('thermalConductMs');this.topology.ensureCurrent();w.nextEnergy.set(w.energy);w.heatFlux.fill(0);
+    for(const {a,b,conductance} of this.topology.edges){
+      const Ta=w.temperatureAtIndex(a),Tb=w.temperatureAtIndex(b),dT=Ta-Tb;if(Math.abs(dT)<1e-7)continue;
+      let q=conductance*dT*dt;
+      const ca=w.capacityAtIndex(a),cb=w.capacityAtIndex(b),qEq=Math.abs(dT)/(1/ca+1/cb);
+      q=clamp(q,-qEq*C.maxConductionEqualizationFraction,qEq*C.maxConductionEqualizationFraction);
+      w.nextEnergy[a]-=q;w.nextEnergy[b]+=q;w.heatFlux[a]+=Math.abs(q/dt);w.heatFlux[b]+=Math.abs(q/dt);
     }
     w.energy.set(w.nextEnergy);
+    this.monitor?.end?.('thermalConductMs');
   }
 
   exchangeMachines(dt){for(const m of this.heatMachines()){

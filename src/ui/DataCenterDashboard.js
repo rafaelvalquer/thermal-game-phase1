@@ -12,7 +12,7 @@ const statusLabel=status=>({installing:'INSTALAÇÃO',active:'EM OPERAÇÃO',com
 const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 
 export class DataCenterDashboard {
-  constructor(root,manager,onMessage=()=>{},onOpenReport=()=>{},onContractSelection=()=>{}){this.root=root;this.manager=manager;this.onMessage=onMessage;this.onOpenReport=onOpenReport;this.onContractSelection=onContractSelection;this.lastHtml='';this.powerAmount='50';this.selectedContractId=null;this.contractsExpanded=false;}
+  constructor(root,manager,onMessage=()=>{},onOpenReport=()=>{},onContractSelection=()=>{},onImmediateChange=()=>{}){this.root=root;this.manager=manager;this.onMessage=onMessage;this.onOpenReport=onOpenReport;this.onContractSelection=onContractSelection;this.onImmediateChange=onImmediateChange;this.lastHtml='';this.powerAmount='50';this.selectedContractId=null;this.contractsExpanded=false;}
   update(){
     const dc=this.manager,metrics=dc.simulation.metrics,active=dc.activeContracts,installing=dc.state.contracts.filter(contract=>contract.status==='installing');
     const powerCapacity=dc.contractedPowerKW,powerCurrent=dc.facilityPowerKW,powerCommitted=dc.committedPowerKW;
@@ -98,10 +98,10 @@ export class DataCenterDashboard {
       button.textContent=this.contractsExpanded?'Ocultar contratos':'Mostrar contratos';
       if(panel)panel.hidden=!this.contractsExpanded;
     });
-    this.root.querySelector('[data-rearm]')?.addEventListener('click',()=>{const result=this.manager.rearmPower();this.onMessage(result.ok?result.restored+' racks religados; '+result.remaining+' continuam sem energia.':result.reason);this.update();});
-    this.root.querySelectorAll('[data-accept]').forEach(button=>button.onclick=()=>{const result=this.manager.acceptOffer(button.dataset.accept);this.onMessage(result.ok?(result.alreadyAccepted?'Este contrato já foi aceito. Instale os racks solicitados.':'Contrato assinado. Instale os racks solicitados.'):result.reason);this.lastHtml='';this.update();});
-    this.root.querySelectorAll('[data-decline]').forEach(button=>button.onclick=()=>{this.manager.declineOffer(button.dataset.decline);this.lastHtml='';this.update();});
-    this.root.querySelectorAll('[data-cancel]').forEach(button=>button.onclick=()=>{if(this.manager.cancelContract(button.dataset.cancel)){this.onMessage('Contrato encerrado; os racks foram desligados.');this.update();}});
+    this.root.querySelector('[data-rearm]')?.addEventListener('click',()=>{const result=this.manager.rearmPower();this.onMessage(result.ok?result.restored+' racks religados; '+result.remaining+' continuam sem energia.':result.reason);this.onImmediateChange();this.update();});
+    this.root.querySelectorAll('[data-accept]').forEach(button=>button.onclick=()=>{const result=this.manager.acceptOffer(button.dataset.accept);this.onMessage(result.ok?(result.alreadyAccepted?'Este contrato já foi aceito. Instale os racks solicitados.':'Contrato assinado. Instale os racks solicitados.'):result.reason);if(result.ok)this.onImmediateChange();this.lastHtml='';this.update();});
+    this.root.querySelectorAll('[data-decline]').forEach(button=>button.onclick=()=>{this.manager.declineOffer(button.dataset.decline);this.onImmediateChange();this.lastHtml='';this.update();});
+    this.root.querySelectorAll('[data-cancel]').forEach(button=>button.onclick=()=>{if(this.manager.cancelContract(button.dataset.cancel)){this.onMessage('Contrato encerrado; os racks foram desligados.');this.onImmediateChange();this.update();}});
     this.root.querySelectorAll('[data-select-contract]').forEach(card=>card.addEventListener('click',event=>{
       if(event.target.closest?.('[data-cancel]'))return;
       const contractId=card.dataset.selectContract;
@@ -121,10 +121,10 @@ export class DataCenterDashboard {
       if(upgradeButton)upgradeButton.disabled=!quote.ok||quote.cost>this.manager.cash;
     };
     amountInput?.addEventListener('input',()=>{this.powerAmount=amountInput.value;refreshPowerPreview();});
-    upgradeButton?.addEventListener('click',()=>{const result=this.manager.upgradePower(amountInput?.value);this.onMessage(result.ok?'Rede ampliada em '+result.addedKW+' kW; capacidade '+result.capacityKW+' kW, tarifa fixa '+money(result.monthlyFixedCost)+'/mês.':result.reason);if(result.ok)this.powerAmount=String(Math.min(50,this.manager.powerGrid.remainingCapacityKW));this.lastHtml='';this.update();});
-    this.root.querySelector('[data-pause-new]')?.addEventListener('change',event=>this.manager.setPauseOnNewContracts(event.target.checked));
+    upgradeButton?.addEventListener('click',()=>{const result=this.manager.upgradePower(amountInput?.value);this.onMessage(result.ok?'Rede ampliada em '+result.addedKW+' kW; capacidade '+result.capacityKW+' kW, tarifa fixa '+money(result.monthlyFixedCost)+'/mês.':result.reason);if(result.ok){this.powerAmount=String(Math.min(50,this.manager.powerGrid.remainingCapacityKW));this.onImmediateChange();}this.lastHtml='';this.update();});
+    this.root.querySelector('[data-pause-new]')?.addEventListener('change',event=>{this.manager.setPauseOnNewContracts(event.target.checked);this.onImmediateChange();});
     this.root.querySelector('[data-open-report]')?.addEventListener('click',()=>this.onOpenReport());
     this.root.querySelector('[data-save]')?.addEventListener('click',()=>this.onMessage(this.manager.persist()?'Data center salvo.':'Não foi possível salvar neste navegador.'));
-    this.root.querySelector('[data-load]')?.addEventListener('click',()=>{const loaded=this.manager.load();this.onMessage(loaded?'Salvamento carregado.':'Nenhum salvamento encontrado.');this.lastHtml='';if(loaded)this.update();});
+    this.root.querySelector('[data-load]')?.addEventListener('click',()=>{const loaded=this.manager.load();this.onMessage(loaded?'Salvamento carregado.':'Nenhum salvamento encontrado.');this.lastHtml='';if(loaded){this.onImmediateChange();this.update();}});
   }
 }

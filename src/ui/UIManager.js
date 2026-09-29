@@ -8,6 +8,7 @@ import { DataCenterDashboard } from './DataCenterDashboard.js';
 import { formatPower } from '../utils/MathUtils.js';
 import { isPowered, powerEquipment } from '../simulation/PowerState.js';
 import { technicianAt } from '../entities/Technician.js';
+import { UIScheduler } from './UIScheduler.js';
 
 const MODE_HELP={
   normal:'Operação · zonas, equipamentos e efeitos físicos',
@@ -37,9 +38,10 @@ export class UIManager {
     this.objectives=new ObjectivePanel(document.querySelector('#objectives'));
     this.minimap=new Minimap(document.querySelector('#minimap'),game);
     this.debriefing=new MissionDebriefing(game,campaign,()=>window.__thermalShowCampaign?.(),level=>window.__thermalStartLevel?.(level));
-    this.datacenterDashboard=game.datacenter?new DataCenterDashboard(document.querySelector('#datacenterDashboard'),game.datacenter,message=>game.toast(message),()=>this.openDailyReport(true),(contractId,racks,focus)=>this.selectContractRacks(contractId,racks,focus)):null;
+    this.datacenterDashboard=game.datacenter?new DataCenterDashboard(document.querySelector('#datacenterDashboard'),game.datacenter,message=>game.toast(message),()=>this.openDailyReport(true),(contractId,racks,focus)=>this.selectContractRacks(contractId,racks,focus),()=>this.forceDatacenterUiRefresh()):null;
     this.datacenterDashboardTimer=0;
     this.staffPanelTimer=0;this.staffPanelHtml='';
+    this.uiScheduler=new UIScheduler();this.forceUiRefresh=new Set(['inspector','metrics','alerts','staff','datacenterDashboard','graphs','objectives']);
     this.reportRoot=document.querySelector('#dailyReport');this.reportManual=false;this.resumeAfterReport=false;this.reportShownDay=null;
     this.expansionModalOfferId=null;this.resumeAfterExpansionOffer=false;
     this.graph=document.querySelector('#history');this.graphCtx=this.graph.getContext('2d');
@@ -91,8 +93,22 @@ export class UIManager {
 
   inspectEntity(entity,x=0,y=0){
     const e=entity&&this.game.world.entities.includes(entity)?entity:null;
-    this.inspector.setTarget(e?{kind:'entity',entity:e}:{kind:'tile',x,y});
+    this.inspector.setTarget(e?{kind:'entity',entity:e}:{kind:'tile',x,y});this.forceUiRefresh?.add('inspector');
     this.game.renderer.selectedEntity=e||null;
+  }
+
+  forceDatacenterUiRefresh(){for(const key of ['metrics','alerts','staff','datacenterDashboard','graphs','objectives','inspector']){this.forceUiRefresh?.add(key);this.activeDue?.add(key);}}
+
+  criticalAlertSignature(){
+    const {sim,datacenter}=this.game,m=sim.metrics,alerts=[];
+    if((m.maxAirTemp??m.maxTemp??0)>=80)alerts.push('air');
+    if((m.maxMachineTemp||0)>=80)alerts.push('machine');
+    if(datacenter){
+      const grid=datacenter.powerGrid;
+      if(grid.breakerOpen)alerts.push('breaker');if(grid.blockedRacks)alerts.push('blocked:'+grid.blockedRacks);if(grid.overloadSeconds>0)alerts.push('overload');
+      for(const contract of datacenter.state.contracts)if(contract.dailyViolation||contract.lastSlaViolationDay===datacenter.clock.day)alerts.push('sla:'+contract.id);
+    }else if(m.powerDraw>this.game.level.powerLimit)alerts.push('power');
+    return alerts.join('|');
   }
 
   selectContractRacks(contractId,racks=[],focus=false){
@@ -119,33 +135,41 @@ export class UIManager {
     sim.airflow?.fans.updateAllDiagnostics();
     sim.metrics.powerDraw=sim.batteryDispatch
       ?sim.batteryDispatch.currentGridPowerW({breakerOpen:Boolean(datacenter?.powerGrid?.breakerOpen)})
-      :powerEquipment(world).reduce((sum,item)=>sum+(isPowered(item)?item.power||0:0),0);
+      :[...powerEquipment(world)].reduce((sum,item)=>sum+(isPowered(item)?item.power||0:0),0);
     if(datacenter)datacenter.persist();
+    for(const key of ['metrics','alerts','datacenterDashboard','graphs','inspector'])this.forceUiRefresh?.add(key);
     this.inspector.update(world);
     this.game.toast((entity.enabled?'Ligado: ':'Desligado: ')+(entity.name||entity.type));
   }
 
   update(dt=0){
-    const g=this.game,s=g.sim;
+    const g=this.game,s=g.sim,critical=this.criticalAlertSignature();
+    if(critical!==this.lastCriticalAlertSignature){this.forceUiRefresh?.add('alerts');this.lastCriticalAlertSignature=critical;}
+    const due=new Set([...this.uiScheduler.update(dt),...this.forceUiRefresh]);this.forceUiRefresh.clear();
+    this.activeDue=due;
     const budget=document.querySelector('#budgetValue');if(budget)budget.textContent=(g.datacenter?'R$ ':'$ ')+Math.floor(g.build.budget).toLocaleString('pt-BR');
-    this.metrics.update(s,g.build,g.level);this.objectives.update(s);this.inspector.update(g.world);this.minimap.update(dt);
-    this.staffPanelTimer+=dt;if(this.staffPanelTimer>=.35){this.staffPanelTimer=0;this.updateStaffPanel();}
-    if(this.datacenterDashboard){this.datacenterDashboardTimer+=dt;if(this.datacenterDashboardTimer>=.35){this.datacenterDashboardTimer=0;this.datacenterDashboard.update();}}
+    if(due.has('metrics'))this.metrics.update(s,g.build,g.level);if(due.has('objectives'))this.objectives.update(s);if(due.has('inspector'))this.inspector.update(g.world);if(due.has('minimap'))this.minimap.update(.2);
+    if(due.has('staff'))this.updateStaffPanel();
+    if(this.datacenterDashboard&&due.has('datacenterDashboard'))this.datacenterDashboard.update();
     if(g.datacenter){
       const dc=g.datacenter;
+      const pendingBefore=Boolean(dc.state.reportPending),offerVersion=dc.state.marketGeneratedVersion||0,reputation=dc.state.reputation;
       if(dc.state.reportPending&&this.reportShownDay!==dc.state.dailyResult?.day)this.openDailyReport(false);
       const notification=dc.consumeNotification();
-      if(notification){const expenses=notification.energyCost+notification.fixedPowerCost+notification.coolingMaintenance+notification.penalties+(notification.staffPayroll||0),tierSuffix=notification.reputation?.tierChanged?' · reputação alterada para '+notification.reputation.tierEnd:'';this.game.toast('DIA '+(notification.day+1)+' · +'+(notification.newOffers?.length||0)+' oportunidades · receita '+this.money(notification.revenue)+' · custos '+this.money(expenses)+' · lucro '+this.money(notification.net)+tierSuffix);if(notification.reputation?.tierChanged)dc.state.reputationTierNotification=null;}
-      if(dc.state.reputationTierNotification&&!dc.state.reportPending){const tier=dc.state.reputationTierNotification;dc.state.reputationTierNotification=null;this.game.toast('Nível de reputação alterado: '+tier.oldTier+' → '+tier.newTier+'.');dc.persist();}
+      if(notification){const expenses=notification.energyCost+notification.fixedPowerCost+notification.coolingMaintenance+notification.penalties+(notification.staffPayroll||0),tierSuffix=notification.reputation?.tierChanged?' · reputação alterada para '+notification.reputation.tierEnd:'';this.game.toast('DIA '+(notification.day+1)+' · +'+(notification.newOffers?.length||0)+' oportunidades · receita '+this.money(notification.revenue)+' · custos '+this.money(expenses)+' · lucro '+this.money(notification.net)+tierSuffix);this.forceDatacenterUiRefresh();if(notification.reputation?.tierChanged)dc.state.reputationTierNotification=null;}
+      if(dc.state.reputationTierNotification&&!dc.state.reportPending){const tier=dc.state.reputationTierNotification;dc.state.reputationTierNotification=null;this.game.toast('Nível de reputação alterado: '+tier.oldTier+' → '+tier.newTier+'.');dc.persist();this.forceDatacenterUiRefresh();}
       this.updateExpansionOfferModal();
+      if((!pendingBefore&&dc.state.reportPending)||offerVersion!==(dc.state.marketGeneratedVersion||0)||reputation!==dc.state.reputation)
+        this.forceDatacenterUiRefresh();
     }
-    document.querySelector('#clock').textContent=g.datacenter?g.datacenter.clock.format():this.formatTime(s.elapsed);
-    document.querySelector('#missionText').textContent=s.mission.message;
+    if(due.has('clock'))document.querySelector('#clock').textContent=g.datacenter?g.datacenter.clock.format():this.formatTime(s.elapsed);
+    if(due.has('objectives'))document.querySelector('#missionText').textContent=s.mission.message;
     document.querySelector('#pauseBtn').textContent=s.paused?'▶ Continuar':'Ⅱ Pausar';
     document.querySelector('#speedLabel').textContent=s.speed+'×';
     document.querySelector('#rotateHint').textContent=DUCT_HINT(g);
-    this.updateAlerts();this.drawGraph();
+    if(due.has('alerts'))this.updateAlerts();if(due.has('graphs')){g.performance?.begin?.('uiGraphMs');try{this.drawGraph();}finally{g.performance?.end?.('uiGraphMs');}}
     if(s.mission.state!=='running')this.debriefing.show();
+    this.activeDue=null;
   }
 
   money(value){return (this.game.datacenter?'R$ ':'$ ')+Math.round(Number(value)||0).toLocaleString('pt-BR');}

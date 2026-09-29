@@ -8,7 +8,7 @@ import { AirflowSystem } from '../../src/simulation/air/AirflowSystem.js';
 import { CoolingSystem } from '../../src/simulation/cooling/CoolingSystem.js';
 
 test('cooling topology is reused across ticks and rebuilt after a duct is added',()=>{
-  const world=new World(24,12),metrics={},monitor={count(){this.rebuilds=(this.rebuilds||0)+1;}},airflow=new AirflowSystem(world,metrics),cooling=new CoolingSystem(world,airflow,metrics);
+  const world=new World(24,12),metrics={},monitor={count(name){if(name==='coolingRebuildCount')this.rebuilds=(this.rebuilds||0)+1;}},airflow=new AirflowSystem(world,metrics),cooling=new CoolingSystem(world,airflow,metrics);
   cooling.monitor=monitor;world.addEntity(new CoolingUnit(2,2));world.addUtility(new AirDuct(3,2,{size:'duct'}));world.addEntity(new SupplyVent(4,2));
   let builds=0;const build=cooling.builder.build.bind(cooling.builder);cooling.builder.build=()=>{builds++;return build();};
   for(let i=0;i<100;i++)cooling.update(.05);

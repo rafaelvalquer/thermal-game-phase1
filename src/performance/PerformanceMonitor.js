@@ -1,7 +1,7 @@
 const now=()=>globalThis.performance?.now?.()??Date.now();
 
-const TIME_KEYS=['simulationMs','airflowMs','pressureMs','coolingMs','thermalMs','rackMs','fluidMs','renderMs','uiMs','saveMs'];
-const COUNT_KEYS=['pressureSolveCount','coolingRebuildCount','fluidRebuildCount'];
+const TIME_KEYS=['simulationMs','airflowMs','pressureMs','coolingMs','coolingPrepareMs','coolingExchangeMs','ventCoverageMs','technicianDispatchMs','technicianPathfindingMs','thermalMs','thermalConductMs','rackMs','fluidMs','hydraulicSolveMs','powerSnapshotMs','renderMs','uiMs','uiGraphMs','saveMs'];
+const COUNT_KEYS=['pressureSolveCount','coolingRebuildCount','coolingPrepareCount','coolingFrameReuseCount','coolingPartialRecalcCount','ventCoverageCalculationCount','ventCoverageCacheHitCount','technicianDispatchCount','technicianPathCalculationCount','pathsCalculated','technicianPathCacheHitCount','fluidRebuildCount','hydraulicSolveCount','thermalTopologyRebuildCount'];
 
 export class PerformanceMonitor {
   constructor({windowSize=120,clock=now}={}){
@@ -25,6 +25,7 @@ export class PerformanceMonitor {
     for(const key of COUNT_KEYS)result[key]=totalMs?frames.reduce((sum,frame)=>sum+(frame.counts[key]||0),0)*1000/totalMs:0;
     result.visibleEntities=frames.length?(frames.at(-1).values.visibleEntities||0):0;
     result.totalEntities=frames.length?(frames.at(-1).values.totalEntities||0):0;
+    result.saveBytes=frames.length?(frames.at(-1).values.saveBytes||0):0;
     return result;
   }
 }

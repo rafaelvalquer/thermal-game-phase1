@@ -32,7 +32,8 @@ test('material property cache stays exact through edits, fills, and save restora
   world.fill('water',22);assert.ok(Array.from(world.airMaterial).every(value=>value===0));
 
   const saves=new DataCenterSaveSystem({storage:null}),snapshot=saves.capture(world,{}, {budget:0,inventory:{},placedEntities:new Map(),placedMaterials:new Map()}),restored=new World(4,3);
-  saves.restoreWorld(restored,snapshot);
+  const priorThermalVersion=restored.thermalStatisticsVersion;saves.restoreWorld(restored,snapshot);
+  assert.ok(restored.thermalStatisticsVersion>priorThermalVersion,'loading materials invalidates cached air-temperature indices');
   for(let i=0;i<restored.size;i++){
     const material=restored.registry.fromIndex(restored.material[i]);
     assert.equal(restored.thermalConductivity[i],material.conductivity);

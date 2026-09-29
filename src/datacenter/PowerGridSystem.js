@@ -12,7 +12,8 @@ import { isPowered, powerEquipment } from '../simulation/PowerState.js';
 
 const positionOrder=(a,b)=>a.y-b.y||a.x-b.x;
 const demand=entity=>entity.enabled?Math.max(0,entity.requestedPower??entity.power??0):0;
-const nonBattery=equipment=>equipment.filter(entity=>entity.type!=='battery');
+const fallbackLoad=equipment=>{let total=0;for(const entity of equipment)if(entity.type!=='battery'&&entity.type!=='solarPanel')total+=demand(entity);return total;};
+const fallbackOperatingLoad=equipment=>{let total=0;for(const entity of equipment)if(entity.type!=='battery'&&entity.type!=='solarPanel'&&isPowered(entity))total+=demand(entity);return total;};
 
 export class PowerGridSystem {
   constructor({capacityKW=100,overloadSeconds=0,breakerOpen=false}={}){
@@ -26,25 +27,27 @@ export class PowerGridSystem {
   snapshot(){return {overloadSeconds:this.overloadSeconds,breakerOpen:this.breakerOpen};}
   refresh(world){
     const equipment=powerEquipment(world);
-    const grossDemand=nonBattery(equipment).reduce((sum,e)=>sum+demand(e),0),solar=world.batteryDispatch?.solarGenerationW||0;
+    const snapshot=world.batteryDispatch?.snapshot,grossDemand=snapshot?.valid?snapshot.grossLoadW:fallbackLoad(equipment),solar=world.batteryDispatch?.solarGenerationW||0;
     this.demandKW=Math.max(0,grossDemand-solar+(world.batteryDispatch?.gridChargePowerW??world.batteryDispatch?.chargePowerW??0))/1000;
-    this.effectiveKW=(world.batteryDispatch?.currentGridPowerW({breakerOpen:this.breakerOpen})??nonBattery(equipment).reduce((sum,e)=>sum+(isPowered(e)?demand(e):0),0))/1000;
-    this.blockedRacks=equipment.filter(e=>e.type==='serverRack'&&e.enabled&&e.powerBlocked).length;
-    for(const rack of equipment.filter(e=>e.type==='serverRack')){
+    this.effectiveKW=(world.batteryDispatch?.currentGridPowerW({breakerOpen:this.breakerOpen})??fallbackOperatingLoad(equipment))/1000;
+    const racks=world.powerEquipmentSetByType?.('serverRack')||[...equipment].filter(entity=>entity.type==='serverRack');let blocked=0;
+    for(const rack of racks){
+      if(rack.enabled&&rack.powerBlocked)blocked++;
       if(rack.powerBlocked){rack.power=0;rack.currentPowerKW=0;rack.heatOutputKW=0;rack.heatGenerationPower=0;rack.started=false;if(rack.enabled)rack.status='POWER_OFF';}
       else if(rack.enabled){rack.power=demand(rack);rack.currentPowerKW=rack.power/1000;rack.heatOutputKW=rack.currentPowerKW*.98;}
     }
+    this.blockedRacks=blocked;
   }
   update(world,dt){
     const equipment=powerEquipment(world),capacity=this.capacityKW*1000;
-    if(this.breakerOpen){for(const e of equipment)e.powerBlocked=true;this.refresh(world);return;}
-    let draw=world.batteryDispatch?.currentGridPowerW()??nonBattery(equipment).reduce((sum,e)=>sum+(isPowered(e)?demand(e):0),0);
+    if(this.breakerOpen){for(const e of equipment)if(e.enabled)e.powerBlocked=true;this.refresh(world);return;}
+    let draw=world.batteryDispatch?.currentGridPowerW()??fallbackOperatingLoad(equipment);
     this.overloadSeconds=draw>capacity?this.overloadSeconds+dt:0;
     if(draw>capacity*1.1||(draw>capacity&&this.overloadSeconds>=5)){
-      const racks=equipment.filter(e=>e.type==='serverRack'&&isPowered(e)).sort((a,b)=>demand(b)-demand(a)||positionOrder(a,b));
+      const racks=[...(world.powerEquipmentSetByType?.('serverRack')||equipment.filter(e=>e.type==='serverRack'))].filter(isPowered).sort((a,b)=>demand(b)-demand(a)||positionOrder(a,b));
       let changed=false;
       for(const rack of racks){if(draw<=capacity)break;draw-=demand(rack);rack.powerBlocked=true;changed=true;}
-      if(draw>capacity){this.breakerOpen=true;for(const e of equipment)e.powerBlocked=true;}
+      if(draw>capacity){this.breakerOpen=true;for(const e of equipment)if(e.enabled)e.powerBlocked=true;}
       if(changed||this.breakerOpen)world.batteryDispatch?.reconcileAfterProtection(capacity,{disabled:this.breakerOpen});
       this.overloadSeconds=0;
     }
@@ -52,19 +55,25 @@ export class PowerGridSystem {
   }
   rearm(world){
     const equipment=powerEquipment(world),capacity=this.capacityKW*1000;
-    // Include devices installed while paused under an open main breaker.
-    if(this.breakerOpen)for(const e of equipment)e.powerBlocked=true;
-    const infrastructure=equipment.filter(e=>e.type!=='serverRack');
-    if(this.breakerOpen&&infrastructure.reduce((sum,e)=>sum+demand(e),0)>capacity){
-      this.refresh(world);return {ok:false,restored:0,remaining:this.blockedRacks,reason:'A infraestrutura excede a capacidade da rede.'};
+    const racks=world.powerEquipmentSetByType?.('serverRack')||[...equipment].filter(e=>e.type==='serverRack'),wasOpen=this.breakerOpen;
+    const infrastructure=[...equipment].filter(e=>e.type!=='serverRack');let restored=0;
+    if(wasOpen){
+      for(const entity of equipment)if(entity.enabled)entity.powerBlocked=false;
+      world.batteryDispatch?.snapshot?.clear();
+      world.batteryDispatch?.dispatch(capacity,0,{disabled:false});
+      this.breakerOpen=false;
+      let draw=world.batteryDispatch?.currentGridPowerW()??fallbackOperatingLoad(equipment);
+      const candidates=[...racks].filter(isPowered).sort((a,b)=>demand(b)-demand(a)||positionOrder(a,b));
+      for(const rack of candidates){if(draw<=capacity)break;draw-=demand(rack);rack.powerBlocked=true;}
+      if(draw>capacity){this.breakerOpen=true;for(const entity of equipment)if(entity.enabled)entity.powerBlocked=true;this.refresh(world);return {ok:false,restored:0,remaining:this.blockedRacks,reason:'A carga ainda excede a capacidade da rede.'};}
+      for(const rack of racks)if(rack.enabled&&!rack.powerBlocked){restored++;rack.status='NORMAL';}
+    }else{
+      let draw=world.batteryDispatch?.currentGridPowerW()??fallbackOperatingLoad(equipment);
+      for(const rack of [...racks].filter(e=>e.powerBlocked).sort((a,b)=>demand(a)-demand(b)||positionOrder(a,b))){
+        if(draw+demand(rack)>capacity)continue;rack.powerBlocked=false;draw+=demand(rack);if(rack.enabled){restored++;rack.status='NORMAL';}
+      }
     }
-    if(this.breakerOpen){this.breakerOpen=false;for(const e of infrastructure)e.powerBlocked=false;}
-    let draw=world.batteryDispatch?.currentGridPowerW()??nonBattery(equipment).reduce((sum,e)=>sum+(isPowered(e)?demand(e):0),0),restored=0;
-    for(const rack of equipment.filter(e=>e.type==='serverRack'&&e.powerBlocked).sort((a,b)=>demand(a)-demand(b)||positionOrder(a,b))){
-      if(draw+demand(rack)>capacity)continue;
-      rack.powerBlocked=false;draw+=demand(rack);if(rack.enabled){restored++;rack.status='NORMAL';}
-    }
-    if(draw<=capacity)this.overloadSeconds=0;
+    if(!this.breakerOpen)this.overloadSeconds=0;
     this.refresh(world);
     return {ok:true,restored,remaining:this.blockedRacks};
   }

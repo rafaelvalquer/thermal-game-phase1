@@ -1,11 +1,16 @@
 import { Technician } from '../entities/Technician.js';
+import { NavigationGrid } from './staff/NavigationGrid.js';
+import { TechnicianPathfinder } from './staff/TechnicianPathfinder.js';
+import { TechnicianDispatcher } from './staff/TechnicianDispatcher.js';
 
 const DIRECTIONS=[[1,0],[0,1],[-1,0],[0,-1]];
 export const TECHNICIAN_HIRE_COST=2000;
 export const TECHNICIAN_DAILY_WAGE=250;
 
 export class TechnicianSystem {
-  constructor(world,build){this.world=world;this.build=build;this.scanTimer=0;this.payrollDay=0;}
+  constructor(world,build){this.world=world;this.build=build;this.scanTimer=0;this.payrollDay=0;this.monitor=null;this.navigation=new NavigationGrid(world);this.pathfinder=new TechnicianPathfinder(world,this.navigation);this.dispatcher=new TechnicianDispatcher(this);}
+  set monitor(value){this._monitor=value;if(this.pathfinder)this.pathfinder.monitor=value;}
+  get monitor(){return this._monitor||null;}
   get workers(){return this.world.entitiesByType('technician');}
   get maxWorkers(){const racks=this.world.entitiesByType('serverRack').length;return racks?Math.max(1,Math.ceil(racks/6)):0;}
   get payroll(){return this.workers.length*TECHNICIAN_DAILY_WAGE;}
@@ -22,15 +27,16 @@ export class TechnicianSystem {
   nearestFree(x,y,adjacentOnly=false){
     let best=null,bestDistance=Infinity;
     for(let yy=0;yy<this.world.height;yy++)for(let xx=0;xx<this.world.width;xx++){
-      if(!this.walkable(xx,yy)||this.workers.some(worker=>worker.x===xx&&worker.y===yy))continue;
+      if(!this.walkable(xx,yy))continue;
       const distance=Math.abs(xx-x)+Math.abs(yy-y);if(adjacentOnly&&distance>1)continue;
       if(distance<bestDistance){best={x:xx,y:yy};bestDistance=distance;}
     }
     return best;
   }
-  walkable(x,y,exceptWorker=null){return this.world.isAir(x,y)&&!this.world.entityAt(x,y)&&!this.workers.some(w=>w!==exceptWorker&&w.x===x&&w.y===y);}
+  walkable(x,y,exceptWorker=null){return this.navigation.isWalkable(x,y,exceptWorker);}
   update(dt){
     if(!(dt>0))return;
+    this.dispatcher.update(dt);
     for(const entity of this.world.entities)if(entity.staffBoostRemaining>0)entity.staffBoostRemaining=Math.max(0,entity.staffBoostRemaining-dt);
     for(const worker of this.workers){
       if(worker.action==='working'){
@@ -52,9 +58,7 @@ export class TechnicianSystem {
         }
       }
       if(!worker.path?.length){
-        const hot=this.hottestReachable(worker);
-        if(hot){worker.targetRackId=hot.rack.id;worker.goalX=hot.goal.x;worker.goalY=hot.goal.y;worker.path=hot.path;worker.pathIndex=0;worker.action='moving';}
-        else this.choosePatrol(worker);
+        if(worker.targetRackId){worker.targetRackId=null;worker.action='patrolling';}
       }
       this.move(worker,dt);
     }
@@ -71,11 +75,8 @@ export class TechnicianSystem {
     }
     return null;
   }
-  findPath(sx,sy,gx,gy){
-    const start=sy*this.world.width+sx,goal=gy*this.world.width+gx,queue=[start],prev=new Map([[start,-1]]);
-    while(queue.length){const i=queue.shift();if(i===goal)break;const x=i%this.world.width,y=Math.floor(i/this.world.width);
-      for(const [dx,dy] of DIRECTIONS){const nx=x+dx,ny=y+dy;if(!this.walkable(nx,ny))continue;const ni=ny*this.world.width+nx;if(prev.has(ni))continue;prev.set(ni,i);queue.push(ni);}}
-    if(!prev.has(goal))return null;if(goal===start)return [];const path=[];for(let i=goal;i!==start;i=prev.get(i))path.push({x:i%this.world.width,y:Math.floor(i/this.world.width)});return path.reverse();
+  findPath(sx,sy,gx,gy,worker=null){
+    return this.pathfinder.findPath(sx,sy,gx,gy,worker);
   }
   choosePatrol(worker){
     const reachable=new Set(this.reachableCells(worker).map(point=>point.y*this.world.width+point.x)),targets=new Map();
@@ -94,9 +95,11 @@ export class TechnicianSystem {
     worker.path=[];worker.pathIndex=0;worker.goalX=worker.x;worker.goalY=worker.y;worker.action='patrolling';
   }
   reachableCells(worker){
-    const start=worker.y*this.world.width+worker.x,queue=[start],seen=new Set([start]),cells=[];
-    for(let head=0;head<queue.length;head++){const i=queue[head],x=i%this.world.width,y=Math.floor(i/this.world.width);cells.push({x,y});
-      for(const [dx,dy] of DIRECTIONS){const nx=x+dx,ny=y+dy;if(!this.walkable(nx,ny,worker))continue;const ni=ny*this.world.width+nx;if(seen.has(ni))continue;seen.add(ni);queue.push(ni);}}
+    this.navigation.ensureCurrent();
+    const start=worker.y*this.world.width+worker.x,queue=new Int32Array(this.world.size),seen=new Uint8Array(this.world.size),cells=[];let head=0,tail=0;
+    queue[tail++]=start;seen[start]=1;
+    while(head<tail){const i=queue[head++],x=i%this.world.width,y=Math.floor(i/this.world.width);cells.push({x,y});
+      for(const [dx,dy] of DIRECTIONS){const nx=x+dx,ny=y+dy;if(!this.walkable(nx,ny,worker))continue;const ni=ny*this.world.width+nx;if(seen[ni])continue;seen[ni]=1;queue[tail++]=ni;}}
     return cells;
   }
   faceRack(worker,rack){const dx=rack.x-worker.x,dy=rack.y-worker.y;worker.facing=Math.abs(dx)>Math.abs(dy)?{x:Math.sign(dx),y:0}:{x:0,y:Math.sign(dy)};}

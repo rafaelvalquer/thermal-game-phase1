@@ -33,6 +33,7 @@ export class DataCenterManager {
   }
   attach(build,simulation){
     this.build=build;this.simulation=simulation;
+    this.world.onPowerEquipmentIndexed=equipment=>{if(this.powerGrid.breakerOpen)equipment.powerBlocked=true;};
     build.budget=this.state.cash;
     if(this.snapshot)this.saveSystem.restoreBuild(build,this.snapshot);
     this.level.powerLimit=this.powerGrid.capacityKW*1000;
@@ -151,9 +152,9 @@ export class DataCenterManager {
     this.racks.update(0,this.clock);
     // Independent racks retain their requested draw while physically disconnected.
     for(const e of powerEquipment(this.world)){
-      if(e.type==='serverRack'&&!e.contractId)e.requestedPower=e.powerBlocked?(e.requestedPower??e.power):e.power;
+      if(e.type==='serverRack'&&!e.contractId){e.requestedPower=e.powerBlocked||this.powerGrid.breakerOpen?(e.requestedPower??e.power):e.power;if(this.powerGrid.breakerOpen&&e.enabled)e.powerBlocked=false;}
     }
-    this.simulation?.cooling?.update(dt,{prepareOnly:true,ignorePowerBlock:true});
+    this.simulation?.cooling?.prepareFrame(dt,{ignorePowerBlock:true});
   }
   protectPower(dt,billingDt=dt){
     this.preparePowerDemand(dt||this.simulation?.lastPhysicsDt||1/60);
@@ -164,6 +165,8 @@ export class DataCenterManager {
   }
   rearmPower(){
     this.preparePowerDemand(this.simulation?.lastPhysicsDt||1/60);
+    this.simulation?.batteryDispatch?.dispatch(this.powerGrid.capacityKW*1000,0,{disabled:false});
+    if(this.powerGrid.breakerOpen)for(const equipment of powerEquipment(this.world))if(equipment.enabled)equipment.powerBlocked=false;
     const result=this.powerGrid.rearm(this.world);
     this.racks.update(0,this.clock);
     this.simulation?.cooling?.update(this.simulation?.lastPhysicsDt||1/60,{prepareOnly:true});
@@ -299,7 +302,7 @@ export class DataCenterManager {
     this.state.powerCapacityKW=this.powerGrid.capacityKW;
     this.state.powerProtection=this.powerGrid.snapshot();
     this.state.powerEnergyTotal=this.simulation?.metrics.powerEnergy||0;
-    try{const saved=this.saveSystem.save(this.saveSystem.capture(this.world,this.state,this.build));if(saved){this.saveTimer=0;this.saveDirty=false;this.saveDebounceRemaining=0;}return saved;}finally{this.monitor?.end('saveMs');}
+    try{const saved=this.saveSystem.save(this.saveSystem.capture(this.world,this.state,this.build));this.monitor?.set?.('saveBytes',this.saveSystem.lastSavedBytes||0);if(saved){this.saveTimer=0;this.saveDirty=false;this.saveDebounceRemaining=0;}return saved;}finally{this.monitor?.end('saveMs');}
   }
   clearSave(){return this.saveSystem.clear();}
   load(){
@@ -309,7 +312,7 @@ export class DataCenterManager {
     if(this.world.technicianSystem)this.world.technicianSystem.payrollDay=this.state.lastSettledDay||0;
     this.powerGrid=new PowerGridSystem({capacityKW:this.state.powerCapacityKW,...this.state.powerProtection});this.contracts=new ContractSystem(this.state,{random:this.random});
     this.racks=new RackSystem(this.world,this.contracts);this.saveSystem.restoreBuild(this.build,snapshot);
-    this.world.datacenter=this;this.level.powerLimit=this.powerGrid.capacityKW*1000;
+    this.world.datacenter=this;this.world.onPowerEquipmentIndexed=equipment=>{if(this.powerGrid.breakerOpen)equipment.powerBlocked=true;};this.level.powerLimit=this.powerGrid.capacityKW*1000;
     this.powerGrid.refresh(this.world);
     Object.assign(this.simulation.metrics,{generatedHeat:0,externalEnergy:0,powerDraw:0,powerEnergy:this.state.powerEnergyTotal,energyBalance:0,maxTempEver:25,maxPowerEver:0});
     this.simulation.energySystem.initialize();this.simulation.updateMetrics();this.simulation.mission.lastEventMessage='';

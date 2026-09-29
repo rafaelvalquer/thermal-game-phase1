@@ -6,6 +6,7 @@ const PROFILES={
   streaming:[[0,.8],[6,.25],[12,.45],[18,.95],[22,1]],
 };
 const THERMAL_SLA_GRACE_SECONDS=60;
+const rackEntities=world=>world.entitySetByType?.('serverRack')||world.entitiesByType?.('serverRack')||world.entities?.filter(entity=>entity.type==='serverRack')||[];
 
 function interpolateProfile(points,hour){
   const next=points.findIndex(point=>point[0]>=hour);
@@ -30,7 +31,7 @@ export class RackSystem {
   }
   update(dt,clock){
     let index=0;
-    for(const rack of this.world.entitySetByType('serverRack')){
+    for(const rack of rackEntities(this.world)){
       if(!rack.contractId)continue;
       const contract=this.contracts.getById(rack.contractId),live=contract&&['installing','active'].includes(contract.status);
       if(!live){this.release(rack);continue;}
@@ -53,7 +54,7 @@ export class RackSystem {
     }
   }
   afterThermalStep(dt,simulationDt=dt){
-    for(const rack of this.world.entitySetByType('serverRack')){
+    for(const rack of rackEntities(this.world)){
       if(!rack.contractId||rack.status==='CANCELLED')continue;
       const contract=this.contracts.getById(rack.contractId);
       if(!contract||contract.status!=='active')continue;

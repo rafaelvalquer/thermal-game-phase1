@@ -4,6 +4,7 @@ export class AirThermalAdvection {
   constructor(grid,metrics){
     this.grid=grid;this.metrics=metrics;
     this.exteriorCells=grid.exteriorCells;
+    this.airMetricTopologyVersion=-1;this.airMetricIndices=new Int32Array(0);
     this.exteriorUFaces=new Set();this.exteriorVFaces=new Set();
     this.exteriorOpeningFaces=(grid.world.airExteriorOpenings||[]).map(({x,y,direction})=>{
       if(direction.x){
@@ -16,7 +17,7 @@ export class AirThermalAdvection {
   }
 
   advect(dt){
-    if(dt<=0)return;
+    if(dt<=0){this.sampleAirMetrics();return;}
     const g=this.grid,{width,height}=g;
     let maxOutgoing=0;
     for(let y=0;y<height;y++)for(let x=0;x<width;x++){
@@ -66,17 +67,29 @@ export class AirThermalAdvection {
     w.energy.set(w.nextEnergy);
   }
 
+  sampleAirMetrics(){
+    const g=this.grid,w=g.world;
+    if(this.airMetricTopologyVersion!==w.thermalStatisticsVersion){
+      let count=0;for(let i=0;i<g.size;i++)if(w.isAirIndex(i))count++;
+      const indices=new Int32Array(count);let cursor=0;for(let i=0;i<g.size;i++)if(w.isAirIndex(i))indices[cursor++]=i;
+      this.airMetricIndices=indices;this.airMetricTopologyVersion=w.thermalStatisticsVersion;
+    }
+    let sum=0,max=-Infinity;for(const i of this.airMetricIndices){const temperature=w.temperatureAtIndex(i);sum+=temperature;max=Math.max(max,temperature);}
+    const count=this.airMetricIndices.length;this.metrics.airTemperatureSum=sum;this.metrics.maxAirTemp=count?max:0;this.metrics.airCellCount=count;
+  }
+
   refreshExteriorAir(){
-    const g=this.grid,w=g.world,ambient=w.environment.temperature;
+    const g=this.grid,w=g.world,ambient=w.environment.temperature;let sum=0,max=-Infinity,count=0;
     // Tiles outside declared room footprints model the unlimited outdoor
     // atmosphere, so transported heat cannot accumulate beside the building.
     for(let i=0;i<g.size;i++){
-      if(!this.exteriorCells[i]||g.solid[i])continue;
-      const target=w.capacityAtIndex(i)*ambient,q=w.nextEnergy[i]-target;
-      if(Math.abs(q)<1e-10)continue;
-      w.nextEnergy[i]=target;w.environment.energyReceived+=q;
-      this.metrics.externalEnergy=(this.metrics.externalEnergy||0)+q;
+      if(this.exteriorCells[i]&&!g.solid[i]){
+        const target=w.capacityAtIndex(i)*ambient,q=w.nextEnergy[i]-target;
+        if(Math.abs(q)>=1e-10){w.nextEnergy[i]=target;w.environment.energyReceived+=q;this.metrics.externalEnergy=(this.metrics.externalEnergy||0)+q;}
+      }
+      if(w.isAirIndex(i)){const temperature=w.nextEnergy[i]/w.capacityAtIndex(i);sum+=temperature;max=Math.max(max,temperature);count++;}
     }
+    this.metrics.airTemperatureSum=sum;this.metrics.maxAirTemp=count?max:0;this.metrics.airCellCount=count;
   }
 
   exchangeOutdoor(x,y,outwardVelocity,dt){
