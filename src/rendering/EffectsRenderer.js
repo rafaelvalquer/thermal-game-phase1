@@ -15,7 +15,7 @@ export class EffectsRenderer {
       const t=e.temperature??e.waterTemperature??0;
       const active=(e.isHeatMachine&&t>45)||(e.type==='radiator'&&e.thermalPower>100&&e.waterTemperature>e.airInTemperature);
       if(!active)return;
-      const d=e.type==='serverRack'?e.airExhaustDirection:{x:0,y:-1};
+      const d=e.type==='serverRack'||e.type==='computeRack'?e.airExhaustDirection:{x:0,y:-1};
       for(let k=0;k<3&&budget>0;k++,budget--){
         const phase=(time*.6+k/3+entityAnimationOffset(e.id))%1,side=(k-1)*.17,distance=.55+phase*.8;
         const x=(e.x+.5+d.x*distance-d.y*side)*tile,y=(e.y+.5+d.y*distance+d.x*side)*tile;

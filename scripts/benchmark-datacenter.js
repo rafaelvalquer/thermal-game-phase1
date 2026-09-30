@@ -4,6 +4,7 @@ import { PerformanceMonitor } from '../src/performance/PerformanceMonitor.js';
 import { relativeScalingGate } from '../src/performance/RelativeScalingGate.js';
 import { FIXED_DT } from '../src/utils/Constants.js';
 import { browserBenchmarkScenarios, createBrowserBenchmarkLevel } from '../src/dev/BrowserPerformanceBenchmark.js';
+import { ComputeLoadSystem } from '../src/datacenter/compute/ComputeLoadSystem.js';
 
 const argument=prefix=>process.argv.find(value=>value.startsWith(prefix))?.slice(prefix.length);
 const requestedTicks=Math.max(1,Number(argument('--ticks='))||2000);
@@ -17,6 +18,16 @@ if(requireRelativeBudget&&requestedScenario)throw new Error('--gate compara todo
 
 function createScenario(name){
   const profile=scenarios[name],level=createBrowserBenchmarkLevel(name),world=new LevelManager().load(level);
+  const computeRacks=world.entitiesByType('computeRack'),contracts=Array.from({length:profile.cloudContracts||0},(_,index)=>{
+    const rack=computeRacks[index%computeRacks.length],allocation={assetId:rack.assetId,vcpu:0,ramGB:0,gpuDevices:[],storageTB:0};
+    if(rack.specialization==='cpu'){allocation.vcpu=8;allocation.ramGB=32;}
+    else if(rack.specialization==='gpu')allocation.gpuDevices=[{slot:index%rack.capacity.gpuCount,vramGB:rack.capacity.vramPerGpuGB}];
+    else allocation.storageTB=10;
+    return {id:'benchmark-cloud-'+index,modality:'compute',status:'active',loadProfile:['business','streaming','ai','storage'][index%4],allocations:[allocation]};
+  });
+  const clock={seconds:0,day:1,hour:12,daySeconds:43200};
+  const computeLoad=new ComputeLoadSystem(world,contracts);
+  world.datacenter={clock,update:dt=>{clock.seconds+=dt;clock.day=Math.floor(clock.seconds/86400)+1;clock.daySeconds=clock.seconds%86400;clock.hour=clock.daySeconds/3600;computeLoad.update(clock);},protectPower:(dt,billingDt)=>world.batteryDispatch.dispatch(level.powerLimit,billingDt),afterThermalStep:()=>{}};
   const monitor=new PerformanceMonitor(),simulation=new Simulation(world,level,{monitor});
   simulation.initialize();
   let coolingRebuilds=0,pressureSolves=0;

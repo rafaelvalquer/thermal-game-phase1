@@ -58,9 +58,9 @@ export class HeatHazeSourceDetector {
       const air=this.localAirTemperature(world,e),delta=temperature-air;
       if(delta<=2)continue;
       const radius=this.entityRadius(e);
-      const hotFace=e.type==='serverRack'?(e.airExhaustDirection||{x:0,y:1}):null;
+      const hotFace=e.type==='serverRack'||e.type==='computeRack'?(e.airExhaustDirection||{x:0,y:1}):null;
       const sourceHeat=e.type==='radiator'?Math.min(1,Math.abs(e.thermalPower||0)/18000)
-        :e.type==='serverRack'?Math.min(1,(e.heatGenerationPower||0)/22000):1;
+        :e.type==='serverRack'||e.type==='computeRack'?Math.min(1,(e.heatGenerationPower||0)/22000):1;
       const region={
         id:'entity:'+e.id,
         kind:e.type,

@@ -78,6 +78,7 @@ export class Game {
       if(e.code==='KeyR')this.build.rotate();
       if(e.code==='KeyI'&&DUCT_TOOLS.has(this.build.selected))this.toast('Isolamento: '+(this.build.toggleDuctInsulation()?'ativado':'padrão'));
       if(e.code==='KeyM'&&this.build.selected==='coolingUnit'){const model=this.build.cycleCoolingUnitModel();this.toast('Modelo '+model.label+' · '+(model.ratedCoolingCapacity/1000)+' kW · $'+model.cost);}
+      if(e.code==='KeyM'&&this.build.selected?.startsWith('computeRack')){const model=this.build.cycleComputeRackModel();const capacity=model.specialization==='cpu'?model.capacity.vcpu+' vCPU · '+model.capacity.ramGB+' GB RAM':model.specialization==='gpu'?model.capacity.gpuCount+' GPUs · '+model.capacity.vramPerGpuGB+' GB/GPU':model.capacity.storageTB+' TB';this.toast('Modelo '+model.label+' · '+capacity+' · '+(model.maxPowerW/1000)+' kW · R$ '+model.cost.toLocaleString('pt-BR'));}
       if(e.code==='F3'){e.preventDefault();this.renderer.debug=!this.renderer.debug;}
       if(e.code==='Escape'){this.pipeDrag=null;this.demolishDrag=null;this.renderer.demolishSelection=null;this.build.select(null);}
       if(['Digit1','Digit2','Digit4','Digit8'].includes(e.code))this.setSpeed(Number(e.code.at(-1)));

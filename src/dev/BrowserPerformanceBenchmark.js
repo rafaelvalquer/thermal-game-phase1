@@ -1,8 +1,8 @@
 const SCENARIOS={
-  A:{racks:100,units:10,vents:30,ducts:150,technicians:10,batteries:0,panels:0},
-  B:{racks:200,units:20,vents:60,ducts:300,technicians:25,batteries:0,panels:0},
-  C:{racks:300,units:30,vents:100,ducts:500,technicians:40,batteries:20,panels:30},
-  E:{racks:400,units:40,vents:120,ducts:600,technicians:50,batteries:30,panels:40},
+  A:{racks:100,units:10,vents:30,ducts:150,technicians:10,batteries:0,panels:0,computeRacks:20,cloudContracts:20},
+  B:{racks:200,units:20,vents:60,ducts:300,technicians:25,batteries:0,panels:0,computeRacks:40,cloudContracts:40},
+  C:{racks:300,units:30,vents:100,ducts:500,technicians:40,batteries:20,panels:30,computeRacks:60,cloudContracts:60},
+  E:{racks:400,units:40,vents:120,ducts:600,technicians:50,batteries:30,panels:40,computeRacks:80,cloudContracts:80},
 };
 
 export function browserBenchmarkScenarios(){return Object.fromEntries(Object.entries(SCENARIOS).map(([key,value])=>[key,{...value}]));}
@@ -24,6 +24,7 @@ export function createBrowserBenchmarkLevel(name='A',{sandboxSave=false}={}){
     for(let offset=0;offset<ventCount;offset++)entities.push({type:'supplyVent',x:x+side*(ductCount+1+offset),y,direction});
   }
   for(let index=0;index<scenario.racks;index++)entities.push({type:'serverRack',x:rackStartX+index%rackColumns,y:3+Math.floor(index/rackColumns),startAt:0,heatOutput:5000,maxPowerKW:12,currentPowerKW:5,heatOutputKW:4.9,temperature:31});
+  for(let index=0;index<scenario.computeRacks;index++)entities.push({type:'computeRack',x:80+index%20,y:4+Math.floor(index/20),specialization:['cpu','gpu','storage'][index%3],modelId:index%6===0?'enterprise':'professional'});
   for(let index=0;index<scenario.technicians;index++)entities.push({type:'technician',x:15+index%50,y:height-6-Math.floor(index/50)*2});
   for(let index=0;index<scenario.batteries;index++)entities.push({type:'battery',x:30+index%20,y:height-6-Math.floor(index/20)*2});
   for(let index=0;index<scenario.panels;index++)entities.push({type:'solarPanel',x:55+index%20,y:height-6-Math.floor(index/20)*2});

@@ -2,7 +2,7 @@ import { FLUID_TYPES, dirAngle, heatCss, thermalState, thermalGameplayCss, therm
 import { EquipmentSpriteRenderer } from './sprites/EquipmentSpriteRenderer.js';
 import { ViewportCulling } from './ViewportCulling.js';
 
-const THERMAL_ENTITIES=new Set(['machine','serverRack','furnace']);
+const THERMAL_ENTITIES=new Set(['machine','serverRack','computeRack','furnace']);
 const CLIMATE_ENTITIES=new Set(['coolingUnit','supplyVent']);
 
 export class EntityRenderer {
@@ -66,7 +66,7 @@ export class EntityRenderer {
   drawEntity(ctx,world,e,tile,mode,time,selectedEntity,thermalMachines,countStats=true){
     const visual=e.type==='technician'&&e.moveProgress>0?{...e,x:e.fromX+(e.toX-e.fromX)*e.moveProgress,y:e.fromY+(e.toY-e.fromY)*e.moveProgress}:e;
     if(this.sprites.draw(ctx,world,visual,tile,mode,time,{selected:e===selectedEntity})){
-      if(e.type==='serverRack')this.rackOrientation(ctx,e,tile);
+      if(e.type==='serverRack'||e.type==='computeRack')this.rackOrientation(ctx,e,tile);
       if(countStats){this.stats.spriteDraws++;if(this.sprites.isAnimated(e))this.stats.animated++;}
       if(mode==='thermal'&&THERMAL_ENTITIES.has(e.type))thermalMachines.push(e);
       return true;
@@ -76,6 +76,7 @@ export class EntityRenderer {
     if(mode!=='thermal')this.shadow(ctx,x,y,tile,e.type);
     if(e.type==='machine')this.machine(ctx,e,x,y,tile,time);
     else if(e.type==='serverRack')this.serverRack(ctx,e,x,y,tile,time);
+    else if(e.type==='computeRack')this.serverRack(ctx,e,x,y,tile,time);
     else if(e.type==='furnace')this.furnace(ctx,e,x,y,tile,time);
     else if(e.type==='passiveHeat')this.passiveHeat(ctx,e,x,y,tile,time);
     else if(e.type==='fan'||e.type==='exhaust')this.fan(ctx,e,cx,cy,tile,time);
@@ -119,16 +120,16 @@ export class EntityRenderer {
   }
 
   drawPreview(ctx,world,tool,x,y,direction,tile,mode,time=0,valid=true,model=null){
-    const types={fan:'fan',exhaust:'exhaust',pipe:'pipe',pump:'pump',tank:'tank',radiator:'radiator',exchanger:'exchanger',sensor:'sensor',coolingUnit:'coolingUnit',industrialCoolingUnit:'coolingUnit',supplyVent:'supplyVent',serverRack:'serverRack',solarPanel:'solarPanel'};
+    const types={fan:'fan',exhaust:'exhaust',pipe:'pipe',pump:'pump',tank:'tank',radiator:'radiator',exchanger:'exchanger',sensor:'sensor',coolingUnit:'coolingUnit',industrialCoolingUnit:'coolingUnit',supplyVent:'supplyVent',serverRack:'serverRack',solarPanel:'solarPanel',computeRackCpu:'computeRack',computeRackGpu:'computeRack',computeRackStorage:'computeRack'};
     if(!types[tool])return false;
-    const entity={id:987654,type:types[tool],x,y,direction:{...direction},tier:tool==='industrialCoolingUnit'?'industrial':model,footprintLength:tool==='industrialCoolingUnit'||model==='industrial'?2:1,enabled:true,started:true,currentVelocity:.35,currentFlow:.15,
+    const entity={id:987654,type:types[tool],x,y,direction:{...direction},specialization:tool==='computeRackGpu'?'gpu':tool==='computeRackStorage'?'storage':'cpu',modelId:model?.id||'basic',tier:tool==='industrialCoolingUnit'?'industrial':model,footprintLength:tool==='industrialCoolingUnit'||model==='industrial'?2:1,enabled:true,started:true,currentVelocity:.35,currentFlow:.15,
       circuitClosed:false,flowRate:0,waterTemperature:25,inletTemperature:25,outletTemperature:25,thermalPower:0,
       airInTemperature:25,airOutTemperature:25,fanBoost:1,resistance:1,hydraulicPower:36,current:25,average:25,max:25,
       airIntakeDirection:{...direction},airExhaustDirection:{x:-direction.x,y:-direction.y},name:'Prévia',temperature:25};
     ctx.save();ctx.globalAlpha=valid?.58:.38;
     const previewWorld={...world,entities:[entity],entityAt:(tx,ty)=>world.entityAt(tx,ty)};
     if(!this.sprites.draw(ctx,previewWorld,entity,tile,mode,time,{preview:true,valid}))this.drawProcedural(ctx,previewWorld,entity,tile,mode,time);
-    else if(entity.type==='serverRack')this.rackOrientation(ctx,entity,tile);
+    else if(entity.type==='serverRack'||entity.type==='computeRack')this.rackOrientation(ctx,entity,tile);
     ctx.restore();
     return true;
   }

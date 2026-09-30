@@ -28,13 +28,13 @@ export class PowerGridSystem {
   refresh(world){
     const equipment=powerEquipment(world);
     const snapshot=world.batteryDispatch?.snapshot,grossDemand=snapshot?.valid?snapshot.grossLoadW:fallbackLoad(equipment),solar=world.batteryDispatch?.solarGenerationW||0;
-    this.demandKW=Math.max(0,grossDemand-solar+(world.batteryDispatch?.gridChargePowerW??world.batteryDispatch?.chargePowerW??0))/1000;
+    this.demandKW=(Math.max(0,grossDemand-solar)+(world.batteryDispatch?.gridChargePowerW??world.batteryDispatch?.chargePowerW??0))/1000;
     this.effectiveKW=(world.batteryDispatch?.currentGridPowerW({breakerOpen:this.breakerOpen})??fallbackOperatingLoad(equipment))/1000;
-    const racks=world.powerEquipmentSetByType?.('serverRack')||[...equipment].filter(entity=>entity.type==='serverRack');let blocked=0;
+    const racks=[...new Set([...(world.powerEquipmentSetByType?.('serverRack')||equipment.filter(entity=>entity.type==='serverRack')),...(world.powerEquipmentSetByType?.('computeRack')||equipment.filter(entity=>entity.type==='computeRack'))])];let blocked=0;
     for(const rack of racks){
       if(rack.enabled&&rack.powerBlocked)blocked++;
-      if(rack.powerBlocked){rack.power=0;rack.currentPowerKW=0;rack.heatOutputKW=0;rack.heatGenerationPower=0;rack.started=false;if(rack.enabled)rack.status='POWER_OFF';}
-      else if(rack.enabled){rack.power=demand(rack);rack.currentPowerKW=rack.power/1000;rack.heatOutputKW=rack.currentPowerKW*.98;}
+      if(rack.powerBlocked){rack.power=0;rack.currentPowerKW=0;rack.heatOutputKW=0;rack.heatGenerationPower=0;rack.started=false;if(rack.type==='computeRack'){rack.currentPowerW=0;rack.heatOutput=0;}if(rack.enabled)rack.status='POWER_OFF';}
+      else if(rack.enabled){rack.power=demand(rack);rack.currentPowerKW=rack.power/1000;rack.heatOutputKW=rack.currentPowerKW*.98;if(rack.type==='computeRack'){rack.currentPowerW=rack.power;rack.heatOutput=rack.power;rack.heatGenerationPower=rack.power;}}
     }
     this.blockedRacks=blocked;
   }
@@ -44,7 +44,7 @@ export class PowerGridSystem {
     let draw=world.batteryDispatch?.currentGridPowerW()??fallbackOperatingLoad(equipment);
     this.overloadSeconds=draw>capacity?this.overloadSeconds+dt:0;
     if(draw>capacity*1.1||(draw>capacity&&this.overloadSeconds+1e-9>=5)){
-      const racks=[...(world.powerEquipmentSetByType?.('serverRack')||equipment.filter(e=>e.type==='serverRack'))].filter(isPowered).sort((a,b)=>demand(b)-demand(a)||positionOrder(a,b));
+      const racks=[...equipment].filter(e=>['serverRack','computeRack'].includes(e.type)&&isPowered(e)).sort((a,b)=>demand(b)-demand(a)||positionOrder(a,b));
       let changed=false;
       for(const rack of racks){if(draw<=capacity)break;draw-=demand(rack);rack.powerBlocked=true;changed=true;}
       if(draw>capacity){this.breakerOpen=true;for(const e of equipment)if(e.enabled)e.powerBlocked=true;}
@@ -55,8 +55,8 @@ export class PowerGridSystem {
   }
   rearm(world){
     const equipment=powerEquipment(world),capacity=this.capacityKW*1000;
-    const racks=world.powerEquipmentSetByType?.('serverRack')||[...equipment].filter(e=>e.type==='serverRack'),wasOpen=this.breakerOpen;
-    const infrastructure=[...equipment].filter(e=>e.type!=='serverRack');let restored=0;
+    const racks=[...equipment].filter(e=>['serverRack','computeRack'].includes(e.type)),wasOpen=this.breakerOpen;
+    const infrastructure=[...equipment].filter(e=>!['serverRack','computeRack'].includes(e.type));let restored=0;
     if(wasOpen){
       for(const entity of equipment)if(entity.enabled)entity.powerBlocked=false;
       world.batteryDispatch?.snapshot?.clear();

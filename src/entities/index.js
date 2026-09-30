@@ -2,6 +2,8 @@ export { Entity } from './Entity.js';
 export { entityFootprintCells } from './EntityFootprint.js';
 export { Machine } from './Machine.js';
 export { ServerRack } from './ServerRack.js';
+export { ComputeRack } from './ComputeRack.js';
+export { COMPUTE_RACK_MODELS, COMPUTE_RACK_MODEL_IDS, COMPUTE_RACK_MODEL_LABELS, computeRackModel } from './ComputeRackModels.js';
 export { Furnace } from './Furnace.js';
 export { PassiveHeatSource } from './PassiveHeatSource.js';
 export { Fan } from './Fan.js';

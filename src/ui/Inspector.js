@@ -7,7 +7,7 @@ import { fluidThermalDiagnosis } from '../simulation/fluid/FluidThermalDiagnosti
 
 const fluidTypes=['pipe','pump','tank','radiator','exchanger','waterChiller'];
 const airDuctTypes=['duct'];
-const POWER_DEVICE_TYPES=new Set(['fan','exhaust','pump','radiator','waterChiller','coolingUnit','serverRack','battery','solarPanel']);
+const POWER_DEVICE_TYPES=new Set(['fan','exhaust','pump','radiator','waterChiller','coolingUnit','serverRack','computeRack','battery','solarPanel']);
 const dirGlyph=d=>d?.x>0?'→':d?.x<0?'←':d?.y>0?'↓':d?.y<0?'↑':'—';
 
 function rackCoolingAdvice(world,rack){
@@ -16,7 +16,7 @@ function rackCoolingAdvice(world,rack){
   if(!units.length)return 'Instale uma condensadora para retirar o calor dos racks.';
   const paths=(cooling?.networks||[]).filter(network=>network.status==='READY').flatMap(network=>network.paths||[]).filter(path=>path.flowRate>.05);
   if(!paths.length)return 'A condensadora não está entregando ar: confira dutos, grelhas e energia.';
-  const rackHeat=world.entitiesByType('serverRack').filter(item=>item.status!=='CANCELLED').reduce((sum,item)=>sum+(item.heatGenerationPower||0),0);
+  const rackHeat=[...world.entitiesByType('serverRack'),...world.entitiesByType('computeRack')].filter(item=>item.status!=='CANCELLED').reduce((sum,item)=>sum+(item.heatGenerationPower||0),0);
   const available=cooling.metrics?.coolingAvailableCapacity??units.reduce((sum,unit)=>sum+(unit.availableCapacity||0),0);
   if(rackHeat>available+1)return 'Capacidade de refrigeração abaixo do calor gerado pelos racks.';
   const intake=rack.airIntakeDirection||{x:0,y:-1},x=rack.x+intake.x,y=rack.y+intake.y;
@@ -69,7 +69,17 @@ export class Inspector {
         ['Balanço',formatPower(e.thermalBalance||0)],
         ['Operação',e.started?'Ligada':'Aguardando']
       );
-      if(e.type==='serverRack')rows.push(['Cliente',e.clientId||'Independente'],['Potência',formatPower((e.currentPowerKW||0)*1000)+' / '+formatPower((e.maxPowerKW||0)*1000)],['Carga',(Number(e.cpuLoad||0)*100).toFixed(0)+'%'],['Temperatura na face fria',Number(e.intakeAirTemperature??e.inletTemperature??e.temperature).toFixed(1)+' °C'],['Temperatura na face quente',Number(e.exhaustAirTemperature??e.exhaustTemperature??e.temperature).toFixed(1)+' °C'],['Vazão na entrada',Number(e.intakeAirFlow||0).toFixed(2)+' m³/s'],['Velocidade na entrada',Number(e.intakeAirVelocity||0).toFixed(2)+' m/s'],['Vazão na saída',Number(e.exhaustAirFlow||0).toFixed(2)+' m³/s'],['Velocidade na saída',Number(e.exhaustAirVelocity||0).toFixed(2)+' m/s'],['Estado',e.powerBlocked?'SEM ENERGIA':e.status||'NORMAL'],['SLA',Number(e.slaTemperature||30).toFixed(1)+' °C máx.'],['Disponibilidade',Number(e.uptime??100).toFixed(2)+'%'],['Sentido de insuflação',dirGlyph(e.airIntakeDirection)],['Sentido de retorno',dirGlyph(e.airExhaustDirection)],...([rackCoolingAdvice(world,e)].filter(Boolean).map(advice=>['Diagnóstico',advice])));
+    if(e.type==='serverRack')rows.push(['Cliente',e.clientId||'Independente'],['Potência',formatPower((e.currentPowerKW||0)*1000)+' / '+formatPower((e.maxPowerKW||0)*1000)],['Carga',(Number(e.cpuLoad||0)*100).toFixed(0)+'%'],['Temperatura na face fria',Number(e.intakeAirTemperature??e.inletTemperature??e.temperature).toFixed(1)+' °C'],['Temperatura na face quente',Number(e.exhaustAirTemperature??e.exhaustTemperature??e.temperature).toFixed(1)+' °C'],['Vazão na entrada',Number(e.intakeAirFlow||0).toFixed(2)+' m³/s'],['Velocidade na entrada',Number(e.intakeAirVelocity||0).toFixed(2)+' m/s'],['Vazão na saída',Number(e.exhaustAirFlow||0).toFixed(2)+' m³/s'],['Velocidade na saída',Number(e.exhaustAirVelocity||0).toFixed(2)+' m/s'],['Estado',e.powerBlocked?'SEM ENERGIA':e.status||'NORMAL'],['SLA',Number(e.slaTemperature||30).toFixed(1)+' °C máx.'],['Disponibilidade',Number(e.uptime??100).toFixed(2)+'%'],['Sentido de insuflação',dirGlyph(e.airIntakeDirection)],['Sentido de retorno',dirGlyph(e.airExhaustDirection)],...([rackCoolingAdvice(world,e)].filter(Boolean).map(advice=>['Diagnóstico',advice])));
+
+    if(e.type==='computeRack'){
+      const model=({basic:'Básico',professional:'Profissional',enterprise:'Enterprise'})[e.modelId]||e.modelId;
+      const capacity=e.specialization==='cpu'?e.capacity.vcpu+' vCPU · '+e.capacity.ramGB+' GB RAM · '+e.capacity.frequencyGHz+' GHz':e.specialization==='gpu'?e.capacity.gpuCount+' GPUs · '+e.capacity.vramPerGpuGB+' GB/GPU · '+e.capacity.vramGB+' GB VRAM':' '+e.capacity.storageTB+' TB úteis';
+      const dc=world.datacenter,reserved=dc?.computeCapacity?.reservationsByRack?.().get(e.assetId)||{vcpu:0,ramGB:0,gpuDevices:[],storageTB:0,contracts:[]};
+      const reservation=e.specialization==='cpu'?reserved.vcpu+' vCPU · '+reserved.ramGB+' GB RAM':e.specialization==='gpu'?reserved.gpuDevices.length+' / '+e.capacity.gpuCount+' GPUs reservadas':reserved.storageTB+' / '+e.capacity.storageTB+' TB';
+      const clients=[...new Set((reserved.contracts||[]).map(id=>dc?.state.contracts.find(contract=>contract.id===id)?.clientName).filter(Boolean))];
+      const free=e.specialization==='cpu'?Math.max(0,e.capacity.vcpu-reserved.vcpu)+' vCPU · '+Math.max(0,e.capacity.ramGB-reserved.ramGB)+' GB RAM':e.specialization==='gpu'?Math.max(0,e.capacity.gpuCount-reserved.gpuDevices.length)+' GPU(s)':Math.max(0,e.capacity.storageTB-reserved.storageTB)+' TB';
+      rows.push(['Patrimônio',e.assetId],['Especialização',({cpu:'CPU',gpu:'GPU',storage:'Storage'})[e.specialization]||e.specialization],['Modelo',model],['Capacidade instalada',capacity],['Capacidade reservada',reservation],['Capacidade disponível',free],['Clientes provisionados',clients.join(', ')||'Nenhum'],['Utilização',(Number(e.utilization||0)*100).toFixed(1)+'%'],['Potência',formatPower(e.currentPowerW||0)+' / '+formatPower(e.maxPowerW||0)],['Potência em repouso',formatPower(e.idlePowerW||0)],['Temperatura na face fria',Number(e.intakeAirTemperature??e.inletTemperature??e.temperature).toFixed(1)+' °C'],['Temperatura na face quente',Number(e.exhaustAirTemperature??e.exhaustTemperature??e.temperature).toFixed(1)+' °C'],['Vazão na entrada',Number(e.intakeAirFlow||0).toFixed(2)+' m³/s'],['Vazão na saída',Number(e.exhaustAirFlow||0).toFixed(2)+' m³/s'],['Estado',e.powerBlocked?'SEM ENERGIA':e.enabled?e.utilization>0?'EM OPERAÇÃO':'EM ESPERA':'DESLIGADO'],['SLA térmico',Number(e.slaTemperature||30).toFixed(1)+' °C máx.'],['Sentido de insuflação',dirGlyph(e.airIntakeDirection)],['Sentido de retorno',dirGlyph(e.airExhaustDirection)],...([rackCoolingAdvice(world,e)].filter(Boolean).map(advice=>['Diagnóstico',advice])));
+    }
     }
 
     if(fluidTypes.includes(e.type)){
@@ -206,5 +216,5 @@ export class Inspector {
       '<div class="kv"><span>Energia térmica</span><strong>'+formatEnergy(tile.thermalEnergy)+'</strong></div>';
   }
 
-  symbol(type){return ({machine:'▣',serverRack:'▥',furnace:'♨',passiveHeat:'•',fan:'✣',exhaust:'◉',pipe:'━',pump:'⟳',tank:'▰',radiator:'▥',exchanger:'HX',waterChiller:'❄',sensor:'°',coolingUnit:'❄',supplyVent:'↓',duct:'═'}[type]||'□');}
+  symbol(type){return ({machine:'▣',serverRack:'▥',computeRack:'▥',furnace:'♨',passiveHeat:'•',fan:'✣',exhaust:'◉',pipe:'━',pump:'⟳',tank:'▰',radiator:'▥',exchanger:'HX',waterChiller:'❄',sensor:'°',coolingUnit:'❄',supplyVent:'↓',duct:'═'}[type]||'□');}
 }

@@ -7,10 +7,15 @@ import { PowerGridSystem, POWER_MAX_CAPACITY_KW } from './PowerGridSystem.js';
 import { ServerRack } from '../entities/ServerRack.js';
 import { createDailyOperations, normalizeDailyState, sampleDailyOperations, summarizeDailyOperations } from './DailyOperations.js';
 import { ReputationSystem } from './ReputationSystem.js';
+import { ComputeCapacitySystem } from './compute/ComputeCapacitySystem.js';
+import { ComputeAllocationSystem } from './compute/ComputeAllocationSystem.js';
+import { ComputeLoadSystem } from './compute/ComputeLoadSystem.js';
+import { ComputeSlaSystem } from './compute/ComputeSlaSystem.js';
+import { ContractCapacityPlanner } from './contracts/ContractCapacityPlanner.js';
 
 const DEFAULT_STATE=()=>({cash:150000,clockSeconds:0,day:1,reputation:50,powerCapacityKW:100,energyTariff:0.55,
   offerSequence:0,offers:[],marketInitialized:false,contracts:[],pendingExpansionOffer:null,lastExpansionInviteByClient:{},ledger:[],dailyViolation:false,lastPowerEnergy:0,rackSequence:0,
-  reputationHistory:[],dailyPositiveReputation:0,reputationStreakDays:0});
+  reputationHistory:[],dailyPositiveReputation:0,reputationStreakDays:0,computeCommercialRevision:1});
 
 export class DataCenterManager {
   constructor(world,level,{saveSystem=new DataCenterSaveSystem(),random=Math.random}={}){
@@ -26,10 +31,41 @@ export class DataCenterManager {
     this.powerGrid=new PowerGridSystem({capacityKW:this.state.powerCapacityKW,...this.state.powerProtection});
     this.contracts=new ContractSystem(this.state,{random:this.random});
     this.racks=new RackSystem(world,this.contracts);
+    this.computeCapacity=new ComputeCapacitySystem(world,this.state.contracts);
+    this.computeAllocations=new ComputeAllocationSystem(this.computeCapacity);
+    this.contracts.computeAllocations=this.computeAllocations;
+    this.contracts.computePlanner=new ContractCapacityPlanner(this.computeAllocations);
+    this.contracts.computePreflight=offer=>this.planComputeOffer(offer);
+    this.computeLoad=new ComputeLoadSystem(world,this.state.contracts);this.computeSla=new ComputeSlaSystem(world);
     this.build=null;this.simulation=null;this.saveTimer=0;this.saveDirty=false;this.saveDebounceRemaining=0;
     world.datacenter=this;world.datacenterConfig=level.datacenter;
     if(this.snapshot)saveSystem.restoreWorld(world,this.snapshot);
+    this.computeSla.refreshDiagnostics(this.state.contracts);
     this.powerGrid.refresh(world);
+  }
+  get computeCapacitySummary(){return this.computeCapacity.snapshot();}
+  planComputeOffer(offer){
+    const plan=this.contracts.computePlanner?.analyze(offer)||this.computeAllocations.plan(offer?.computeRequirements);
+    if(!plan.ok)return plan;
+    const currentlyReserved=new Set(this.state.contracts.filter(contract=>contract.modality==='compute'&&contract.status==='active').flatMap(contract=>(contract.allocations||[]).map(item=>item.assetId)));
+    const allocations=new Map(this.world.entitiesByType('computeRack').map(rack=>[rack.assetId,rack]));
+    let additionalPowerKW=0,additionalCoolingKW=0;
+    for(const allocation of plan.allocations){
+      if(currentlyReserved.has(allocation.assetId))continue;
+      const rack=allocations.get(allocation.assetId);if(!rack)continue;
+      const powered=rack.enabled&&!rack.powerBlocked,drawW=powered?Math.max(0,rack.currentPowerW||rack.power||0):0;
+      const heatW=powered?Math.max(0,rack.heatGenerationPower||rack.heatOutput||drawW):0;
+      additionalPowerKW+=Math.max(0,rack.maxPowerW-drawW)/1000;
+      additionalCoolingKW+=Math.max(0,rack.maxPowerW-heatW)/1000;
+    }
+    const freePowerKW=Math.max(0,this.powerGrid.capacityKW-this.committedFacilityPowerKW);
+    const unreservedComputeHeatKW=this.world.entitiesByType('computeRack').reduce((sum,rack)=>sum+(!currentlyReserved.has(rack.assetId)?Math.max(0,rack.heatGenerationPower||0)/1000:0),0);
+    const freeCoolingKW=Math.max(0,this.effectiveCoolingCapacityKW-this.committedCoolingKW-unreservedComputeHeatKW);
+    const missing=[...(plan.missing||[])];
+    if(additionalPowerKW>freePowerKW+1e-6)missing.push({resource:'Potência elétrica',requested:additionalPowerKW,available:freePowerKW,missing:additionalPowerKW-freePowerKW,unit:'kW'});
+    if(additionalCoolingKW>freeCoolingKW+1e-6)missing.push({resource:'Capacidade de refrigeração',requested:additionalCoolingKW,available:freeCoolingKW,missing:additionalCoolingKW-freeCoolingKW,unit:'kW'});
+    return {...plan,ok:missing.length===0,missing,additionalPowerKW,additionalCoolingKW,freePowerKW,freeCoolingKW,
+      reason:missing.length?'A infraestrutura elétrica ou térmica não consegue garantir este contrato.':null};
   }
   attach(build,simulation){
     this.build=build;this.simulation=simulation;
@@ -47,26 +83,32 @@ export class DataCenterManager {
   get rackCount(){return this.world.entitiesByType('serverRack').length;}
   get activeContracts(){return this.state.contracts.filter(contract=>contract.status==='active');}
   get clientCount(){return new Set(this.state.contracts.filter(contract=>['active','installing'].includes(contract.status)).map(contract=>contract.clientName)).size;}
-  get serverPowerKW(){return this.world.entitiesByType('serverRack').reduce((sum,rack)=>sum+(rack.power||0)/1000,0);}
+  get serverPowerKW(){return [...this.world.entitiesByType('serverRack'),...this.world.entitiesByType('computeRack')].reduce((sum,rack)=>sum+(rack.power||0)/1000,0);}
   get facilityPowerKW(){return (this.simulation?.metrics.powerDraw||0)/1000;}
   get pue(){return this.serverPowerKW>0?this.facilityPowerKW/this.serverPowerKW:null;}
   get currentContractRackPowerKW(){
     const liveIds=new Set(this.state.contracts.filter(contract=>['active','installing'].includes(contract.status)).map(contract=>contract.id));
-    return this.world.entitiesByType('serverRack').reduce((sum,rack)=>sum+(
+    const coloc=this.world.entitiesByType('serverRack').reduce((sum,rack)=>sum+(
       liveIds.has(rack.contractId)?(rack.power||0)/1000:0
     ),0);
+    const computeIds=new Set(this.state.contracts.filter(contract=>contract.modality==='compute'&&contract.status==='active').flatMap(contract=>(contract.allocations||[]).map(item=>item.assetId)));
+    return coloc+this.world.entitiesByType('computeRack').reduce((sum,rack)=>sum+(computeIds.has(rack.assetId)?(rack.power||0)/1000:0),0);
   }
   get otherFacilityPowerKW(){return Math.max(0,this.facilityPowerKW-this.currentContractRackPowerKW);}
+  get computeCommittedPowerKW(){
+    const reservedIds=new Set(this.state.contracts.filter(contract=>contract.modality==='compute'&&contract.status==='active').flatMap(contract=>(contract.allocations||[]).map(item=>item.assetId)));
+    return this.world.entitiesByType('computeRack').reduce((sum,rack)=>sum+(reservedIds.has(rack.assetId)?rack.maxPowerW/1000:0),0);
+  }
   get committedPowerKW(){return this.state.contracts.reduce((sum,contract)=>
-    ['active','installing'].includes(contract.status)?sum+contract.rackCount*contract.powerPerRackKW:sum,0);}
+    ['active','installing'].includes(contract.status)&&contract.modality!=='compute'?sum+contract.rackCount*contract.powerPerRackKW:sum,0)+this.computeCommittedPowerKW;}
   get committedFacilityPowerKW(){return this.committedPowerKW+this.otherFacilityPowerKW;}
   get contractedPowerKW(){return this.powerGrid.capacityKW;}
   get powerReserveKW(){return this.contractedPowerKW-this.committedPowerKW;}
   get availableEnergyKW(){return Math.max(0,this.powerReserveKW);}
-  get currentRackHeatKW(){return this.world.entitiesByType('serverRack').reduce((sum,rack)=>sum+(
+  get currentRackHeatKW(){return [...this.world.entitiesByType('serverRack'),...this.world.entitiesByType('computeRack')].reduce((sum,rack)=>sum+(
     Number.isFinite(rack.heatGenerationPower)?rack.heatGenerationPower/1000:(rack.heatOutputKW||0)
   ),0);}
-  get committedCoolingKW(){return this.committedPowerKW*.98;}
+  get committedCoolingKW(){const coloc=this.state.contracts.reduce((sum,contract)=>['active','installing'].includes(contract.status)&&contract.modality!=='compute'?sum+contract.rackCount*contract.powerPerRackKW:sum,0);return coloc*.98+this.computeCommittedPowerKW;}
   get effectiveCoolingCapacityKW(){return (this.simulation?.metrics.coolingAvailableCapacity||0)/1000;}
   // Kept as an alias for callers that used this name for effective available capacity.
   get installedCoolingKW(){return this.effectiveCoolingCapacityKW;}
@@ -124,9 +166,9 @@ export class DataCenterManager {
     const result=this.contracts.accept(offerId,this.clock.day,this.cash);
     if(!result.ok)return result;
     if(!result.alreadyAccepted&&result.contract.renewalContractId)this.reputation.change(1,'Renovação de contrato · '+result.contract.clientName,this.clock.day);
-    if(!result.alreadyAccepted)this.assignAvailableRacks(result.contract);
+    if(!result.alreadyAccepted&&result.contract.modality!=='compute')this.assignAvailableRacks(result.contract);
     this.build.budget+=result.installationIncome;
-    this.record('Instalação · '+result.contract.clientName,result.installationIncome);
+    if(!result.alreadyAccepted)this.record(result.contract.modality==='compute'?'Provisionamento Cloud · '+result.contract.clientName:'Instalação · '+result.contract.clientName,result.installationIncome);
     this.persist();this.build.onChange?.();return result;
   }
   declineOffer(offerId){const declined=this.contracts.decline(offerId);if(declined)this.persist();return declined;}
@@ -150,6 +192,7 @@ export class DataCenterManager {
     this.racks.update(dt,this.clock);
   }
   preparePowerDemand(dt){
+    this.computeLoad.update(this.clock);
     this.racks.update(0,this.clock);
     // Independent racks retain their requested draw while physically disconnected.
     for(const e of powerEquipment(this.world)){
@@ -178,6 +221,7 @@ export class DataCenterManager {
     // Refresh inlet readings after thermal transport before accounting for SLA.
     this.racks.update(0,this.clock);
     this.racks.afterThermalStep(dt,simulationDt);
+    this.computeSla.afterThermalStep(this.state.contracts,dt,simulationDt);
     sampleDailyOperations(this.state.dailyOperations,this.simulation.metrics,this.serverPowerKW,dt);
     if(this.clock.day>this.state.lastSettledDay+1)this.settleDay(this.clock.day);
   }
@@ -186,11 +230,13 @@ export class DataCenterManager {
     const metrics=this.simulation?.metrics||{powerEnergy:0},energyJoules=Math.max(0,(metrics.powerEnergy||0)-this.state.lastPowerEnergy);
     const energyKWh=energyJoules/3600000,energyCost=energyKWh*this.state.energyTariff;
     this.state.lastPowerEnergy=metrics.powerEnergy||0;
-    this.racks.evaluateDailyAvailability();
+    this.racks.evaluateDailyAvailability();this.computeSla.evaluateDailyAvailability(this.state.contracts);
     const violations=new Set(this.state.contracts.filter(contract=>contract.status==='active'&&contract.dailyViolation).map(contract=>contract.id));
     const reputationStart=this.reputation.value,reputationTierStart=this.reputation.tier;
     this.reputation.startDay();
     const operatingContracts=[...this.activeContracts];
+    const billableContracts=[...operatingContracts,...this.state.contracts.filter(contract=>contract.modality==='compute'&&contract.status==='cancelled'&&contract.dailyActiveSeconds>0)];
+    const activeSecondsAtClose=new Map(billableContracts.map(contract=>[contract.id,contract.dailyActiveSeconds||0]));
     const sla={operatingCount:operatingContracts.length,violations:operatingContracts.filter(contract=>violations.has(contract.id)).map(contract=>({id:contract.id,clientName:contract.clientName}))};
     for(const contract of operatingContracts)if(!violations.has(contract.id)&&contract.dailyActiveSeconds>0&&
       contract.dailyUptimeSeconds/contract.dailyActiveSeconds>=.9995)this.reputation.changeDaily(.05,'Disponibilidade excelente · '+contract.clientName,day);
@@ -198,10 +244,12 @@ export class DataCenterManager {
       this.reputation.change(-3,'Indisponibilidade crítica prolongada · '+contract.clientName,day);
     this.contracts.updateDay(day);
     for(const contract of this.state.contracts)if(['completed','cancelled'].includes(contract.status))this.releaseContractRacks(contract.id);
+    for(const contract of this.state.contracts)if(['completed','cancelled'].includes(contract.status)&&contract.modality==='compute')this.computeAllocations.release(contract);
     let revenue=0,penalties=0;
     for(const contract of this.state.contracts){
-      if(operatingContracts.includes(contract)){
-        const dailyRevenue=contract.monthlyFee/30;revenue+=dailyRevenue;
+      if(billableContracts.includes(contract)){
+        const activeSeconds=activeSecondsAtClose.get(contract.id)||0,activeDayFraction=activeSeconds>0?Math.min(1,activeSeconds/86400):1;
+        const dailyRevenue=contract.monthlyFee/30*activeDayFraction;revenue+=dailyRevenue;
       }
       if(violations.has(contract.id)){
         contract.lastSlaViolationDay=day;
@@ -326,7 +374,7 @@ export class DataCenterManager {
     this.state={...DEFAULT_STATE(),...snapshot.state};normalizeDailyState(this.state,snapshot.state);this.reputation=new ReputationSystem(this.state);this.clock=new GameClock(this.state.clockSeconds);
     if(this.world.technicianSystem)this.world.technicianSystem.payrollDay=this.state.lastSettledDay||0;
     this.powerGrid=new PowerGridSystem({capacityKW:this.state.powerCapacityKW,...this.state.powerProtection});this.contracts=new ContractSystem(this.state,{random:this.random});
-    this.racks=new RackSystem(this.world,this.contracts);this.saveSystem.restoreBuild(this.build,snapshot);
+    this.racks=new RackSystem(this.world,this.contracts);this.computeCapacity.setContracts(this.state.contracts);this.computeAllocations=new ComputeAllocationSystem(this.computeCapacity);this.contracts.computeAllocations=this.computeAllocations;this.contracts.computePlanner=new ContractCapacityPlanner(this.computeAllocations);this.contracts.computePreflight=offer=>this.planComputeOffer(offer);this.computeLoad=new ComputeLoadSystem(this.world,this.state.contracts);this.computeSla=new ComputeSlaSystem(this.world);this.saveSystem.restoreBuild(this.build,snapshot);this.computeSla.refreshDiagnostics(this.state.contracts);
     this.world.datacenter=this;this.world.onPowerEquipmentIndexed=equipment=>{if(this.powerGrid.breakerOpen)equipment.powerBlocked=true;};this.level.powerLimit=this.powerGrid.capacityKW*1000;
     this.powerGrid.refresh(this.world);
     this.simulation.cooling?.rebuild();

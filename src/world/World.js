@@ -7,7 +7,8 @@ import { entityFootprintCells } from '../entities/EntityFootprint.js';
 const COOLING_ENTITIES=new Set(['coolingUnit','supplyVent']);
 const FLUID_ENTITIES=new Set(['pipe','pump','tank','radiator','exchanger','waterChiller']);
 const FLUID_UTILITIES=new Set(['pipe']);
-const POWER_EQUIPMENT_TYPES=new Set(['serverRack','coolingUnit','fan','exhaust','pump','radiator','waterChiller','battery','solarPanel','duct']);
+const POWER_EQUIPMENT_TYPES=new Set(['serverRack','computeRack','coolingUnit','fan','exhaust','pump','radiator','waterChiller','battery','solarPanel','duct']);
+const RACK_TYPES=new Set(['serverRack','computeRack']);
 const EMPTY_ENTITY_SET=new Set();
 const occupiesEntityCell=entity=>!entity.isTechnician;
 
@@ -103,7 +104,8 @@ export class World {
     if(occupiesEntityCell(entity))for(const cell of entityFootprintCells(entity))if(this.inBounds(cell.x,cell.y)){const index=this.index(cell.x,cell.y);if(!this.entityByCell.has(index))this.entityByCell.set(index,entity);}
     if(entity.isTechnician)this.navigationGrid?.addTechnician(entity);else if(occupiesEntityCell(entity))this.navigationTopologyVersion++;
     if(COOLING_ENTITIES.has(entity.type))this.bumpUtilityTopology();if(FLUID_ENTITIES.has(entity.type))this.fluidTopologyVersion++;
-    if(entity.type==='serverRack')this.rackTopologyVersion++;
+    if(RACK_TYPES.has(entity.type))this.rackTopologyVersion++;
+    if(entity.type==='computeRack')this.datacenter?.computeCapacity?.invalidate?.();
     return entity;
   }
   removeEntity(entity){
@@ -116,14 +118,16 @@ export class World {
     if(occupiesEntityCell(entity))for(const cell of entityFootprintCells(entity))if(this.inBounds(cell.x,cell.y)){const index=this.index(cell.x,cell.y);if(this.entityByCell.get(index)===entity){this.entityByCell.delete(index);const replacement=this.entities.find(candidate=>occupiesEntityCell(candidate)&&entityFootprintCells(candidate).some(item=>this.inBounds(item.x,item.y)&&this.index(item.x,item.y)===index));if(replacement)this.entityByCell.set(index,replacement);}}
     if(entity.isTechnician)this.navigationGrid?.removeTechnician(entity);else if(occupiesEntityCell(entity))this.navigationTopologyVersion++;
     if(COOLING_ENTITIES.has(entity.type))this.bumpUtilityTopology();if(FLUID_ENTITIES.has(entity.type))this.fluidTopologyVersion++;
-    if(entity.type==='serverRack')this.rackTopologyVersion++;if(entity.isHeatMachine)this.heatMachineTopologyVersion++;
+    if(RACK_TYPES.has(entity.type))this.rackTopologyVersion++;if(entity.isHeatMachine)this.heatMachineTopologyVersion++;
+    if(entity.type==='computeRack')this.datacenter?.computeCapacity?.invalidate?.();
     return true;
   }
   clearEntities(){
     const removed=this.entities;this.entities=[];this.entityById.clear();this.entityByCell.clear();this.entitiesByTypeIndex.clear();this.heatMachines.clear();this.passiveHeatSources.clear();this.wasteHeatEquipmentIndex.clear();this.entityVisualVersion++;if(removed.some(entity=>entity.isTechnician))this.dynamicVisualVersion++;if(removed.some(entity=>!entity.isTechnician))this.staticVisualVersion++;
     if(removed.some(entity=>COOLING_ENTITIES.has(entity.type)))this.bumpUtilityTopology();
     if(removed.some(entity=>FLUID_ENTITIES.has(entity.type)))this.fluidTopologyVersion++;
-    if(removed.some(entity=>entity.type==='serverRack'))this.rackTopologyVersion++;
+    if(removed.some(entity=>RACK_TYPES.has(entity.type)))this.rackTopologyVersion++;
+    if(removed.some(entity=>entity.type==='computeRack'))this.datacenter?.computeCapacity?.invalidate?.();
     if(removed.some(entity=>occupiesEntityCell(entity)))this.navigationTopologyVersion++;
     this.navigationGrid?.technicianOccupancy.fill(-1);
     this.rebuildPowerEquipmentIndex();
@@ -141,7 +145,7 @@ export class World {
     if(occupiesEntityCell(entity))for(const cell of entityFootprintCells(entity))if(this.inBounds(cell.x,cell.y)){const index=this.index(cell.x,cell.y);if(!this.entityByCell.has(index))this.entityByCell.set(index,entity);}
     if(entity.isTechnician)this.navigationGrid?.addTechnician(entity);else if(occupiesEntityCell(entity))this.navigationTopologyVersion++;
     if(COOLING_ENTITIES.has(entity.type))this.bumpUtilityTopology();if(FLUID_ENTITIES.has(entity.type))this.fluidTopologyVersion++;
-    if(entity.type==='serverRack')this.rackTopologyVersion++;
+    if(RACK_TYPES.has(entity.type))this.rackTopologyVersion++;
     return true;
   }
   utilitiesAt(x,y){return this.utilityLayer.get(this.index(x,y))||[];}

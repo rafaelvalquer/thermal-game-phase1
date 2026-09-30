@@ -1,11 +1,12 @@
 import { BUILD_CATALOG, STRUCTURE_TOOLS } from './BuildCatalog.js';
 import { PlacementValidator } from './PlacementValidator.js';
-import { Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, WaterChiller, TemperatureSensor, AirDuct, CoolingUnit, ServerRack, SupplyVent, PowerBattery, SolarPanel } from '../entities/index.js';
+import { Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, WaterChiller, TemperatureSensor, AirDuct, CoolingUnit, ServerRack, ComputeRack, SupplyVent, PowerBattery, SolarPanel } from '../entities/index.js';
 import { DUCT_TOOLS } from './PlacementValidator.js';
 import { UtilityPlacementSystem } from './UtilityPlacementSystem.js';
 import { DEFAULT_BUDGET } from '../utils/Constants.js';
 import { entityFootprintCells } from '../entities/EntityFootprint.js';
 import { COOLING_UNIT_MODELS } from '../entities/CoolingUnitModels.js';
+import { COMPUTE_RACK_MODEL_IDS, COMPUTE_RACK_MODELS } from '../entities/ComputeRackModels.js';
 
 export { COOLING_UNIT_MODELS } from '../entities/CoolingUnitModels.js';
 
@@ -23,7 +24,7 @@ export class BuildSystem {
         ...(!systems.waterCooling?['pipe','pump','tank','radiator','exchanger','waterChiller']:[]),
       ]:[];
     const industrialAvailable=Boolean(systems?.allBuildTools||this.world.datacenterConfig?.allBuildTools);
-    this.catalog=Object.fromEntries(Object.entries(BUILD_CATALOG).filter(([k])=>!hiddenTools.includes(k)&&(k!=='serverRack'||Boolean(this.world.datacenterConfig))&&(k!=='industrialCoolingUnit'||industrialAvailable)));
+    this.catalog=Object.fromEntries(Object.entries(BUILD_CATALOG).filter(([k])=>!hiddenTools.includes(k)&&(k!=='serverRack'||Boolean(this.world.datacenterConfig))&&(!k.startsWith('computeRack')||Boolean(this.world.datacenterConfig))&&(k!=='industrialCoolingUnit'||industrialAvailable)));
     const defaults=Object.fromEntries(Object.entries(this.catalog).map(([k,v])=>[k,v.inventory]));
     this.unlimitedInventory=Boolean(this.world.datacenterConfig?.unlimitedBuildInventory);
     if(this.unlimitedInventory)this.inventory=Object.fromEntries(Object.keys(defaults).map(k=>[k,Infinity]));
@@ -31,25 +32,29 @@ export class BuildSystem {
     else this.inventory=defaults;
     this.initialInventory={...this.inventory};this.placedEntities=new Map();this.placedMaterials=new Map();
     this.ductInsulated=false;this.coolingUnitModel=this.world.thermalSystems?.coolingUnitModel||'commercial';
+    this.computeRackModels={cpu:'basic',gpu:'basic',storage:'basic'};
     this.onChange=()=>{};
   }
   select(tool){this.selected=tool;this.onChange();}
-  rotate(){if(this.selected==='serverRack')this.rackRotation=(this.rackRotation+1)%4;else this.rotation=(this.rotation+1)%4;this.onChange();}
-  direction(){return DIRS[this.selected==='serverRack'?this.rackRotation:this.rotation];}
+  rotate(){if(this.selected==='serverRack'||this.selected?.startsWith('computeRack'))this.rackRotation=(this.rackRotation+1)%4;else this.rotation=(this.rotation+1)%4;this.onChange();}
+  direction(){return DIRS[this.selected==='serverRack'||this.selected?.startsWith('computeRack')?this.rackRotation:this.rotation];}
   toggleDuctInsulation(){this.ductInsulated=!this.ductInsulated;this.onChange();return this.ductInsulated;}
   cycleCoolingUnitModel(){const tiers=Object.keys(COOLING_UNIT_MODELS),index=tiers.indexOf(this.coolingUnitModel);this.coolingUnitModel=tiers[(index+1)%tiers.length];this.onChange();return COOLING_UNIT_MODELS[this.coolingUnitModel];}
+  computeRackSpecialization(tool=this.selected){return tool==='computeRackCpu'?'cpu':tool==='computeRackGpu'?'gpu':tool==='computeRackStorage'?'storage':null;}
+  computeRackModel(tool=this.selected){const specialization=this.computeRackSpecialization(tool);return specialization?COMPUTE_RACK_MODELS[specialization][this.computeRackModels[specialization]]:null;}
+  cycleComputeRackModel(tool=this.selected){const specialization=this.computeRackSpecialization(tool);if(!specialization)return null;const tiers=COMPUTE_RACK_MODEL_IDS,index=tiers.indexOf(this.computeRackModels[specialization]);this.computeRackModels[specialization]=tiers[(index+1)%tiers.length];this.onChange();return this.computeRackModel(tool);}
   coolingConfig(tool){return tool==='industrialCoolingUnit'?COOLING_UNIT_MODELS.industrial:tool==='coolingUnit'?COOLING_UNIT_MODELS[this.coolingUnitModel]:null;}
   isIndustrialCooling(tool){return tool==='industrialCoolingUnit'||tool==='coolingUnit'&&this.coolingUnitModel==='industrial';}
   placementCells(tool,x,y){const length=this.isIndustrialCooling(tool)?2:1,d=this.direction();return Array.from({length},(_,offset)=>({x:x+d.x*offset,y:y+d.y*offset}));}
   canPlace(tool,x,y){const footprintLength=this.isIndustrialCooling(tool)?2:1;return this.validator.canPlace(tool,x,y,{direction:this.direction(),footprintLength});}
-  canAfford(tool){const c=this.catalog[tool];return c&&this.budget>=(tool==='coolingUnit'?COOLING_UNIT_MODELS[this.coolingUnitModel].cost:c.cost)&&(this.inventory[tool]??0)>0;}
+  canAfford(tool){const c=this.catalog[tool],compute=this.computeRackModel(tool),cost=tool==='coolingUnit'?COOLING_UNIT_MODELS[this.coolingUnitModel].cost:compute?.cost??c?.cost;return c&&this.budget>=cost&&(this.inventory[tool]??0)>0;}
 
   place(x,y,{refreshCooling=true}={}){
     const tool=this.selected;if(!tool||!this.catalog[tool]||!this.canPlace(tool,x,y))return {ok:false,reason:'Posição inválida ou excede as conexões permitidas'};
     if(tool==='demolish')return this.demolish(x,y);
     if(!this.canAfford(tool))return {ok:false,reason:'Sem orçamento, estoque ou ferramenta bloqueada'};
     if(tool==='serverRack'&&!this.world.datacenter?.nextRackPlacement())return {ok:false,reason:'Aceite um contrato para instalar os racks solicitados.'};
-    const before=this.simulation.totalInternalEnergy(),base=this.catalog[tool],coolingConfig=this.coolingConfig(tool),c=coolingConfig?{...base,...coolingConfig}:base;let entity=null;
+    const before=this.simulation.totalInternalEnergy(),base=this.catalog[tool],coolingConfig=this.coolingConfig(tool),computeModel=this.computeRackModel(tool),c=computeModel?{...base,...computeModel}:coolingConfig?{...base,...coolingConfig}:base;let entity=null;
     if(c.kind==='material')this.world.setMaterial(x,y,c.material);
     else if(DUCT_TOOLS.has(tool)){
       entity=new AirDuct(x,y,{size:tool,embedded:!this.world.isAir(x,y),insulated:tool==='duct'?true:this.ductInsulated});
@@ -68,6 +73,7 @@ export class BuildSystem {
       if(tool==='sensor')entity=new TemperatureSensor(x,y);
       if(tool==='battery')entity=new PowerBattery(x,y);
       if(tool==='solarPanel')entity=new SolarPanel(x,y);
+      if(computeModel)entity=new ComputeRack(x,y,{specialization:computeModel.specialization,modelId:computeModel.id,airIntakeDirection:{...dir}});
       if(tool==='coolingUnit'||tool==='industrialCoolingUnit'){
         const model=tool==='industrialCoolingUnit'?'industrial':this.coolingUnitModel;
         entity=new CoolingUnit(x,y,{...COOLING_UNIT_MODELS[model],tier:model,direction:{...dir}});
@@ -96,7 +102,11 @@ export class BuildSystem {
     const before=this.simulation.totalInternalEnergy(),e=this.world.entityAt(x,y);
     if(e){
       if(e.locked)return {ok:false,reason:'Infraestrutura bloqueada pela missão'};
-      if((e.isHeatMachine&&!e.contractId&&e.type!=='serverRack')||e.isPassiveHeatSource)return {ok:false,reason:'Equipamento da missão não pode ser removido'};
+      if(e.type==='computeRack'&&!this.world.datacenter?.computeAllocations?.canRemoveRack(e.assetId)){
+        const clients=this.world.datacenter?.computeAllocations?.contractsUsingRack(e.assetId)?.map(contract=>contract.clientName).filter(Boolean)||[];
+        return {ok:false,reason:'Rack reservado por contratos Cloud não pode ser removido'+(clients.length?': '+[...new Set(clients)].join(', '):'')};
+      }
+      if((e.isHeatMachine&&!e.contractId&&e.type!=='serverRack'&&e.type!=='computeRack')||e.isPassiveHeatSource)return {ok:false,reason:'Equipamento da missão não pode ser removido'};
       if(e.type==='serverRack')this.world.datacenter?.onRackRemoved(e);
       this.world.removeEntity(e);
       if(['supplyVent','coolingUnit'].includes(e.type))this.simulation.cooling?.rebuild();
@@ -126,7 +136,8 @@ export class BuildSystem {
     let removed=0,blocked=0,entities=0,utilities=0,materials=0,coolingChanged=false;
     for(const entity of [...this.world.entities]){
       if(entity.isTechnician||!intersects(entity))continue;
-      if(entity.locked||(entity.isHeatMachine&&!entity.contractId&&entity.type!=='serverRack')||entity.isPassiveHeatSource){blocked++;continue;}
+      if(entity.type==='computeRack'&&!this.world.datacenter?.computeAllocations?.canRemoveRack(entity.assetId)){blocked++;continue;}
+      if(entity.locked||(entity.isHeatMachine&&!entity.contractId&&entity.type!=='serverRack'&&entity.type!=='computeRack')||entity.isPassiveHeatSource){blocked++;continue;}
       if(entity.type==='serverRack')this.world.datacenter?.onRackRemoved(entity);
       this.world.removeEntity(entity);entities++;removed++;
       const placed=this.placedEntities.get(entity.id);
@@ -188,7 +199,7 @@ export class BuildSystem {
   }
 
   recover({tool,cost}){
-    this.budget+=cost;
+    this.budget+=tool?.startsWith('computeRack')?Math.floor(cost*.5):cost;
     if(Number.isFinite(this.inventory[tool]))this.inventory[tool]=Math.min(this.initialInventory[tool]??Infinity,this.inventory[tool]+1);
   }
 }

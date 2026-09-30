@@ -8,6 +8,7 @@ import { World } from '../../src/world/World.js';
 import { Simulation } from '../../src/simulation/Simulation.js';
 import { BuildSystem } from '../../src/building/BuildSystem.js';
 import { ServerRack } from '../../src/entities/ServerRack.js';
+import { ComputeRack } from '../../src/entities/ComputeRack.js';
 import { Fan } from '../../src/entities/Fan.js';
 import { Pump } from '../../src/entities/Pump.js';
 import { CoolingUnit } from '../../src/entities/CoolingUnit.js';
@@ -55,6 +56,14 @@ test('130 kW cuts the largest rack before heat and billing, without automaticall
   assert.equal(dc.rearmPower().restored,0);
   assert.equal(dc.upgradePower(250).ok,true);assert.equal(largest.powerBlocked,true);
   assert.equal(dc.rearmPower().restored,1);assert.equal(largest.power,60000);
+});
+
+test('electrical protection selectively cuts compute racks while reservations remain intact',()=>{
+  const world=new World(8,8),grid=new PowerGridSystem({capacityKW:100}),rack=world.addEntity(new ComputeRack(3,3,{specialization:'gpu',modelId:'basic'}));
+  rack.requestedPower=110100;rack.power=110100;rack.heatOutput=110100;rack.currentPowerW=110100;
+  grid.update(world,.01);
+  assert.equal(rack.powerBlocked,true);assert.equal(rack.currentPowerW,0);assert.equal(rack.heatGenerationPower,0);
+  assert.equal(grid.blockedRacks,1);assert.equal(rack.status,'POWER_OFF');
 });
 
 test('equal loads cut by map position and manual restoration prefers smaller loads',()=>{

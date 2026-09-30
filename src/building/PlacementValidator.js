@@ -51,7 +51,8 @@ export class PlacementValidator {
       return this.adjacentCoolingDuctComponents(x,y,cells).length<=1;
     }
     if(tool==='solarPanel')return w.isAir(x,y)&&!w.entityAt(x,y)&&!w.utilityAt(x,y);
-    if(tool==='serverRack'){
+    if(tool==='serverRack'||tool.startsWith('computeRack')){
+      if(tool.startsWith('computeRack')&&!w.datacenterConfig)return false;
       const hall=w.datacenterConfig?.serverHall;
       const inHall=!hall||(x>=hall.x&&y>=hall.y&&x<hall.x+hall.width&&y<hall.y+hall.height);
       return inHall&&w.isAir(x,y)&&!w.entityAt(x,y)&&!w.utilityAt(x,y);

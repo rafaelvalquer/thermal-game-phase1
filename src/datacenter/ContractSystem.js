@@ -1,10 +1,12 @@
 import { CONTRACT_TEMPLATES, STARTUP_TEMPLATE, INTERNATIONAL_TEMPLATE, MARKET_BANDS, CONTRACT_GROWTH_TIERS, CONTRACT_GROWTH_DAY_STEP, CONTRACT_EXPANSION_CHANCE, CONTRACT_EXPANSION_REPUTATION, CONTRACT_EXPANSION_SLA_QUIET_DAYS, CONTRACT_EXPANSION_CLIENT_COOLDOWN_DAYS, CONTRACT_EXPANSION_GROWTH, THERMAL_SLA_RELIEF_C, THERMAL_SLA_REVISION, CONTRACT_PAYOUT_MULTIPLIER, CONTRACT_PAYOUT_PREVIOUS_MULTIPLIER, CONTRACT_PAYOUT_REVISION } from './ContractDefinitions.js';
 import { ContractGenerator } from './ContractGenerator.js';
 import { reputationPriceMultiplier, reputationTier } from './ReputationDefinitions.js';
+import { ComputeContractGenerator } from './contracts/ComputeContractGenerator.js';
+import { ContractCapacityPlanner } from './contracts/ContractCapacityPlanner.js';
 
 export class ContractSystem {
   constructor(state,{random=Math.random}={}){
-    this.state=state;this.random=random;this.generator=new ContractGenerator(CONTRACT_TEMPLATES,{random});
+    this.state=state;this.random=random;this.generator=new ContractGenerator(CONTRACT_TEMPLATES,{random});this.computeGenerator=new ComputeContractGenerator({random});this.computeAllocations=null;this.computePlanner=null;this.computePreflight=null;
     if((state.thermalSlaRevision||0)<THERMAL_SLA_REVISION){
       for(const item of [...state.offers,...state.contracts])if(Number.isFinite(item.maxInletTemperature))item.maxInletTemperature+=THERMAL_SLA_RELIEF_C;
       state.thermalSlaRevision=THERMAL_SLA_REVISION;
@@ -32,6 +34,7 @@ export class ContractSystem {
       state.reputationPricingRevision=1;
     }
     for(const item of [...state.offers,...state.contracts]){
+      item.modality??='colocation';
       item.baseMonthlyFee??=Number(item.monthlyFee)||0;
       item.reputationMultiplier??=1;
       item.clientTier??=this.inferClientTier(item);
@@ -116,6 +119,10 @@ export class ContractSystem {
     const count=this.integer(band.minOffers,band.maxOffers),offers=[],eligible=this.generator.eligibleClients(reputation);
     for(let i=0;i<count;i++){
       const growth=this.growthMultiplier(day,reputation);
+      if(i===count-1&&this.random()<.45){
+        const cloud=this.computeGenerator.generate({id:'offer-'+(++this.state.offerSequence),day,reputation,expiresIn:this.integer(3,7),growth});
+        if(cloud){this.state.offers.push(cloud);offers.push(cloud);continue;}
+      }
       const template=eligible[this.integer(0,Math.max(0,eligible.length-1))]||STARTUP_TEMPLATE;
       offers.push(this.addOffer(this.scaleTemplate(template,growth),day,{vary:true}));
     }
@@ -130,7 +137,7 @@ export class ContractSystem {
   generateExpansionOffer(day,reputation=this.state.reputation,violations=new Set()){
     if(this.state.pendingExpansionOffer||reputation<CONTRACT_EXPANSION_REPUTATION)return null;
     const eligible=this.state.contracts.filter(contract=>{
-      if(contract.status!=='active'||violations.has(contract.id))return false;
+      if(contract.modality==='compute'||contract.status!=='active'||violations.has(contract.id))return false;
       const lastSlaDay=Number(contract.lastSlaViolationDay)||0,lastInviteDay=Number(this.state.lastExpansionInviteByClient[contract.clientName])||Number(contract.lastExpansionOfferDay)||0;
       return (!lastSlaDay||day-lastSlaDay>CONTRACT_EXPANSION_SLA_QUIET_DAYS)&&
         (!lastInviteDay||day-lastInviteDay>=CONTRACT_EXPANSION_CLIENT_COOLDOWN_DAYS);
@@ -167,6 +174,20 @@ export class ContractSystem {
     if(day>offer.expiresDay)return {ok:false,reason:'Esta oferta expirou e não pode mais ser aceita.'};
     if(offer.locked&&(this.state.reputation||0)<offer.requiredReputation)return {ok:false,reason:'Esta oportunidade exige reputação '+offer.requiredReputation+'.'};
     if(cashAvailable<0)return {ok:false,reason:'Capital inválido.'};
+    if(offer.modality==='compute'){
+      if(!this.computeAllocations)return {ok:false,reason:'Sistema de capacidade computacional indisponível.'};
+      const physicalPlan=this.computePreflight?.(offer);if(physicalPlan&&!physicalPlan.ok)return physicalPlan;
+      const plan=(this.computePlanner||new ContractCapacityPlanner(this.computeAllocations)).analyze(offer);
+      if(!plan.ok){const missing=plan.missing.map(item=>item.resource==='GPU'?`${item.missing} GPU(s) com ${item.minVramGB} GB por dispositivo`:item.resource==='Storage'?`${item.missing} TB de Storage`:`${item.missing} ${item.resource}`).join(', ');return {...plan,reason:'Capacidade insuficiente. Faltam '+missing+'.'};}
+      const contract={...offer,offerId:offer.id,offerExpiresDay:offer.expiresDay,isNew:false,status:'active',acceptedDay:day,activeFromDay:day,
+        expiresDay:day+offer.termDays,installedRacks:0,dailyViolation:false,consecutiveViolationDays:0,violationDays:0,
+        activeSeconds:0,uptimeSeconds:0,downtimeSeconds:0,dailyActiveSeconds:0,dailyUptimeSeconds:0,dailyDowntimeSeconds:0,
+        finesPaid:0,completedDay:null,cancelReason:null};
+      const reservation=this.computeAllocations.commit(contract,offer.computeRequirements);
+      if(!reservation.ok)return reservation;
+      this.state.offers.splice(index,1);this.state.contracts.push(contract);this.contractById.set(contract.id,contract);
+      return {ok:true,contract,installationIncome:offer.installationFee||0};
+    }
     this.state.offers.splice(index,1);
     const renewal=offer.renewalContractId?this.state.contracts.find(item=>item.id===offer.renewalContractId):null;
     if(renewal)renewal.renewalAcceptedDay=day;
@@ -195,7 +216,9 @@ export class ContractSystem {
   cancel(contractId,reason='Cancelado pelo operador'){
     const contract=this.state.contracts.find(item=>item.id===contractId&&['installing','active'].includes(item.status));
     if(!contract)return false;
-    contract.status='cancelled';contract.cancelReason=reason;contract.cancelledDay=this.state.day;return true;
+    contract.status='cancelled';contract.cancelReason=reason;contract.cancelledDay=this.state.day;
+    if(contract.modality==='compute')this.computeAllocations?.release(contract);
+    return true;
   }
   updateDay(day){
     this.state.day=day;

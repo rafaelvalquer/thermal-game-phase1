@@ -54,7 +54,7 @@ export class VentCoverageCache {
     const candidates=new Map();
     for(const cell of cells)for(const intakeDirection of INTAKE_DIRECTIONS){
       const rack=world.entityAt(cell.x-intakeDirection.x,cell.y-intakeDirection.y);
-      if(rack?.type!=='serverRack')continue;
+      if(rack?.type!=='serverRack'&&rack?.type!=='computeRack')continue;
       const intake=rack.airIntakeDirection||{x:0,y:-1};
       if(intake.x!==intakeDirection.x||intake.y!==intakeDirection.y||candidates.has(rack))continue;
       const forward=cell.forward,lateral=cell.lateral;

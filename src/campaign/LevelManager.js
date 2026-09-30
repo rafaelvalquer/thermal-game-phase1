@@ -1,10 +1,11 @@
 import { World } from '../world/World.js';
 import { MapBuilder } from './MapBuilder.js';
-import { Machine, ServerRack, Furnace, PassiveHeatSource, Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, WaterChiller, TemperatureSensor, AirDuct, CoolingUnit, SupplyVent, Technician, PowerBattery, SolarPanel } from '../entities/index.js';
+import { Machine, ServerRack, ComputeRack, Furnace, PassiveHeatSource, Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, WaterChiller, TemperatureSensor, AirDuct, CoolingUnit, SupplyVent, Technician, PowerBattery, SolarPanel } from '../entities/index.js';
 
 const constructors={
   machine:(d)=>new Machine(d.x,d.y,d),
   serverRack:(d)=>new ServerRack(d.x,d.y,d),
+  computeRack:(d)=>new ComputeRack(d.x,d.y,d),
   furnace:(d)=>new Furnace(d.x,d.y,d),
   passiveHeat:(d)=>new PassiveHeatSource(d.x,d.y,d),
   fan:(d)=>new Fan(d.x,d.y,d.direction||{x:1,y:0}),

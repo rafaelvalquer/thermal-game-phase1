@@ -45,7 +45,7 @@ export class ThermalSystem {
   }
 
   exchangeMachines(dt){for(const m of this.heatMachines()){
-    m.type==='serverRack'?this.exchangeServerRack(m,dt):this.exchangeGenericMachine(m,dt);
+    m.type==='serverRack'||m.type==='computeRack'?this.exchangeServerRack(m,dt):this.exchangeGenericMachine(m,dt);
     m.thermalBalance=m.coolingPower-m.heatGenerationPower;
   }}
 

@@ -209,7 +209,7 @@ export class Renderer {
     }else if(DUCT_TOOLS.has(tool)){
       this.coolingDucts.preview(ctx,p.x,p.y,this.tile,tool,valid,this.camera.zoom,{embedded:!world.isAir(p.x,p.y)});
     }
-    else this.entities.drawPreview(ctx,world,tool,p.x,p.y,this.buildSystem.direction(),this.tile,this.mode,time,valid,tool==='coolingUnit'?this.buildSystem.coolingUnitModel:null);
+    else this.entities.drawPreview(ctx,world,tool,p.x,p.y,this.buildSystem.direction(),this.tile,this.mode,time,valid,tool==='coolingUnit'?this.buildSystem.coolingUnitModel:tool.startsWith('computeRack')?this.buildSystem.computeRackModel(tool):null);
 
     if(tool==='supplyVent')this.drawVentCoverage(ctx,world,{x:p.x,y:p.y,direction:this.buildSystem.direction()},{preview:true});
 

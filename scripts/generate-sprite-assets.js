@@ -20,6 +20,25 @@ function artwork(type,frame,off,width=32,sheetRow=0){
     panel(6,2,20,27);rect(8,5,16,21,P.ink);rect(8,4,16,2,P.mid);
     for(let row=0;row<4;row++){const y=8+row*4;rect(9,y,14,3,P.steel);rect(10,y,7,1,P.mid);rect(10,y+2,9,1,P.shadow);led(20,y+1,row);dot(18,y+1,P.yellow);}
     rect(5,27,3,3,P.ink);rect(24,27,3,3,P.ink);bolt(7,3);bolt(23,3);
+  }else if(type==='computeRackCpu'||type==='computeRackGpu'||type==='computeRackStorage'){
+    panel(5,2,22,27);rect(7,5,18,21,P.ink);rect(8,6,16,19,P.dark);
+    const accent=type==='computeRackCpu'?P.green:type==='computeRackGpu'?P.violet:P.cyan;
+    const rows=type==='computeRackStorage'?5:4;
+    for(let row=0;row<rows;row++){
+      const y=8+row*(type==='computeRackStorage'?3:4);
+      rect(9,y,14,2,P.steel);rect(10,y,8,1,accent);rect(19,y,3,1,off?P.shadow:(frame+row)%3===0?P.shine:accent);
+      if(type==='computeRackGpu')for(let slot=0;slot<3;slot++)rect(10+slot*4,y+1,2,1,slot===frame%3&&!off?P.shine:P.violet);
+      if(type==='computeRackStorage')rect(10,y+1,11,1,P.shadow);
+      led(22,y,row);
+    }
+    if(type==='computeRackCpu'){
+      rect(11,25,10,2,P.ink);rect(12,25,8,1,P.green);rect(14,24,4,1,off?P.shadow:P.shine);
+    }else if(type==='computeRackGpu'){
+      rect(7,27,18,1,P.violet);rect(10,26,3,2,P.cyan);rect(15,26,3,2,P.cyan);rect(20,26,3,2,P.cyan);
+    }else{
+      rect(8,26,16,2,P.ink);rect(9,26,14,1,P.cyan);rect(11,27,10,1,P.steel);
+    }
+    rect(5,27,3,3,P.ink);rect(24,27,3,3,P.ink);bolt(6,3);bolt(25,3);
   }else if(type==='technician'){
     const action=Math.floor(sheetRow/4),direction=sheetRow%4,walk=action===0,work=action===1;
     const stride=walk?[0,1,0,-1][frame]:0,reach=work?[0,1,2,1][frame]:0;

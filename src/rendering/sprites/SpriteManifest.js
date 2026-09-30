@@ -15,6 +15,9 @@ export const SPRITES=Object.freeze({
   exhaust:definition('exhaust','airflow/exhaust.svg',6),
   machine:definition('machine','machines/machine.svg',4),
   serverRack:definition('serverRack','machines/server_rack.svg',4,{visualWidth:1.16,visualHeight:1.38}),
+  computeRackCpu:definition('computeRackCpu','machines/compute_cpu_rack.svg',4,{visualWidth:1.16,visualHeight:1.38}),
+  computeRackGpu:definition('computeRackGpu','machines/compute_gpu_rack.svg',4,{visualWidth:1.16,visualHeight:1.38}),
+  computeRackStorage:definition('computeRackStorage','machines/compute_storage_rack.svg',4,{visualWidth:1.16,visualHeight:1.38}),
   technician:definition('technician','machines/technician.svg',4,{rows:12,stateRows:{running:0,idle:8,off:8,blocked:8,...Object.fromEntries(['walking','working','idle'].flatMap((action,a)=>['north','east','south','west'].map((direction,d)=>[`technician-${action}-${direction}`,a*4+d])))},visualWidth:.9,visualHeight:1.08,anchor:{x:.5,y:.9}}),
   furnace:definition('furnace','machines/furnace.svg',4,{visualWidth:1.3,visualHeight:1.5}),
   sensor:definition('sensor','sensors/sensor.svg',4,{visualWidth:.92,visualHeight:.96}),
@@ -27,7 +30,7 @@ export const SPRITES=Object.freeze({
   passiveHeat:definition('passiveHeat','machines/passive_heat.svg',1),
 });
 export const SPRITE_ENTITY_TYPES=Object.freeze(Object.fromEntries(Object.keys(SPRITES).map(type=>[type,type])));
-export function spriteIdFor(entity){return entity.type==='coolingUnit'?(entity.tier==='industrial'?'coolingIndustrial':entity.tier==='compact'?'coolingCompact':'coolingUnit'):SPRITE_ENTITY_TYPES[entity.type];}
+export function spriteIdFor(entity){return entity.type==='coolingUnit'?(entity.tier==='industrial'?'coolingIndustrial':entity.tier==='compact'?'coolingCompact':'coolingUnit'):entity.type==='computeRack'?'computeRack'+({cpu:'Cpu',gpu:'Gpu',storage:'Storage'}[entity.specialization]||'Cpu'):SPRITE_ENTITY_TYPES[entity.type];}
 export function spriteIconStyle(entity,variable='--entity-sprite'){
   const sprite=SPRITES[spriteIdFor(entity)];if(!sprite)return '';
   return `${variable}:url(${sprite.path});--sprite-columns:${sprite.frames};--sprite-rows:${sprite.rows};--sprite-aspect:${sprite.frameWidth/sprite.frameHeight}`;

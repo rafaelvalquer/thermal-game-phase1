@@ -10,7 +10,7 @@ import { GameClock } from '../../src/datacenter/GameClock.js';
 import { World } from '../../src/world/World.js';
 import { DataCenterDashboard } from '../../src/ui/DataCenterDashboard.js';
 import { BUILD_CATALOG } from '../../src/building/BuildCatalog.js';
-import { CoolingUnit, AirDuct, SupplyVent, ServerRack } from '../../src/entities/index.js';
+import { CoolingUnit, AirDuct, Fan, PowerBattery, SolarPanel, SupplyVent, ServerRack, ComputeRack } from '../../src/entities/index.js';
 import { UIManager } from '../../src/ui/UIManager.js';
 import { Renderer } from '../../src/rendering/Renderer.js';
 
@@ -39,6 +39,64 @@ test('data center sandbox starts with a large hall, starter capital, grid capaci
   assert.equal(s.datacenter.state.offers.length,3);
   assert.equal(s.datacenter.rackCount,0);
   assert.equal(s.datacenter.state.energyTariff,.55);
+});
+
+test('daily market can add a Cloud product without exceeding the reputation offer count or duplicating the day',()=>{
+  const s=createSandbox(new TestStorage(),()=>0),offers=s.datacenter.contracts.generateDaily(2,50);
+  assert.equal(offers.length,3,'two reputation-band offers plus the legacy locked-client opportunity');assert.equal(s.datacenter.contracts.generateDaily(2,50).length,0);
+  const cloud=offers.find(offer=>offer.modality==='compute');assert.ok(cloud);assert.ok(cloud.computeRequirements.vcpu>0);assert.ok(cloud.computeRequirements.ramGB>0);
+  assert.equal(s.datacenter.state.offers.filter(offer=>offer.isNew&&offer.offeredDay===2).length,3);
+  assert.ok(cloud.expiresDay>=5&&cloud.expiresDay<=9);
+});
+
+test('Cloud offer acceptance is capacity-gated, reserves resources, bills daily, and cancellation releases capacity without deleting equipment',()=>{
+  const s=createSandbox(),rack=s.world.addEntity(new ComputeRack(35,22,{specialization:'cpu',modelId:'basic'}));
+  const offer={id:'offer-cloud-test',contractId:'contract-cloud-test',modality:'compute',productId:'cloud-cpu',productName:'Cloud CPU',clientName:'Test Cloud',tier:'Cloud CPU',clientTier:'small',computeRequirements:{vcpu:48,ramGB:192},termDays:180,offeredDay:1,expiresDay:5,isNew:true,monthlyFee:30000,baseMonthlyFee:30000,reputationMultiplier:1,installationFee:2000,loadProfile:'constant',maxInletTemperature:32,availability:99.5};
+  offer.computeRequirements={vcpu:48,ramGB:192,gpuCount:2,gpuMinVramGB:80};s.datacenter.state.offers.push(offer);const failed=s.datacenter.acceptOffer(offer.id);assert.equal(failed.ok,false);assert.match(failed.reason,/insuficiente/);assert.equal(s.datacenter.state.offers.includes(offer),true);
+  const gpu=s.world.addEntity(new ComputeRack(38,22,{specialization:'gpu',modelId:'enterprise'}));
+  s.simulation.metrics.coolingAvailableCapacity=1_000_000;
+  const accepted=s.datacenter.acceptOffer(offer.id);assert.equal(accepted.ok,true);assert.equal(accepted.contract.status,'active');assert.equal(accepted.contract.allocations.length,2);
+  assert.equal(accepted.installationIncome,2000);
+  assert.equal(s.datacenter.computeCapacity.snapshot().cpu.reserved,48);assert.equal(s.datacenter.computeCapacity.snapshot().ram.reserved,192);assert.equal(s.datacenter.computeCapacity.snapshot().gpu.reserved,2);
+  const cashAfterSetup=s.datacenter.cash;assert.equal(s.datacenter.acceptOffer(offer.id).alreadyAccepted,true);assert.equal(s.datacenter.cash,cashAfterSetup);assert.equal(s.datacenter.computeCapacity.snapshot().gpu.reserved,2);
+  s.datacenter.state.pauseOnNewContracts=false;s.datacenter.settleDay(2);
+  assert.equal(s.datacenter.state.dailyResult.revenue,1000);
+  s.build.select('demolish');const blockedRemoval=s.build.demolish(rack.x,rack.y);assert.equal(blockedRemoval.ok,false,'reserved CPU rack cannot be removed');assert.match(blockedRemoval.reason,/Test Cloud/);
+  assert.equal(s.datacenter.cancelContract(accepted.contract.id),true);assert.equal(s.world.entities.includes(rack),true);assert.equal(s.world.entities.includes(gpu),true);
+  assert.equal(s.datacenter.computeCapacity.snapshot().cpu.available,64);assert.equal(s.datacenter.computeCapacity.snapshot().gpu.available,8);
+  const removed=s.build.demolish(rack.x,rack.y);assert.equal(removed.ok,true);assert.equal(s.world.entities.includes(rack),false);
+});
+
+test('Cloud rack, asset identity, and committed reservations survive save and reload',()=>{
+  const storage=new TestStorage(),s=createSandbox(storage),cpu=s.world.addEntity(new ComputeRack(35,22,{specialization:'cpu',modelId:'enterprise'}));
+  s.simulation.metrics.coolingAvailableCapacity=1_000_000;
+  const offer={id:'offer-cloud-save',contractId:'contract-cloud-save',modality:'compute',productId:'cloud-cpu',productName:'Cloud CPU',clientName:'Persist Cloud',tier:'Cloud CPU',clientTier:'small',computeRequirements:{vcpu:64,ramGB:256},termDays:180,offeredDay:1,expiresDay:5,isNew:false,monthlyFee:12000,baseMonthlyFee:12000,reputationMultiplier:1,installationFee:0,loadProfile:'constant',maxInletTemperature:32,availability:99.5};
+  s.datacenter.state.offers.push(offer);assert.equal(s.datacenter.acceptOffer(offer.id).ok,true);s.datacenter.persist({syncBackup:true});
+  assert.equal(s.datacenter.load(),true);const restored=s.world.entitiesByType('computeRack')[0];assert.equal(restored.assetId,cpu.assetId);
+  assert.equal(s.datacenter.computeCapacity.snapshot().cpu.reserved,64);assert.equal(s.datacenter.state.contracts.find(contract=>contract.modality==='compute').modality,'compute');
+  assert.equal(s.datacenter.computeCapacity.snapshot().cpu.total,256);
+});
+
+test('Cloud market UI shows exact resource requirements and enables analysis when equipment is installed',()=>{
+  const s=createSandbox(),rack=s.world.addEntity(new ComputeRack(35,22,{specialization:'cpu',modelId:'basic'}));
+  s.simulation.metrics.coolingAvailableCapacity=1_000_000;
+  s.datacenter.state.offers.push({id:'offer-cloud-ui',contractId:'contract-cloud-ui',modality:'compute',productId:'cloud-cpu',productName:'Cloud CPU',clientName:'UI Cloud',tier:'Cloud CPU',clientTier:'small',computeRequirements:{vcpu:48,ramGB:192},termDays:180,offeredDay:1,expiresDay:5,isNew:true,monthlyFee:12000,installationFee:500,loadProfile:'business',maxInletTemperature:32,availability:99.5});
+  const root={innerHTML:'',querySelectorAll:()=>[],querySelector:()=>null};new DataCenterDashboard(root,s.datacenter).update();
+  assert.ok(rack.assetId);assert.match(root.innerHTML,/48 vCPU · 192 GB RAM/);assert.match(root.innerHTML,/Analisar viabilidade/);assert.match(root.innerHTML,/data-accept="offer-cloud-ui"(?! disabled)/);
+});
+
+test('Cloud provision is rejected when installed resources exist but contracted power or cooling is inadequate',()=>{
+  const s=createSandbox();s.world.addEntity(new ComputeRack(35,22,{specialization:'cpu',modelId:'basic'}));
+  const offer={id:'offer-cloud-physical',contractId:'contract-cloud-physical',modality:'compute',productId:'cloud-cpu',productName:'Cloud CPU',clientName:'Physical Cloud',tier:'Cloud CPU',computeRequirements:{vcpu:24,ramGB:96},termDays:180,offeredDay:1,expiresDay:5,isNew:true,monthlyFee:12000,installationFee:0,loadProfile:'business',maxInletTemperature:32,availability:99.5};
+  s.datacenter.state.offers.push(offer);const blocked=s.datacenter.planComputeOffer(offer);assert.equal(blocked.ok,false);assert.ok(blocked.missing.some(item=>item.resource==='Capacidade de refrigeração'));
+  s.datacenter.powerGrid.capacityKW=2;assert.ok(s.datacenter.planComputeOffer(offer).missing.some(item=>item.resource==='Potência elétrica'));
+  assert.equal(s.datacenter.acceptOffer(offer.id).ok,false);assert.equal(s.datacenter.state.offers.includes(offer),true);
+  s.datacenter.powerGrid.capacityKW=100;s.simulation.metrics.coolingAvailableCapacity=10000;assert.equal(s.datacenter.planComputeOffer(offer).ok,true);assert.equal(s.datacenter.acceptOffer(offer.id).ok,true);
+});
+
+test('Cloud recurring revenue is prorated to the part of the day it was active',()=>{
+  const s=createSandbox();s.datacenter.state.contracts.push({id:'compute-part-day',modality:'compute',status:'active',clientName:'Partial Cloud',monthlyFee:15000,computeRequirements:{vcpu:1,ramGB:1},allocations:[],dailyActiveSeconds:43200,dailyUptimeSeconds:43200,dailyDowntimeSeconds:0});
+  const result=s.datacenter.settleDay(2);assert.equal(result.revenue,250);
 });
 
 test('legacy sandbox saves migrate the previous default energy tariff',()=>{
@@ -71,6 +129,7 @@ test('data center dashboard exposes finance, PUE, capacity, contract market, and
   new DataCenterDashboard(root,s.datacenter).update();
   assert.match(root.innerHTML,/R\$ 150\.000/);
   assert.match(root.innerHTML,/PUE/);
+  assert.match(root.innerHTML,/CAPACIDADE COMPUTACIONAL/);
   assert.match(root.innerHTML,/CAPACIDADE/);
   assert.match(root.innerHTML,/Capacidade nominal instalada/);
   assert.match(root.innerHTML,/Capacidade disponível agora/);
@@ -375,6 +434,31 @@ test('daily billing includes kWh, fixed grid fees, climatization upkeep, client 
   assert.match(s.datacenter.state.reputationHistory.at(-1).reason,/Violação de SLA/);
 });
 
+test('daylight solar generation lowers actual grid import and the daily electricity bill',()=>{
+  const scenario=withSolar=>{
+    const s=createSandbox();s.datacenter.clock.advance(12*3600);
+    if(withSolar)s.world.addEntity(new SolarPanel(3,3));
+    const load=new Fan(4,3);load.power=12000;s.world.addEntity(load);
+    s.simulation.step(1);s.datacenter.settleDay(2);
+    return {gridPower:s.simulation.metrics.powerDraw,energyCost:s.datacenter.state.dailyResult.energyCost};
+  };
+  const withoutSolar=scenario(false),withSolar=scenario(true);
+  assert.ok(withSolar.gridPower<withoutSolar.gridPower);
+  assert.ok(withSolar.energyCost<withoutSolar.energyCost);
+  assert.ok(withSolar.energyCost>0,'the grid still supplies the load not met by the panel');
+});
+
+test('electricity purchased to charge batteries is included in daily energy billing',()=>{
+  const s=createSandbox(),load=new Fan(4,3),battery=new PowerBattery(5,3);
+  load.power=1000;s.world.addEntity(load);s.world.addEntity(battery);
+  s.simulation.step(1);
+  assert.equal(s.simulation.metrics.powerDraw,11000);
+  assert.equal(battery.chargePowerW,10000);
+  s.datacenter.settleDay(2);
+  assert.ok(s.datacenter.state.dailyResult.energyCost>0);
+  assert.ok(Math.abs(s.datacenter.state.dailyResult.energyKWh-1.1)<1e-9);
+});
+
 test('daily close accumulates operational readings, generates offers once, and pauses by default',()=>{
   const s=createSandbox();
   s.datacenter.clock.seconds=86400;
@@ -522,6 +606,36 @@ test('power upgrade preview recalculates the added capacity and cost while editi
   assert.equal(button.disabled,true);
 });
 
+test('right dashboard shows the 10,000 kW limit and refreshes contracted power after purchase',()=>{
+  const s=createSandbox(),events={};let upgrade;
+  const amount={value:'50',addEventListener:(name,handler)=>events[name]=handler};
+  const preview={textContent:''},button={disabled:false,addEventListener:(name,handler)=>{if(name==='click')upgrade=handler;}};
+  const root={innerHTML:'',querySelectorAll:()=>[],querySelector:selector=>({'[data-power-amount]':amount,'[data-power-preview]':preview,'[data-upgrade]':button})[selector]||null};
+  let refreshed=0;const panel=new DataCenterDashboard(root,s.datacenter,()=>{},()=>{},()=>{},()=>refreshed++);
+  panel.update();
+  assert.match(root.innerHTML,/Limite da rede elétrica/);
+  assert.match(root.innerHTML,/100,0 kW \/ 10\.000,0 kW/);
+  assert.match(root.innerHTML,/Disponível para contratar/);
+  assert.match(root.innerHTML,/9\.900,0 kW/);
+  upgrade();
+  assert.equal(s.datacenter.contractedPowerKW,150);
+  assert.equal(refreshed,1);
+  assert.match(root.innerHTML,/150,0 kW \/ 10\.000,0 kW/);
+  assert.match(root.innerHTML,/9\.850,0 kW/);
+  assert.match(root.innerHTML,/max="9850"/);
+});
+
+test('right dashboard disables energy purchases at the 10,000 kW limit',()=>{
+  const s=createSandbox();s.datacenter.powerGrid.capacityKW=10000;s.datacenter.state.powerCapacityKW=10000;
+  const amount={value:'0',addEventListener(){}},preview={textContent:''},button={disabled:false,addEventListener(){}};
+  const root={innerHTML:'',querySelectorAll:()=>[],querySelector:selector=>({'[data-power-amount]':amount,'[data-power-preview]':preview,'[data-upgrade]':button})[selector]||null};
+  new DataCenterDashboard(root,s.datacenter).update();
+  assert.match(root.innerHTML,/10\.000,0 kW \/ 10\.000,0 kW/);
+  assert.match(root.innerHTML,/0,0 kW/);
+  assert.match(root.innerHTML,/max="0"[^>]*disabled/);
+  assert.match(root.innerHTML,/<button data-upgrade disabled>/);
+});
+
 test('power purchases are cumulative and reject invalid, oversized, and unaffordable increments',()=>{
   const s=createSandbox();
   assert.equal(s.datacenter.upgradePower(20).capacityKW,120);
@@ -529,15 +643,15 @@ test('power purchases are cumulative and reject invalid, oversized, and unafford
   assert.equal(second.capacityKW,150);
   assert.equal(second.monthlyFixedCost,3667);
   const currentCash=s.datacenter.cash;
-  for(const amount of [0,-1,1.5,NaN,4900])assert.equal(s.datacenter.upgradePower(amount).ok,false);
+  for(const amount of [0,-1,1.5,NaN,9900])assert.equal(s.datacenter.upgradePower(amount).ok,false);
   assert.equal(s.datacenter.powerGrid.capacityKW,150);
   assert.equal(s.datacenter.cash,currentCash);
   s.datacenter.powerGrid.capacityKW=100;
   assert.equal(s.datacenter.powerGrid.quote(9900).capacityKW,10000);
   assert.equal(s.datacenter.powerGrid.quote(9901).ok,false);
-  s.datacenter.powerGrid.capacityKW=4999;
+  s.datacenter.powerGrid.capacityKW=9999;
   assert.equal(s.datacenter.upgradePower(2).ok,false);
-  assert.equal(s.datacenter.powerGrid.capacityKW,4999);
+  assert.equal(s.datacenter.powerGrid.capacityKW,9999);
   s.datacenter.powerGrid.capacityKW=100;
   s.build.budget=100;
   assert.equal(s.datacenter.upgradePower(1).reason,'Capital insuficiente para ampliar a rede elétrica.');

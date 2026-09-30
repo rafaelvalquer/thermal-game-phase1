@@ -8,7 +8,7 @@ import { FLUID_TYPES } from '../VisualTheme.js';
 import { VisualSettings } from '../VisualSettings.js';
 import { technicianState } from './TechnicianVisualState.js';
 
-const ANIMATED_TYPES=new Set(['pump','radiator','exchanger','waterChiller','fan','exhaust','machine','serverRack','technician','furnace','sensor','coolingUnit','supplyVent','battery','solarPanel']);
+const ANIMATED_TYPES=new Set(['pump','radiator','exchanger','waterChiller','fan','exhaust','machine','serverRack','computeRack','technician','furnace','sensor','coolingUnit','supplyVent','battery','solarPanel']);
 const ROTATING_TYPES=new Set(['pump','fan','exhaust','radiator','exchanger','coolingUnit','supplyVent']);
 
 export class EquipmentSpriteRenderer {

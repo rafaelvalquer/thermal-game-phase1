@@ -10,6 +10,7 @@ test('browser benchmark profiles include the 100–400 rack acceptance scenarios
   const level=createBrowserBenchmarkLevel('E'),counts={};
   for(const entity of level.entities)counts[entity.type]=(counts[entity.type]||0)+1;
   assert.equal(counts.serverRack,400);assert.equal(counts.coolingUnit,40);assert.equal(counts.supplyVent,120);assert.equal(counts.duct,600);assert.equal(counts.technician,50);
+  assert.equal(counts.computeRack,80);assert.equal(scenarios.E.cloudContracts,80);
   assert.equal(level.performanceBenchmark,'E');assert.throws(()=>createBrowserBenchmarkLevel('D'),/desconhecido/);
   assert.equal(level.map.height,32,'the dense installation stays within a representative data-center footprint');
   assert.equal(level.map.rooms.length,1,'pressure work is confined to the closed data hall');

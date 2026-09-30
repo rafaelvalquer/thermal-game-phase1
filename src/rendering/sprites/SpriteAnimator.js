@@ -21,6 +21,7 @@ export class SpriteAnimator {
       case 'waterChiller':return (entity.coolingPower||0)>100?clamp(2+(entity.coolingPower||0)/20000,2,8):0;
       case 'furnace':return entity.enabled===false?0:5;
       case 'serverRack':return entity.enabled===false?0:clamp(1+(entity.loadMultiplier||0)*2,1,8);
+      case 'computeRack':return entity.enabled===false?0:clamp(1+(entity.utilization||0)*5,1,8);
       case 'machine':return entity.enabled===false?0:1.5;
       case 'sensor':return 1;
       case 'battery':return entity.operationState==='CHARGING'||entity.operationState==='DISCHARGING'?3:0;

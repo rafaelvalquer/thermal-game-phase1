@@ -15,14 +15,20 @@ import { SolarPanel, solarIrradiance } from '../../src/entities/SolarPanel.js';
 const level={id:'battery-test',thermalSystems:{simpleCooling:false,waterCooling:false},objectives:[],failures:[],events:[],missionDuration:Infinity,powerLimit:100000};
 const metrics=()=>({generatedHeat:0,externalEnergy:0,powerDraw:0,powerEnergy:0,energyBalance:0});
 
-test('battery charges only from spare capacity, respects rate, capacity and cycle losses',()=>{
+test('battery charges from solar first then contracted grid headroom, respecting rate, capacity and losses',()=>{
   const world=new World(5,5),m=metrics(),battery=new PowerBattery(2,2),load=new Fan(1,1);load.power=5000;
   world.addEntity(battery);world.addEntity(load);const dispatch=new BatteryDispatchSystem(world,m);
   const result=dispatch.dispatch(15000,3600);
   assert.equal(battery.operationState,'CHARGING');assert.equal(battery.chargePowerW,10000);
+  assert.equal(result.gridChargeW,10000);assert.equal(result.solarChargeW,0);
   assert.ok(Math.abs(result.gridPowerW-15000)<1e-6);
   assert.ok(Math.abs(battery.storedEnergyKWh-9.4868329805)<1e-6);
   assert.ok(m.generatedHeat>0);assert.ok(battery.storedEnergyJ<=battery.capacityJ);
+  world.solarHour=12;world.addEntity(new SolarPanel(3,3));world.addEntity(new SolarPanel(4,3));
+  const solarResult=dispatch.dispatch(15000,3600);
+  assert.equal(solarResult.solarChargeW,10000);assert.equal(solarResult.gridChargeW,0);
+  assert.equal(solarResult.gridPowerW,0);assert.equal(battery.operationState,'CHARGING');
+  assert.ok(Math.abs(battery.storedEnergyKWh-18.973665961)<1e-6);assert.ok(m.generatedHeat>0);
   dispatch.dispatch(1e9,36000);
   assert.equal(battery.operationState,'FULL');assert.ok(battery.storedEnergyJ<=battery.capacityJ);
 });
@@ -58,7 +64,7 @@ test('disabled and empty batteries do not dispatch; campaign meter includes char
   const world=new World(6,6),battery=new PowerBattery(2,2),load=new Fan(1,1);load.power=6000;world.addEntity(battery);world.addEntity(load);
   const sim=new Simulation(world,{...level,powerLimit:12000});
   battery.enabled=false;sim.step(1);assert.equal(battery.operationState,'OFF');assert.equal(sim.metrics.powerDraw,6000);
-  battery.enabled=true;sim.step(1);assert.equal(battery.operationState,'CHARGING');assert.equal(sim.metrics.powerDraw,12000);
+  battery.enabled=true;sim.step(1);assert.equal(battery.operationState,'CHARGING');assert.equal(battery.chargePowerW,6000);assert.equal(sim.metrics.powerDraw,12000);
   battery.storedEnergyJ=0;load.power=30000;sim.step(1);assert.equal(battery.operationState,'EMPTY');assert.equal(battery.dischargePowerW,0);assert.equal(sim.metrics.powerDraw,30000);
 });
 
@@ -121,10 +127,30 @@ test('solar offsets load first and its unused surplus charges batteries without 
   const dispatch=new BatteryDispatchSystem(world,m),covered=dispatch.dispatch(10000,60);
   assert.equal(covered.solarGenerationW,10000);assert.equal(covered.gridPowerW,0);assert.equal(covered.dischargeW,0);
   world.addEntity(battery);const surplus=dispatch.dispatch(10000,3600);
-  assert.equal(surplus.solarChargeW,9000);assert.equal(surplus.gridChargeW,1000);assert.equal(surplus.gridPowerW,0);
+  assert.equal(surplus.solarChargeW,9000);assert.equal(surplus.gridChargeW,1000);assert.equal(surplus.gridPowerW,1000);
   assert.ok(battery.storedEnergyKWh>0);
   battery.storedEnergyJ=battery.capacityJ;const full=dispatch.dispatch(10000,60);
   assert.equal(full.gridPowerW,0);assert.equal(full.solarChargeW,0);
+});
+
+test('battery charging uses only remaining contracted capacity and never charges during overload discharge',()=>{
+  const world=new World(6,6),battery=new PowerBattery(2,2),load=new Fan(1,1);load.power=10000;
+  world.addEntity(battery);world.addEntity(load);const dispatch=new BatteryDispatchSystem(world,metrics());
+  const fullCapacity=dispatch.dispatch(10000,60);
+  assert.equal(fullCapacity.gridChargeW,0);assert.equal(fullCapacity.chargeW,0);assert.equal(fullCapacity.gridPowerW,10000);
+  load.power=15000;battery.storedEnergyJ=10*3_600_000;
+  const overload=dispatch.dispatch(10000,60);
+  assert.equal(overload.gridChargeW,0);assert.equal(overload.chargeW,0);assert.equal(overload.dischargeW,5000);
+  assert.equal(overload.gridPowerW,10000);
+});
+
+test('grid demand includes battery import even while surplus solar is also charging it',()=>{
+  const world=new World(6,6),panel=new SolarPanel(1,1),load=new Fan(2,1),battery=new PowerBattery(3,1);
+  load.power=1000;world.solarHour=12;world.addEntity(panel);world.addEntity(load);world.addEntity(battery);
+  const dispatch=new BatteryDispatchSystem(world,metrics()),grid=new PowerGridSystem({capacityKW:10});world.batteryDispatch=dispatch;
+  dispatch.dispatch(10000,60);grid.refresh(world);
+  assert.equal(dispatch.solarChargePowerW,9000);assert.equal(dispatch.gridChargePowerW,1000);
+  assert.equal(dispatch.currentGridPowerW(),1000);assert.equal(grid.effectiveKW,1);assert.equal(grid.demandKW,1);
 });
 
 test('solar generation is included in power protection before rack shedding',()=>{
