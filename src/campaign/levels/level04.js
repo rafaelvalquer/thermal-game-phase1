@@ -12,7 +12,7 @@ export const level04={
   briefing:'Os racks aspiram ar pelo lado indicado e descarregam calor no lado oposto. Organize corredores frios e quentes com duas ou três unidades independentes e reserve capacidade para o pico de carga.',
   thermalSystems:{simpleCooling:true,waterCooling:true,coolingUnitModel:'commercial'},
   map:level04Map,environment:{outdoorTemperature:24},budget:60000,powerLimit:16000,missionDuration:360,
-  inventory:{pipe:80,pump:2,tank:2,radiator:3,exchanger:4,wall:35,insulation:45,copper:20,fan:10,exhaust:4,sensor:12,coolingUnit:3,duct:300,supplyVent:6,demolish:Infinity},
+  inventory:{pipe:80,pump:2,tank:2,radiator:3,exchanger:4,waterChiller:1,wall:35,insulation:45,copper:20,fan:10,exhaust:4,sensor:12,coolingUnit:3,duct:300,supplyVent:6,demolish:Infinity},
   zones:[
     {id:'cold-a',name:'Cold Aisle A',x:7,y:9,width:20,height:8,target:30,visualStyle:'server'},
     {id:'cold-b',name:'Cold Aisle B',x:33,y:9,width:20,height:8,target:30,visualStyle:'server'},

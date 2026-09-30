@@ -1,5 +1,5 @@
 export const POWER_BASE_CAPACITY_KW=100;
-export const POWER_MAX_CAPACITY_KW=5000;
+export const POWER_MAX_CAPACITY_KW=10000;
 export const POWER_BASE_MONTHLY_COST=3000;
 // Half the historical 100 -> 250 kW installation and monthly increments.
 export const POWER_INSTALL_COST_PER_KW=50000/150/2;
@@ -80,7 +80,7 @@ export class PowerGridSystem {
   quote(addedKW){
     const amount=Number(addedKW);
     if(!Number.isInteger(amount)||amount<1)return {ok:false,reason:'Informe uma quantidade inteira de pelo menos 1 kW.'};
-    if(amount>this.remainingCapacityKW)return {ok:false,reason:'A capacidade máxima da rede é 5.000 kW.'};
+    if(amount>this.remainingCapacityKW)return {ok:false,reason:'A capacidade máxima da rede é 10.000 kW.'};
     const capacityKW=this.capacityKW+amount,monthlyFixedCost=powerMonthlyFixedCost(capacityKW);
     return {ok:true,addedKW:amount,capacityKW,cost:powerInstallationCost(amount),monthlyFixedCost,monthlyIncrease:monthlyFixedCost-this.monthlyFixedCost};
   }

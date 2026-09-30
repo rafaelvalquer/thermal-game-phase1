@@ -1,6 +1,6 @@
 import { BUILD_CATALOG, STRUCTURE_TOOLS } from './BuildCatalog.js';
 import { PlacementValidator } from './PlacementValidator.js';
-import { Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, TemperatureSensor, AirDuct, CoolingUnit, ServerRack, SupplyVent, PowerBattery, SolarPanel } from '../entities/index.js';
+import { Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, WaterChiller, TemperatureSensor, AirDuct, CoolingUnit, ServerRack, SupplyVent, PowerBattery, SolarPanel } from '../entities/index.js';
 import { DUCT_TOOLS } from './PlacementValidator.js';
 import { UtilityPlacementSystem } from './UtilityPlacementSystem.js';
 import { DEFAULT_BUDGET } from '../utils/Constants.js';
@@ -16,18 +16,18 @@ export class BuildSystem {
     this.world=world;this.simulation=simulation;this.validator=new PlacementValidator(world);this.utilityPlacement=new UtilityPlacementSystem(world,this.validator);this.ductPlacement=this.utilityPlacement;this.selected=null;this.rotation=0;this.rackRotation=3;this.budget=budget;
     const systems=this.world.thermalSystems;
     const hiddenTools=systems?.allBuildTools?[]:systems?.simpleCooling?[
-      ...(!systems.waterCooling?['pipe','pump','tank','radiator','exchanger']:[]),
+      ...(!systems.waterCooling?['pipe','pump','tank','radiator','exchanger','waterChiller']:[]),
       ]:
       systems?[
         'duct','coolingUnit','supplyVent',
-        ...(!systems.waterCooling?['pipe','pump','tank','radiator','exchanger']:[]),
+        ...(!systems.waterCooling?['pipe','pump','tank','radiator','exchanger','waterChiller']:[]),
       ]:[];
     const industrialAvailable=Boolean(systems?.allBuildTools||this.world.datacenterConfig?.allBuildTools);
     this.catalog=Object.fromEntries(Object.entries(BUILD_CATALOG).filter(([k])=>!hiddenTools.includes(k)&&(k!=='serverRack'||Boolean(this.world.datacenterConfig))&&(k!=='industrialCoolingUnit'||industrialAvailable)));
     const defaults=Object.fromEntries(Object.entries(this.catalog).map(([k,v])=>[k,v.inventory]));
     this.unlimitedInventory=Boolean(this.world.datacenterConfig?.unlimitedBuildInventory);
     if(this.unlimitedInventory)this.inventory=Object.fromEntries(Object.keys(defaults).map(k=>[k,Infinity]));
-    else if(inventory){this.inventory=Object.fromEntries(Object.keys(defaults).map(k=>[k,['demolish','battery','solarPanel'].includes(k)?Infinity:0]));Object.assign(this.inventory,inventory);this.inventory.battery=Infinity;this.inventory.solarPanel=Infinity;}
+    else if(inventory){this.inventory=Object.fromEntries(Object.keys(defaults).map(k=>[k,['demolish','battery','solarPanel'].includes(k)?Infinity:0]));Object.assign(this.inventory,inventory);this.inventory.battery=Infinity;this.inventory.solarPanel=Infinity;this.inventory.waterChiller??=defaults.waterChiller;}
     else this.inventory=defaults;
     this.initialInventory={...this.inventory};this.placedEntities=new Map();this.placedMaterials=new Map();
     this.ductInsulated=false;this.coolingUnitModel=this.world.thermalSystems?.coolingUnitModel||'commercial';
@@ -62,8 +62,9 @@ export class BuildSystem {
       if(tool==='pipe')entity=new Pipe(x,y);
       if(tool==='pump')entity=new Pump(x,y,{...dir});
       if(tool==='tank')entity=new WaterTank(x,y);
-      if(tool==='radiator')entity=new Radiator(x,y);
+      if(tool==='radiator'){const outdoor=x===0||y===0||x===this.world.width-1||y===this.world.height-1;entity=new Radiator(x,y,{direction:{...dir},outdoor});}
       if(tool==='exchanger')entity=new HeatExchanger(x,y);
+      if(tool==='waterChiller')entity=new WaterChiller(x,y);
       if(tool==='sensor')entity=new TemperatureSensor(x,y);
       if(tool==='battery')entity=new PowerBattery(x,y);
       if(tool==='solarPanel')entity=new SolarPanel(x,y);

@@ -2,7 +2,7 @@ import { spriteIconStyle } from '../rendering/sprites/SpriteManifest.js';
 import { BUILD_CATALOG } from '../building/BuildCatalog.js';
 import { COOLING_UNIT_MODELS as COOLING_MODELS } from '../entities/CoolingUnitModels.js';
 
-export const TOOL_SPRITE_ICONS={fan:'airflow/fan.svg',exhaust:'airflow/exhaust.svg',pump:'fluid/pump.svg',tank:'fluid/tank.svg',radiator:'fluid/radiator.svg',exchanger:'fluid/heat_exchanger.svg',sensor:'sensors/sensor.svg',coolingUnit:'cooling/condenser.svg',industrialCoolingUnit:'cooling/condenser.svg',battery:'power/battery.svg',solarPanel:'power/solar_panel.svg'};
+export const TOOL_SPRITE_ICONS={fan:'airflow/fan.svg',exhaust:'airflow/exhaust.svg',pump:'fluid/pump.svg',tank:'fluid/tank.svg',radiator:'fluid/radiator.svg',exchanger:'fluid/heat_exchanger.svg',waterChiller:'fluid/water_chiller.svg',sensor:'sensors/sensor.svg',coolingUnit:'cooling/condenser.svg',industrialCoolingUnit:'cooling/condenser.svg',battery:'power/battery.svg',solarPanel:'power/solar_panel.svg'};
 const normalize=value=>String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('pt-BR').trim();
 const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 

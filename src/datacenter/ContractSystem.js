@@ -1,4 +1,4 @@
-import { CONTRACT_TEMPLATES, STARTUP_TEMPLATE, INTERNATIONAL_TEMPLATE, MARKET_BANDS, CONTRACT_GROWTH_TIERS, CONTRACT_GROWTH_DAY_STEP, CONTRACT_EXPANSION_CHANCE, CONTRACT_EXPANSION_REPUTATION, CONTRACT_EXPANSION_SLA_QUIET_DAYS, CONTRACT_EXPANSION_CLIENT_COOLDOWN_DAYS, CONTRACT_EXPANSION_GROWTH, THERMAL_SLA_RELIEF_C, THERMAL_SLA_REVISION, CONTRACT_PAYOUT_MULTIPLIER, CONTRACT_PAYOUT_REVISION } from './ContractDefinitions.js';
+import { CONTRACT_TEMPLATES, STARTUP_TEMPLATE, INTERNATIONAL_TEMPLATE, MARKET_BANDS, CONTRACT_GROWTH_TIERS, CONTRACT_GROWTH_DAY_STEP, CONTRACT_EXPANSION_CHANCE, CONTRACT_EXPANSION_REPUTATION, CONTRACT_EXPANSION_SLA_QUIET_DAYS, CONTRACT_EXPANSION_CLIENT_COOLDOWN_DAYS, CONTRACT_EXPANSION_GROWTH, THERMAL_SLA_RELIEF_C, THERMAL_SLA_REVISION, CONTRACT_PAYOUT_MULTIPLIER, CONTRACT_PAYOUT_PREVIOUS_MULTIPLIER, CONTRACT_PAYOUT_REVISION } from './ContractDefinitions.js';
 import { ContractGenerator } from './ContractGenerator.js';
 import { reputationPriceMultiplier, reputationTier } from './ReputationDefinitions.js';
 
@@ -10,7 +10,12 @@ export class ContractSystem {
       state.thermalSlaRevision=THERMAL_SLA_REVISION;
     }
     if((state.contractPayoutRevision||0)<CONTRACT_PAYOUT_REVISION){
-      for(const item of [...state.offers,...state.contracts])if(Number.isFinite(item.monthlyFee))item.monthlyFee=Math.round(item.monthlyFee*CONTRACT_PAYOUT_MULTIPLIER);
+      const previousRevision=state.contractPayoutRevision||0;
+      const factor=previousRevision<1?CONTRACT_PAYOUT_MULTIPLIER:CONTRACT_PAYOUT_MULTIPLIER/CONTRACT_PAYOUT_PREVIOUS_MULTIPLIER;
+      for(const item of [...state.offers,...state.contracts]){
+        if(Number.isFinite(item.monthlyFee))item.monthlyFee=Math.round(item.monthlyFee*factor);
+        if(Number.isFinite(item.baseMonthlyFee))item.baseMonthlyFee=Math.round(item.baseMonthlyFee*factor);
+      }
       state.contractPayoutRevision=CONTRACT_PAYOUT_REVISION;
     }
     if((state.reputationPricingRevision||0)<1){

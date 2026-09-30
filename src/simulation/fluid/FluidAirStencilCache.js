@@ -44,12 +44,13 @@ export class FluidAirStencilCache {
   }
 
   buildRadiatorStencil(radiator){
-    const world=this.world,cells=[];let weightSum=0;
-    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
-      const x=radiator.x+dx,y=radiator.y+dy;
+    const world=this.world,cells=[],queue=[{x:radiator.x,y:radiator.y}],seen=new Set([keyOf(radiator.x,radiator.y)]);let weightSum=0;
+    for(let head=0;head<queue.length;head++){
+      const {x,y}=queue[head],dx=x-radiator.x,dy=y-radiator.y,distance=Math.abs(dx)+Math.abs(dy);
       if(!world.inBounds(x,y)||!world.isAir(x,y))continue;
-      const weight=dx===0&&dy===0?4:(dx===0||dy===0?2:1);
-      cells.push({x,y,index:world.index(x,y),weight});weightSum+=weight;
+      const weight=distance===0?4:distance===1?2:1;cells.push({x,y,index:world.index(x,y),weight});weightSum+=weight;
+      if(distance>=2)continue;
+      for(const [ox,oy] of CARDINALS){const nx=x+ox,ny=y+oy,key=keyOf(nx,ny);if(seen.has(key)||Math.abs(nx-radiator.x)>1||Math.abs(ny-radiator.y)>1||!world.inBounds(nx,ny)||!world.isAir(nx,ny))continue;seen.add(key);queue.push({x:nx,y:ny});}
     }
     return {cells,weightSum};
   }

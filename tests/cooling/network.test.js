@@ -38,6 +38,14 @@ test('industrial two-tile condenser connects through its rear cell while keeping
   assert.equal(network.status,'READY');assert.equal(network.sourceUnit,unit);assert.equal(network.paths.length,1);
 });
 
+test('an adjacent air outlet joins its duct network and receives positive airflow',()=>{
+  const world=new World(8,5),{unit,outlet}=addLine(world,{id:'plug-test',x:1,y:2,ducts:[{x:2,y:2}],vent:{x:3,y:2}});
+  const cooling=new CoolingSystem(world,new AirflowSystem(world,{}),{});cooling.update(.2);
+  const network=cooling.networks[0];
+  assert.equal(network.status,'READY');assert.equal(outlet.networkId,unit.networkId);
+  assert.equal(outlet.networkStatus,'READY');assert.ok(outlet.flowRate>0);
+});
+
 test('duct graph reports missing source and outlet, and accepts multiple sources',()=>{
   const world=new World(8,8);
   world.addUtility(new AirDuct(2,1,{size:'duct'}));world.addEntity(new SupplyVent(3,1));

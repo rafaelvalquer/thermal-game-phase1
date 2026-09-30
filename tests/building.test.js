@@ -122,6 +122,24 @@ test('pipe click and drag can pass under walls without replacing the wall',()=>{
   assert.equal(world.materialAt(2,1).id,'concrete');
 });
 
+test('pipe and air duct can cross in either construction order while remaining separate networks',()=>{
+  for(const first of ['pipe','duct']){
+    const world=new World(8,6),build=new BuildSystem(world,{totalInternalEnergy:()=>0,registerConstruction:()=>{}},{budget:100,inventory:{pipe:2,duct:2}});
+    build.select(first);assert.equal(build.place(3,2).ok,true);
+    build.select(first==='pipe'?'duct':'pipe');assert.equal(build.place(3,2).ok,true);
+    assert.equal(world.entityAt(3,2)?.type,'pipe');
+    assert.equal(world.utilityAt(3,2,'duct')?.type,'duct');
+    build.select('pipe');assert.equal(build.place(3,2).ok,false,'duplicate pipe remains forbidden');
+    build.select('duct');assert.equal(build.place(3,2).ok,false,'duplicate duct remains forbidden');
+
+    const fluids=new FluidSystem(world,null),fluidNetworks=fluids.buildNetworks();
+    const coolingNetworks=new CoolingNetworkBuilder(world).build();
+    assert.equal(fluidNetworks.length,1);assert.deepEqual(fluidNetworks[0].entities.map(entity=>entity.type),['pipe']);
+    assert.equal(coolingNetworks.length,1);
+    assert.deepEqual(coolingNetworks[0].ducts.map(duct=>[duct.x,duct.y]),[[3,2]],'the air network contains the duct only');
+  }
+});
+
 test('wall can be built over an existing pipe without removing it',()=>{
   const world=new World(5,3);
   const simulation={totalInternalEnergy:()=>0,registerConstruction:()=>{}};

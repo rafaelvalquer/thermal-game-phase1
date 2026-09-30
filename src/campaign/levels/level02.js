@@ -7,7 +7,7 @@ export const level02={
   briefing:'A geometria agora importa. Use uma condensadora, ramifique os dutos até várias saídas e compare como a distância reduz a eficiência.',
   thermalSystems:{simpleCooling:true,waterCooling:true,coolingUnitModel:'commercial'},
   map:level02Map,environment:{outdoorTemperature:25},budget:18000,powerLimit:10000,missionDuration:240,
-  inventory:{pipe:32,pump:1,tank:1,radiator:2,exchanger:2,wall:20,insulation:30,copper:0,fan:6,exhaust:2,sensor:6,coolingUnit:1,duct:160,supplyVent:3,demolish:Infinity},
+  inventory:{pipe:32,pump:1,tank:1,radiator:2,exchanger:2,waterChiller:1,wall:20,insulation:30,copper:0,fan:6,exhaust:2,sensor:6,coolingUnit:1,duct:160,supplyVent:3,demolish:Infinity},
   zones:[
     {id:'room-a',name:'Sala A',x:9,y:10,width:15,height:14,target:38,visualStyle:'industrial'},
     {id:'room-b',name:'Sala B',x:36,y:10,width:15,height:14,target:38,visualStyle:'industrial'},

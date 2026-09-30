@@ -7,8 +7,9 @@ export const CONTRACT_TEMPLATES=Object.freeze([
   {clientName:'RenderForge',tier:'GPU',clientTier:'enterprise',minimumReputation:60,rackCount:4,powerPerRackKW:32,maxInletTemperature:35,availability:99,termDays:180,installationFee:28000,monthlyFee:52000,loadProfile:'ai'},
 ]);
 
-export const CONTRACT_PAYOUT_MULTIPLIER=1.5;
-export const CONTRACT_PAYOUT_REVISION=1;
+export const CONTRACT_PAYOUT_MULTIPLIER=1.65;
+export const CONTRACT_PAYOUT_PREVIOUS_MULTIPLIER=1.5;
+export const CONTRACT_PAYOUT_REVISION=2;
 
 export function createContractOffer(template,index){const baseMonthlyFee=Math.round(template.monthlyFee*CONTRACT_PAYOUT_MULTIPLIER);return {...template,baseMonthlyFee,reputationMultiplier:1,monthlyFee:baseMonthlyFee,id:'offer-'+index,contractId:'contract-'+index};}
 

@@ -5,9 +5,9 @@ import { utilityCanShareTile } from '../entities/UtilityCompatibility.js';
 import { entityFootprintCells } from '../entities/EntityFootprint.js';
 
 const COOLING_ENTITIES=new Set(['coolingUnit','supplyVent']);
-const FLUID_ENTITIES=new Set(['pipe','pump','tank','radiator','exchanger']);
+const FLUID_ENTITIES=new Set(['pipe','pump','tank','radiator','exchanger','waterChiller']);
 const FLUID_UTILITIES=new Set(['pipe']);
-const POWER_EQUIPMENT_TYPES=new Set(['serverRack','coolingUnit','fan','exhaust','pump','battery','solarPanel','duct']);
+const POWER_EQUIPMENT_TYPES=new Set(['serverRack','coolingUnit','fan','exhaust','pump','radiator','waterChiller','battery','solarPanel','duct']);
 const EMPTY_ENTITY_SET=new Set();
 const occupiesEntityCell=entity=>!entity.isTechnician;
 

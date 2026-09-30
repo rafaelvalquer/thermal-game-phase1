@@ -1,7 +1,7 @@
 import { isPowered } from '../PowerState.js';
+import { FLUID_THERMAL } from './FluidThermalConstants.js';
 
 export const MIN_FLOW=0.01;
-const MAX_FLOW=3.5;
 const statusLabel={CLOSED:'CLOSED',OPEN_CIRCUIT:'OPEN CIRCUIT',BRANCHED:'BRANCHED',NO_PUMP:'NO PUMP',PUMP_OFF:'PUMP OFF',MULTIPLE_PUMPS:'MULTIPLE PUMPS',PUMP_DIRECTION_INVALID:'PUMP DIRECTION'};
 
 function solveLinearSystem(diagonal,edges,values){
@@ -33,7 +33,7 @@ export class HydraulicSolver {
   signature(network){
     return network.entities.map(entity=>{
       const direction=entity.direction||{};
-      return `${entity.id}:${entity.resistance||1}:${entity.type==='pump'?`${Number(isPowered(entity))}:${entity.hydraulicPower}:${direction.x??1}:${direction.y??0}`:''}`;
+      return `${entity.id}:${entity.resistance||1}:${entity.type==='pump'?`${Number(isPowered(entity))}:${entity.hydraulicPower}:${entity.maxFlowRate||1.5}:${entity.maxFlowRateBoost||2}:${entity.flowMode||'normal'}:${direction.x??1}:${direction.y??0}`:''}`;
     }).join('|');
   }
 
@@ -87,7 +87,8 @@ export class HydraulicSolver {
     const pumpEdge=edges.find(edge=>(edge.a===pump&&edge.b===first)||(edge.b===pump&&edge.a===first));
     const unboundedFlow=pumpEdge?(pumpEdge.from===pump?pumpEdge.flowRate:-pumpEdge.flowRate):0;
     if(unboundedFlow<=MIN_FLOW)return this.invalidate(network,'PUMP_DIRECTION_INVALID');
-    const flowScale=Math.min(1,MAX_FLOW/unboundedFlow),links=edges.map(edge=>({...edge,flowRate:edge.flowRate*flowScale}));
+    const maxFlow=pump.flowMode==='boost'?(pump.maxFlowRateBoost||FLUID_THERMAL.pumpFlowBoost):pump.flowMode==='eco'?FLUID_THERMAL.pumpFlowEco:(pump.maxFlowRate||FLUID_THERMAL.pumpFlowNormal);
+    const flowScale=Math.min(1,maxFlow/unboundedFlow),links=edges.map(edge=>({...edge,flowRate:edge.flowRate*flowScale}));
     const incoming=new Map(entities.map(entity=>[entity.id,[]])),outgoing=new Map(entities.map(entity=>[entity.id,[]])),incident=new Map(entities.map(entity=>[entity.id,[]]));
     for(const link of links){incident.get(link.from.id).push(link);incident.get(link.to.id).push(link);if(link.flowRate<=MIN_FLOW)continue;outgoing.get(link.from.id).push(link);incoming.get(link.to.id).push(link);}
     for(const entity of entities){

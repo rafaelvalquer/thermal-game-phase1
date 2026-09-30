@@ -28,7 +28,7 @@ export class ObjectiveSystem {
     } else if(def.type==='maxAirTemperature'){
       current=this.metrics.maxAirTemp??this.metrics.avgTemp;ok=current<=def.max;label=def.label||'Nenhum hotspot > '+def.max+'°C';
     } else if(def.type==='flowAbove'){
-      const list=this.world.entities.filter(e=>['pipe','pump','tank','radiator','exchanger'].includes(e.type)&&entityMatches(e,def.filter));
+      const list=this.world.entities.filter(e=>['pipe','pump','tank','radiator','exchanger','waterChiller'].includes(e.type)&&entityMatches(e,def.filter));
       current=list.length?Math.max(...list.map(e=>e.flowRate||0)):0;ok=current>=def.min;label=def.label||'Vazão ≥ '+fmt(def.min)+' kg/s';
     } else if(def.type==='coolingCapacityMargin'){
       current=this.metrics.coolingReserveMargin??0;ok=current>=def.min;label=def.label||'Reserva de refrigeração ≥ '+Math.round(def.min*100)+'%';

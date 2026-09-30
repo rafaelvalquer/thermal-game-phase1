@@ -3,10 +3,11 @@ import { entityLabel, thermalState } from '../rendering/VisualTheme.js';
 import { SPRITES, spriteIdFor, spriteIconStyle } from '../rendering/sprites/SpriteManifest.js';
 import { CoolingAirExchange } from '../simulation/cooling/CoolingAirExchange.js';
 import { SOLAR_PANEL_PEAK_POWER_W } from '../entities/SolarPanel.js';
+import { fluidThermalDiagnosis } from '../simulation/fluid/FluidThermalDiagnostics.js';
 
-const fluidTypes=['pipe','pump','tank','radiator','exchanger'];
+const fluidTypes=['pipe','pump','tank','radiator','exchanger','waterChiller'];
 const airDuctTypes=['duct'];
-const POWER_DEVICE_TYPES=new Set(['fan','exhaust','pump','coolingUnit','serverRack','battery','solarPanel']);
+const POWER_DEVICE_TYPES=new Set(['fan','exhaust','pump','radiator','waterChiller','coolingUnit','serverRack','battery','solarPanel']);
 const dirGlyph=d=>d?.x>0?'→':d?.x<0?'←':d?.y>0?'↓':d?.y<0?'↑':'—';
 
 function rackCoolingAdvice(world,rack){
@@ -84,19 +85,22 @@ export class Inspector {
         ['Sentido',dirGlyph(e.flowVector)],
         ['Resistência',String(e.resistance||0)]
       );
-      if(e.type==='pump')rows.push(['Saída da bomba',dirGlyph(e.direction)],['Drive hidráulico',String(e.hydraulicPower)]);
+      if(e.type==='pump')rows.push(['Saída da bomba',dirGlyph(e.direction)],['Modo',({eco:'ECO',normal:'NORMAL',boost:'BOOST'})[e.flowMode]||'NORMAL'],['Limite de vazão',Number(e.flowMode==='boost'?e.maxFlowRateBoost:e.flowMode==='eco'?Math.min(1,(e.maxFlowRate||1.5)*.67):e.maxFlowRate||1.5).toFixed(2)+' kg/s'],['Drive hidráulico',String(e.hydraulicPower)]);
       if(e.type==='exchanger'){
         const machine=world.getEntityById?.(e.machineId)||world.entities?.find(entity=>entity.id===e.machineId);
-        rows.push(['Máquina',machine?.name||'—'],['Ar captado',formatPower(e.airCoolingPower||0)],['Calor para água',formatPower(e.thermalPower||0)]);
+        rows.push(['Modo de captura',({DIRECT_RACK:'Rack direto',AIR_COIL:'Serpentina de ar',IDLE:'Em espera'})[e.captureMode]||'Em espera'],['Máquina',machine?.name||'—'],['Capacidade nominal',formatPower(e.ratedCapacity||30000)],['Calor do rack capturado',formatPower(e.directCoolingPower||0)],['Ar captado',formatPower(e.airCoolingPower||0)],['Calor para água',formatPower(e.thermalPower||0)],['Diagnóstico',fluidThermalDiagnosis(e)]);
         if(e.circuitClosed&&!world.entities.some(item=>item.type==='radiator'&&item.networkId===e.networkId))rows.push(['Diagnóstico','A água precisa de um radiador neste circuito para rejeitar o calor.']);
         else if(e.circuitClosed&&e.airCoolingPower===0&&world.isAir(e.x,e.y)&&e.waterTemperature>=world.temperatureAt(e.x,e.y))rows.push(['Diagnóstico','Água igual ou mais quente que o ar local; resfrie-a no radiador para captar calor.']);
       }
+      if(e.type==='tank')rows.push(['Água armazenada',Number(e.waterMass||0).toFixed(0)+' kg'],['Energia armazenada',formatEnergy(e.energy||0)],['Variação térmica',formatPower(e.thermalPower||0)],['Diagnóstico',e.flowRate<.01?'Sem circulação; a massa de água funciona apenas como reserva térmica.':'A água amortece variações de temperatura do circuito.']);
       if(e.type==='radiator')rows.push(
         ['Calor rejeitado',formatPower(e.thermalPower||0)],
         ['Ar entrada',Number(e.airInTemperature??25).toFixed(2)+' °C'],
         ['Ar saída',Number(e.airOutTemperature??25).toFixed(2)+' °C'],
-        ['Fan boost',Number(e.fanBoost||1).toFixed(2)+'×']
+        ['Descarga',dirGlyph(e.direction)],
+        ['Capacidade nominal',formatPower(e.ratedCapacity||40000)],['Ventilador',e.enabled===false?'Desligado':formatPower(e.power||600)],['Vazão do ventilador',Number(e.fanAirflow||2.5).toFixed(1)+' m³/s'],['Local',e.outdoor?'Exterior':'Interior'],['Calor ao exterior',e.rejectedToExterior?'Sim':'Não'],['Diagnóstico',fluidThermalDiagnosis(e)],['Fan boost',Number(e.fanBoost||1).toFixed(2)+'×']
       );
+      if(e.type==='waterChiller')rows.push(['Alvo da água',Number(e.targetTemperature||15).toFixed(1)+' °C'],['Capacidade nominal',formatPower(e.ratedCapacity||80000)],['Calor retirado da água',formatPower(e.coolingPower||0)],['COP',Number(e.cop||4).toFixed(1)],['Potência elétrica',formatPower(e.power||0)],['Calor rejeitado ao ar',formatPower(e.rejectedHeatPower||0)],['Diagnóstico',fluidThermalDiagnosis(e)]);
     }
 
     if(e.type==='sensor'){
@@ -170,9 +174,11 @@ export class Inspector {
 
     const sprite=SPRITES[spriteIdFor(e)];
     const outletControl=e.type==='supplyVent'&&world.thermalSystems?.simpleCooling?'<label class="kv"><span>Distribuição</span><select data-flow-mode><option value="auto" '+((e.flowMode||'auto')==='auto'?'selected':'')+'>Auto</option><option value="low" '+(e.flowMode==='low'?'selected':'')+'>Baixo</option><option value="medium" '+(e.flowMode==='medium'?'selected':'')+'>Médio</option><option value="high" '+(e.flowMode==='high'?'selected':'')+'>Alto</option></select></label>':'';
+    const pumpControl=e.type==='pump'?'<label class="kv"><span>Modo da bomba</span><select data-pump-mode><option value="eco" '+(e.flowMode==='eco'?'selected':'')+'>ECO · 1,0 kg/s</option><option value="normal" '+((e.flowMode||'normal')==='normal'?'selected':'')+'>Normal · 1,5 kg/s</option><option value="boost" '+(e.flowMode==='boost'?'selected':'')+'>Boost · 2,0 kg/s</option></select></label>':'';
     const powerControl=hasPowerControl?'<button type="button" class="power-toggle '+(e.enabled?'is-on':'is-off')+'" data-power-toggle aria-label="'+(e.enabled?'Desligar':'Ligar')+' '+(e.name||entityLabel(e.type))+'" '+(cancelled?'disabled':'')+'><span aria-hidden="true">⏻</span><strong>'+(cancelled?'Equipamento indisponível':e.enabled?'Desligar aparelho':'Ligar aparelho')+'</strong><small>'+(cancelled?'Contrato encerrado':e.enabled?'Interromper consumo e operação':'Retomar consumo e operação')+'</small></button>':'';
-    this.root.innerHTML='<div class="inspector-title"><div class="entity-symbol '+(sprite?'entity-sprite':'')+'" '+(sprite?'style="'+spriteIconStyle(e)+'"':'')+'>'+(sprite?'':this.symbol(e.type))+'</div><div><small>'+entityLabel(e.type)+'</small><h3>'+(e.name||entityLabel(e.type))+'</h3></div></div><div class="status-badge status-'+state.id+'"><i style="background:'+state.color+'"></i>'+state.label+'</div>'+rows.map(r=>'<div class="kv"><span>'+r[0]+'</span><strong>'+r[1]+'</strong></div>').join('')+outletControl+powerControl;
+    this.root.innerHTML='<div class="inspector-title"><div class="entity-symbol '+(sprite?'entity-sprite':'')+'" '+(sprite?'style="'+spriteIconStyle(e)+'"':'')+'>'+(sprite?'':this.symbol(e.type))+'</div><div><small>'+entityLabel(e.type)+'</small><h3>'+(e.name||entityLabel(e.type))+'</h3></div></div><div class="status-badge status-'+state.id+'"><i style="background:'+state.color+'"></i>'+state.label+'</div>'+rows.map(r=>'<div class="kv"><span>'+r[0]+'</span><strong>'+r[1]+'</strong></div>').join('')+outletControl+pumpControl+powerControl;
     this.root.querySelector('[data-flow-mode]')?.addEventListener('change',event=>{const mode=event.currentTarget.value;e.flowMode=mode;e.flowWeight=({auto:1,low:1,medium:2,high:3})[mode];});
+    this.root.querySelector('[data-pump-mode]')?.addEventListener('change',event=>{e.flowMode=event.currentTarget.value;if(world.fluidSystem)world.fluidSystem.lastTopologyVersion=-1;});
     this.root.querySelector('[data-power-toggle]')?.addEventListener('click',()=>this.onPowerToggle(e));
   }
 
@@ -200,5 +206,5 @@ export class Inspector {
       '<div class="kv"><span>Energia térmica</span><strong>'+formatEnergy(tile.thermalEnergy)+'</strong></div>';
   }
 
-  symbol(type){return ({machine:'▣',serverRack:'▥',furnace:'♨',passiveHeat:'•',fan:'✣',exhaust:'◉',pipe:'━',pump:'⟳',tank:'▰',radiator:'▥',exchanger:'HX',sensor:'°',coolingUnit:'❄',supplyVent:'↓',duct:'═'}[type]||'□');}
+  symbol(type){return ({machine:'▣',serverRack:'▥',furnace:'♨',passiveHeat:'•',fan:'✣',exhaust:'◉',pipe:'━',pump:'⟳',tank:'▰',radiator:'▥',exchanger:'HX',waterChiller:'❄',sensor:'°',coolingUnit:'❄',supplyVent:'↓',duct:'═'}[type]||'□');}
 }

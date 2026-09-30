@@ -15,6 +15,8 @@ import { Pipe } from '../src/entities/Pipe.js';
 import { Machine } from '../src/entities/Machine.js';
 import { ServerRack } from '../src/entities/ServerRack.js';
 import { WATER_CP } from '../src/utils/Constants.js';
+import { EnergySystem } from '../src/simulation/EnergySystem.js';
+import { WaterChiller } from '../src/entities/WaterChiller.js';
 
 const metrics=()=>({generatedHeat:0,externalEnergy:0,powerDraw:0,powerEnergy:0,energyBalance:0});
 const close=(a,b,tol=1e-5)=>assert.ok(Math.abs(a-b)<=tol*Math.max(1,Math.abs(a),Math.abs(b)),String(a)+' != '+String(b));
@@ -49,7 +51,7 @@ const addParallelHydraulicLoop=world=>{
 };
 
 const totalThermalEnergy=(world)=>world.totalTileEnergy()+world.entities.reduce((sum,e)=>{
-  if(e.isHeatMachine||['pipe','pump','tank','radiator','exchanger'].includes(e.type))return sum+(e.energy||0);
+  if(e.isHeatMachine||['pipe','pump','tank','radiator','exchanger','waterChiller'].includes(e.type))return sum+(e.energy||0);
   return sum;
 },0);
 
@@ -157,11 +159,13 @@ test('closed T branches split pump flow by path resistance and mix on return wit
   close(totalThermalEnergy(world),before,1e-10);
 });
 
-test('hydraulic branch flow never exceeds the existing pump maximum',()=>{
+test('hydraulic branch flow respects the selectable pump maximum',()=>{
   const world=new World(6,6),loop=addClosedLoop(world);for(const entity of loop.fluid)entity.resistance=.01;
   const system=new FluidSystem(world,metrics());system.update(.05);
-  assert.equal(loop.pump.flowRate,3.5);
-  assert.ok(loop.fluid.every(entity=>entity.flowRate<=3.5+1e-10));
+  assert.equal(loop.pump.flowRate,1.5);
+  assert.ok(loop.fluid.every(entity=>entity.flowRate<=1.5+1e-10));
+  loop.pump.flowMode='boost';system.networks[0].hydraulicSignature=null;system.update(.05);
+  assert.equal(loop.pump.flowRate,2);
 });
 
 test('an open-ended branch remains an invalid circuit with no flow',()=>{
@@ -189,7 +193,7 @@ test('sparse hydraulic solver keeps long closed circuits operational',()=>{
 test('water exchanger transfers more heat directly from an adjacent rack with the stronger UA',()=>{
   const transferAt=ua=>{
     const w=new World(7,7),loop=addClosedLoop(w),rack=new ServerRack(4,1,{temperature:65,heatOutput:0,startAt:0});
-    w.addEntity(rack);loop.hx.ua=ua;
+    w.addEntity(rack);loop.hx.ua=ua;loop.hx.ratedCapacity=100000;
     const sys=new FluidSystem(w,metrics());sys.networks=sys.buildNetworks();for(const network of sys.networks)sys.solveNetwork(network);
     const before=totalThermalEnergy(w),rackEnergy=rack.energy,waterEnergy=loop.hx.energy;
     sys.exchangeMachines(.05);
@@ -198,6 +202,40 @@ test('water exchanger transfers more heat directly from an adjacent rack with th
     return rackHeatRemoved;
   };
   assert.ok(transferAt(2250)>transferAt(1500));
+});
+
+test('rack heat capture uses rack generation, reports stream inlet/outlet and stays within exchanger rating',()=>{
+  const world=new World(7,7),loop=addClosedLoop(world),rack=new ServerRack(4,1,{temperature:60,heatOutput:0,startAt:0});
+  rack.heatGenerationPower=18000;world.addEntity(rack);
+  const system=new FluidSystem(world,metrics()),before=totalThermalEnergy(world);system.update(.05);
+  assert.equal(loop.hx.captureMode,'DIRECT_RACK');assert.ok(loop.hx.directCoolingPower>0);
+  assert.ok(loop.hx.thermalPower<=loop.hx.ratedCapacity+1e-6);
+  close(loop.hx.outletTemperature-loop.hx.inletTemperature,loop.hx.thermalPower/(loop.hx.flowRate*WATER_CP),1e-7);
+  close(totalThermalEnergy(world),before,1e-10);
+});
+
+test('outdoor radiator sends rejected heat to the environment and respects its approach temperature',()=>{
+  const world=new World(6,6),loop=addClosedLoop(world);loop.radiator.outdoor=true;for(const entity of loop.fluid)entity.energy=entity.waterMass*WATER_CP*60;
+  const system=new FluidSystem(world,metrics()),before=totalThermalEnergy(world);system.update(.1);
+  assert.ok(loop.radiator.thermalPower>0);assert.equal(loop.radiator.rejectedToExterior,true);
+  assert.ok(loop.radiator.airInTemperature+loop.radiator.minimumApproach<=loop.radiator.inletTemperature+1e-8);
+  close(totalThermalEnergy(world)+system.metrics.externalEnergy,before,1e-10);
+});
+
+test('water chiller cools circulating water to its target within capacity and returns Q plus compressor heat to the room',()=>{
+  const world=new World(7,7),pump=new Pump(1,1,{x:1,y:0}),p1=new Pipe(2,1),hx=new HeatExchanger(3,1),chiller=new WaterChiller(3,2),radiator=new Radiator(3,3),p3=new Pipe(2,3),p4=new Pipe(1,3),p5=new Pipe(1,2),fluid=[pump,p1,hx,chiller,radiator,p3,p4,p5];
+  pump.flowMode='boost';for(const entity of fluid){entity.energy=entity.waterMass*WATER_CP*30;world.addEntity(entity);}
+  const system=new FluidSystem(world,metrics()),before=totalThermalEnergy(world);system.update(.05);
+  assert.equal(system.networks[0].status,'CLOSED');assert.ok(chiller.coolingPower>0);assert.ok(chiller.coolingPower<=chiller.ratedCapacity);
+  close(chiller.power,chiller.coolingPower/chiller.cop,1e-8);close(chiller.rejectedHeatPower,chiller.coolingPower+chiller.power,1e-8);
+  close(chiller.inletTemperature-chiller.outletTemperature,chiller.coolingPower/(chiller.flowRate*WATER_CP),1e-7);
+  close(totalThermalEnergy(world),before,1e-10);
+});
+
+test('water chiller requires a powered closed water circuit',()=>{
+  const world=new World(5,3),chiller=new WaterChiller(2,1);chiller.energy=chiller.waterMass*WATER_CP*40;world.addEntity(chiller);
+  const system=new FluidSystem(world,metrics());system.update(.05);
+  assert.equal(chiller.coolingPower,0);assert.equal(chiller.power,0);
 });
 
 test('a circulating exchanger captures nearby hot-aisle air into water without creating energy',()=>{
@@ -215,7 +253,7 @@ test('a circulating exchanger captures nearby hot-aisle air into water without c
 
 test('stronger water exchanger UA removes more heat from nearby hot aisle air',()=>{
   const transferAt=airUA=>{
-    const w=new World(7,7),loop=addClosedLoop(w);loop.hx.airUA=airUA;
+    const w=new World(7,7),loop=addClosedLoop(w);loop.hx.airUA=airUA;loop.hx.airRatedCapacity=100000;
     w.setTemperature(4,1,55);w.setTemperature(3,0,45);
     const sys=new FluidSystem(w,metrics());sys.networks=sys.buildNetworks();for(const network of sys.networks)sys.solveNetwork(network);
     const before=totalThermalEnergy(w);sys.exchangeMachines(.05);
@@ -300,6 +338,14 @@ test('placement validator allows T-junctions but rejects a fourth pipe connectio
   assert.equal(validator.canPlace('pipe',2,3),false);
 });
 
+test('radiator air-coil exchange follows open paths and cannot transfer across two blocked faces',()=>{
+  const world=new World(5,5),radiator=new Radiator(2,2);radiator.energy=radiator.waterMass*WATER_CP*70;
+  world.setMaterial(1,2,'concrete');world.setMaterial(2,1,'concrete');world.addEntity(radiator);
+  const blockedBefore=world.temperatureAt(1,1),reachableBefore=world.temperatureAt(3,3),fluid=new FluidSystem(world,metrics());fluid.radiate(.1);
+  assert.equal(world.temperatureAt(1,1),blockedBefore);
+  assert.ok(world.temperatureAt(3,3)>reachableBefore);
+});
+
 test('machine heat travels through closed loop to radiator and room air',()=>{
   const w=new World(7,7),loop=addClosedLoop(w,{machine:true});
   const sys=new FluidSystem(w,metrics());
@@ -328,4 +374,20 @@ test('closed-loop advection preserves fluid energy when there are no sources or 
   for(let i=0;i<500;i++)for(const n of sys.networks)sys.transport(n,.05);
   const after=loop.fluid.reduce((s,e)=>s+e.energy,0);
   close(after,before,1e-10);
+});
+
+test('a correctly sized loop stabilizes a continuous rack heat load and sends it outdoors',()=>{
+  const world=new World(9,8),loop=addClosedLoop(world),rack=new ServerRack(4,1,{temperature:55,heatOutput:0,startAt:0}),systemMetrics=metrics();
+  loop.radiator.outdoor=true;rack.heatGenerationPower=10000;world.addEntity(rack);
+  const fluid=new FluidSystem(world,systemMetrics),before=totalThermalEnergy(world);let generated=0;
+  for(let i=0;i<10000;i++){const heat=rack.heatGenerationPower*.05;rack.energy+=heat;generated+=heat;fluid.update(.05);}
+  assert.ok(rack.temperature<40,`rack stabilized at ${rack.temperature.toFixed(1)} °C`);
+  assert.ok(loop.radiator.thermalPower>0);
+  close(totalThermalEnergy(world)+systemMetrics.externalEnergy,before+generated,1e-8);
+});
+
+test('energy accounting includes every water component, including non-powered pipes and exchangers',()=>{
+  const world=new World(6,6),loop=addClosedLoop(world),energy=new EnergySystem(world,metrics());
+  const expected=world.totalTileEnergy()+loop.fluid.reduce((sum,entity)=>sum+entity.energy,0);
+  assert.equal(energy.totalInternalEnergy(),expected);
 });

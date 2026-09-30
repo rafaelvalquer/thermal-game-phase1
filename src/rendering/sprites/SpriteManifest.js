@@ -10,6 +10,7 @@ export const SPRITES=Object.freeze({
   tank:definition('tank','fluid/tank.svg',4,{visualWidth:1.28,visualHeight:1.48,ports:fluidPorts}),
   radiator:definition('radiator','fluid/radiator.svg',6,{ports:fluidPorts}),
   exchanger:definition('exchanger','fluid/heat_exchanger.svg',4,{ports:fluidPorts}),
+  waterChiller:definition('waterChiller','fluid/water_chiller.svg',4,{stateRows:{running:0,idle:1,off:1,blocked:1},ports:fluidPorts}),
   fan:definition('fan','airflow/fan.svg',6),
   exhaust:definition('exhaust','airflow/exhaust.svg',6),
   machine:definition('machine','machines/machine.svg',4),

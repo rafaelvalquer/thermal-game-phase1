@@ -11,13 +11,15 @@ test('toolbar groups every catalog tool by its category',()=>{
 
 test('compact and industrial condensers use the dedicated cooling sprite in the toolbar',()=>{
   assert.equal(TOOL_SPRITE_ICONS.coolingUnit,'cooling/condenser.svg');
+  assert.equal(TOOL_SPRITE_ICONS.waterChiller,'fluid/water_chiller.svg');
   assert.equal(TOOL_SPRITE_ICONS.industrialCoolingUnit,'cooling/condenser.svg');
 });
 
 test('toolbar search matches tool names, descriptions, and categories without accents',()=>{
   const byName=groupToolbarTools(BUILD_CATALOG,'ventilador');
-  assert.deepEqual(byName.map(group=>group.category),['Ar']);
+  assert.deepEqual(byName.map(group=>group.category),['Ar','Água']);
   assert.deepEqual(byName[0].tools.map(tool=>tool.id),['fan']);
+  assert.ok(byName[1].tools.some(tool=>tool.id==='radiator'),'description search includes the radiator with integrated fan');
   const byDescription=groupToolbarTools(BUILD_CATALOG,'ar frio');
   assert.ok(byDescription.some(group=>group.tools.some(tool=>tool.id==='coolingUnit')));
   const byCategory=groupToolbarTools(BUILD_CATALOG,'climatizacao');

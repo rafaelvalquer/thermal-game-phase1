@@ -1,6 +1,6 @@
 import { World } from '../world/World.js';
 import { MapBuilder } from './MapBuilder.js';
-import { Machine, ServerRack, Furnace, PassiveHeatSource, Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, TemperatureSensor, AirDuct, CoolingUnit, SupplyVent, Technician, PowerBattery, SolarPanel } from '../entities/index.js';
+import { Machine, ServerRack, Furnace, PassiveHeatSource, Fan, ExhaustFan, Pipe, Pump, WaterTank, Radiator, HeatExchanger, WaterChiller, TemperatureSensor, AirDuct, CoolingUnit, SupplyVent, Technician, PowerBattery, SolarPanel } from '../entities/index.js';
 
 const constructors={
   machine:(d)=>new Machine(d.x,d.y,d),
@@ -12,8 +12,9 @@ const constructors={
   pipe:(d)=>new Pipe(d.x,d.y,d),
   pump:(d)=>new Pump(d.x,d.y,d.direction||{x:1,y:0}),
   tank:(d)=>new WaterTank(d.x,d.y),
-  radiator:(d)=>new Radiator(d.x,d.y),
+  radiator:(d)=>new Radiator(d.x,d.y,{direction:d.direction,outdoor:d.outdoor}),
   exchanger:(d)=>new HeatExchanger(d.x,d.y),
+  waterChiller:(d)=>new WaterChiller(d.x,d.y),
   sensor:(d)=>new TemperatureSensor(d.x,d.y),
   duct:(d)=>new AirDuct(d.x,d.y,d),
   coolingUnit:(d)=>new CoolingUnit(d.x,d.y,d),

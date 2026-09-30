@@ -11,6 +11,7 @@ export { Pump } from './Pump.js';
 export { WaterTank } from './WaterTank.js';
 export { Radiator } from './Radiator.js';
 export { HeatExchanger } from './HeatExchanger.js';
+export { WaterChiller } from './WaterChiller.js';
 export { TemperatureSensor } from './TemperatureSensor.js';
 export { AirDuct } from './AirDuct.js';
 export { utilityCanShareTile, UTILITY_COMPATIBILITY } from './UtilityCompatibility.js';

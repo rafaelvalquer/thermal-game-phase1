@@ -18,6 +18,7 @@ export class SpriteAnimator {
       case 'tank':return entity.flowRate>0?1.4:0;
       case 'radiator':return (entity.thermalPower||0)>100?clamp(2+(entity.fanBoost||0)*2,2,8):0;
       case 'exchanger':return Math.abs(entity.thermalPower||0)>100?3:0;
+      case 'waterChiller':return (entity.coolingPower||0)>100?clamp(2+(entity.coolingPower||0)/20000,2,8):0;
       case 'furnace':return entity.enabled===false?0:5;
       case 'serverRack':return entity.enabled===false?0:clamp(1+(entity.loadMultiplier||0)*2,1,8);
       case 'machine':return entity.enabled===false?0:1.5;

@@ -267,6 +267,7 @@ export class EntityRenderer {
     if(e.type==='tank')return this.tank(ctx,world,e,x,y,tile,mode,time);
     if(e.type==='radiator')return this.radiator(ctx,world,e,x,y,tile,mode,time);
     if(e.type==='exchanger')return this.exchanger(ctx,world,e,x,y,tile,mode,time);
+    if(e.type==='waterChiller')return this.waterChiller(ctx,world,e,x,y,tile,mode,time);
   }
 
   connections(world,e){
@@ -356,5 +357,18 @@ export class EntityRenderer {
     ctx.beginPath();ctx.arc(cx,cy,tile*.31,0,Math.PI*2);ctx.fill();ctx.stroke();
     ctx.fillStyle=state.color;ctx.beginPath();ctx.arc(cx,cy,tile*.09*(.9+pulse*.18),0,Math.PI*2);ctx.fill();
     ctx.fillStyle='#f8fafc';ctx.font='700 '+Math.max(6,tile*.25)+'px ui-monospace,monospace';ctx.textAlign='center';ctx.fillText(Math.round(e.current)+'°',cx,cy+tile*.48);
+  }
+
+  waterChiller(ctx,world,e,x,y,tile,mode,time){
+    this.equipmentPorts(ctx,world,e,x,y,tile,mode,time);
+    const active=(e.coolingPower||0)>100,glow=active?Math.min(1,(e.coolingPower||0)/(e.ratedCapacity||80000)):0;
+    ctx.fillStyle='#14283a';ctx.strokeStyle=active?'#22d3ee':'#64748b';ctx.lineWidth=Math.max(1,tile*.06);
+    ctx.fillRect(x+tile*.12,y+tile*.13,tile*.76,tile*.74);ctx.strokeRect(x+tile*.12,y+tile*.13,tile*.76,tile*.74);
+    ctx.fillStyle='#1e3a5f';ctx.fillRect(x+tile*.2,y+tile*.22,tile*.6,tile*.22);
+    ctx.strokeStyle='#7dd3fc';ctx.lineWidth=Math.max(1,tile*.035);for(let i=0;i<4;i++){const fx=x+tile*(.25+i*.15);ctx.beginPath();ctx.moveTo(fx,y+tile*.25);ctx.lineTo(fx,y+tile*.41);ctx.stroke();}
+    ctx.strokeStyle='#38bdf8';ctx.lineWidth=Math.max(1,tile*.045);ctx.beginPath();ctx.arc(x+tile*.5,y+tile*.65,tile*.16,0,Math.PI*2);ctx.stroke();
+    ctx.save();ctx.translate(x+tile*.5,y+tile*.65);if(active&&time>0)ctx.rotate(time*4);ctx.fillStyle='#67e8f9';for(let i=0;i<3;i++){ctx.rotate(Math.PI*2/3);ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(tile*.13,-tile*.035);ctx.lineTo(tile*.07,tile*.08);ctx.closePath();ctx.fill();}ctx.restore();
+    ctx.fillStyle=e.powerBlocked?'#fb7185':active?'#34d399':e.enabled===false?'#64748b':'#fbbf24';ctx.beginPath();ctx.arc(x+tile*.79,y+tile*.2,tile*.045,0,Math.PI*2);ctx.fill();
+    if(active&&mode!=='thermal'){ctx.fillStyle=`rgba(56,189,248,${.08+glow*.12})`;ctx.fillRect(x+tile*.17,y+tile*.45,tile*.66,tile*.08);}
   }
 }

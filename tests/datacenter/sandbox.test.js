@@ -367,8 +367,8 @@ test('daily billing includes kWh, fixed grid fees, climatization upkeep, client 
   assert.equal(s.datacenter.state.dailyResult.fixedPowerCost,100);
   assert.equal(s.datacenter.state.dailyResult.coolingMaintenance,110);
   assert.equal(s.datacenter.state.dailyResult.penalties,5000);
-  assert.equal(accepted.contract.monthlyFee,42000);
-  assert.equal(s.datacenter.state.dailyResult.revenue,1400);
+  assert.equal(accepted.contract.monthlyFee,46200);
+  assert.equal(s.datacenter.state.dailyResult.revenue,1540);
   assert.ok(s.datacenter.cash<before);
   assert.equal(accepted.contract.violationDays,1);
   assert.equal(s.datacenter.state.reputation,49);
@@ -533,8 +533,8 @@ test('power purchases are cumulative and reject invalid, oversized, and unafford
   assert.equal(s.datacenter.powerGrid.capacityKW,150);
   assert.equal(s.datacenter.cash,currentCash);
   s.datacenter.powerGrid.capacityKW=100;
-  assert.equal(s.datacenter.powerGrid.quote(4900).capacityKW,5000);
-  assert.equal(s.datacenter.powerGrid.quote(4901).ok,false);
+  assert.equal(s.datacenter.powerGrid.quote(9900).capacityKW,10000);
+  assert.equal(s.datacenter.powerGrid.quote(9901).ok,false);
   s.datacenter.powerGrid.capacityKW=4999;
   assert.equal(s.datacenter.upgradePower(2).ok,false);
   assert.equal(s.datacenter.powerGrid.capacityKW,4999);

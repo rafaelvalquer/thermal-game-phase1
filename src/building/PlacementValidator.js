@@ -1,6 +1,6 @@
 import { entityFootprintCells } from '../entities/EntityFootprint.js';
-const FLUID_TYPES=new Set(['pipe','pump','tank','radiator','exchanger']);
-const FLUID_TOOLS=new Set(['pipe','pump','tank','radiator','exchanger']);
+const FLUID_TYPES=new Set(['pipe','pump','tank','radiator','exchanger','waterChiller']);
+const FLUID_TOOLS=new Set(['pipe','pump','tank','radiator','exchanger','waterChiller']);
 const COOLING_TOOLS=new Set(['coolingUnit','industrialCoolingUnit']);
 export const DUCT_TOOLS=new Set(['duct']);
 export const DUCT_PATH_TOOLS=DUCT_TOOLS;
@@ -41,7 +41,8 @@ export class PlacementValidator {
       return w.isAir(x,y)&&(!entity||tool==='wall'&&entity.type==='pipe');
     }
     if(DUCT_TOOLS.has(tool)){
-      if(w.utilitiesAt(x,y).some(item=>DUCT_TOOLS.has(item.type))||additionalUtilities.some(item=>DUCT_TOOLS.has(item.type)&&item.x===x&&item.y===y)||w.entityAt(x,y))return false;
+      const entity=w.entityAt(x,y);
+      if(w.utilitiesAt(x,y).some(item=>DUCT_TOOLS.has(item.type))||additionalUtilities.some(item=>DUCT_TOOLS.has(item.type)&&item.x===x&&item.y===y)||(entity&&entity.type!=='pipe'))return false;
       return true;
     }
     if(COOLING_TOOLS.has(tool)){
@@ -57,7 +58,8 @@ export class PlacementValidator {
     }
     if(tool==='supplyVent'&&w.thermalSystems?.simpleCooling&&this.adjacentCoolingDuctComponents(x,y).length>1)return false;
     if(['coolingUnit','industrialCoolingUnit','supplyVent'].includes(tool))return w.isAir(x,y)&&!w.entityAt(x,y)&&!w.utilityAt(x,y);
-    if(w.entityAt(x,y))return false;
+    const occupiedEntity=w.entityAt(x,y);
+    if(occupiedEntity)return false;
     if(tool!=='pipe'&&!w.isAir(x,y))return false;
 
     if(FLUID_TOOLS.has(tool)){

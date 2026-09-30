@@ -1,5 +1,6 @@
 import { createLevelEntity } from '../campaign/LevelManager.js';
 import { HeatExchanger } from '../entities/HeatExchanger.js';
+import { Radiator } from '../entities/Radiator.js';
 import { migrateCoolingUnitBalance } from '../entities/CoolingUnitModels.js';
 
 const STORAGE_KEY='thermal-lab-datacenter-sandbox-v1';
@@ -175,6 +176,11 @@ export class DataCenterSaveSystem {
         properties.airUA=HeatExchanger.AIR_UA;
         properties.thermalTransferRevision=HeatExchanger.PERFORMANCE_REVISION;
       }
+      if(definition.type==='radiator'&&(Number(properties.thermalTransferRevision)||0)<Radiator.PERFORMANCE_REVISION){
+        properties.ua=Radiator.WATER_UA;properties.ratedCapacity=Radiator.RATED_CAPACITY;properties.minimumApproach=Radiator.MINIMUM_APPROACH;properties.power=Radiator.FAN_POWER;properties.fanAirflow=2.5;properties.thermalTransferRevision=Radiator.PERFORMANCE_REVISION;
+        if(properties.outdoor==null)properties.outdoor=definition.x===0||definition.y===0||definition.x===world.width-1||definition.y===world.height-1;
+      }
+      if(definition.type==='pump'&&properties.maxFlowRate==null){properties.maxFlowRate=1.5;properties.maxFlowRateBoost=2;properties.flowMode='normal';}
       const entity=createLevelEntity({type:definition.type,x:definition.x,y:definition.y,...properties});
       if(!entity)continue;Object.assign(entity,properties);entity.normalizeAirflowDirections?.();world.addEntity(entity);
     }
@@ -190,7 +196,7 @@ export class DataCenterSaveSystem {
     build.budget=snapshot.build.budget;
     build.inventory=build.unlimitedInventory
       ?Object.fromEntries(Object.keys(build.catalog).map(key=>[key,Infinity]))
-      :Object.fromEntries(Object.keys(build.catalog).map(key=>[key,['battery','solarPanel'].includes(key)?Infinity:(snapshot.build.inventory?.[key]===null?Infinity:snapshot.build.inventory?.[key]??0)]));
+      :Object.fromEntries(Object.keys(build.catalog).map(key=>[key,['battery','solarPanel'].includes(key)?Infinity:(snapshot.build.inventory?.[key]===null?Infinity:snapshot.build.inventory?.[key]??(key==='waterChiller'?(build.catalog[key]?.inventory??1):0))]));
     build.initialInventory={...build.inventory};
     build.placedEntities.clear();
     for(const item of snapshot.build.placedEntities||[]){

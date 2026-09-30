@@ -7,7 +7,7 @@ export const level01={
   briefing:'Esta é a bancada inicial do Thermal Lab. Instale uma condensadora fora da sala, ligue-a com dutos e direcione a saída de ar gelado para as máquinas. Observe como posição e airflow mudam o resfriamento.',
   thermalSystems:{simpleCooling:true,waterCooling:true,coolingUnitModel:'commercial'},
   map:level01Map,environment:{outdoorTemperature:25},budget:50000,powerLimit:10000,missionDuration:300,
-  inventory:{pipe:24,pump:1,tank:1,radiator:1,exchanger:1,wall:50,insulation:20,copper:10,fan:4,exhaust:2,sensor:5,coolingUnit:1,duct:120,supplyVent:1,demolish:Infinity},
+  inventory:{pipe:24,pump:1,tank:1,radiator:1,exchanger:1,waterChiller:1,wall:50,insulation:20,copper:10,fan:4,exhaust:2,sensor:5,coolingUnit:1,duct:120,supplyVent:1,demolish:Infinity},
   zones:[{id:'machine-room',name:'Sala de Máquinas',x:9,y:11,width:46,height:35,target:40,visualStyle:'industrial'}],
   entities:[
     {type:'machine',id:'m1',name:'Máquina 1',x:20,y:18,heatOutput:8000,category:'process'},

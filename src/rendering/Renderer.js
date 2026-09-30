@@ -66,6 +66,9 @@ export class Renderer {
       if(this.mode==='normal')this.staticMap.draw(scene,world,this.tile,this.zones||[],this.tileRenderer,bounds);
       else this.tileRenderer.draw(scene,world,this.tile,this.zones||[],this.mode,bounds);
       this.monitor?.end('renderTilesMs');
+      // Draw utility ducts before equipment so a hydraulic pipe crossing this
+      // tile remains visually on top without joining the air network.
+      if(this.mode!=='thermal'){this.monitor?.begin('renderDuctsMs');this.coolingDucts.draw(scene,world,this.tile,this.mode,this.camera.zoom,bounds);this.monitor?.end('renderDuctsMs');this.monitor?.set('renderedDucts',this.coolingDucts.stats?.renderedDucts||0);}
       // Put the thermal field above duct linework so rack temperatures remain
       // legible where ducts cross the heatmap. Equipment sprites stay on top.
       if(this.mode==='thermal'){this.monitor?.begin('renderDuctsMs');this.coolingDucts.draw(scene,world,this.tile,this.mode,this.camera.zoom,bounds);this.monitor?.end('renderDuctsMs');}
@@ -74,9 +77,9 @@ export class Renderer {
       this.monitor?.begin('renderEntitiesMs');
       this.entities.draw(scene,world,this.tile,this.mode,time,{selectedEntity:this.selectedEntity,bounds,zoom:this.camera.zoom,deferThermalIndicators:this.mode==='thermal'});
       this.monitor?.end('renderEntitiesMs');
+      if(this.mode!=='cooling')this.coolingDucts.drawOutletConnections(scene,world,this.tile,time,this.camera.zoom,bounds);
       this.monitor?.set('visibleEntities',this.entities.stats?.visibleEntities||0);this.monitor?.set('totalEntities',world.entities.length);
       this.monitor?.set('staticEntities',this.entities.staticEntities.length);this.monitor?.set('dynamicEntities',this.entities.dynamicEntities.length);
-      if(this.mode!=='thermal'){this.monitor?.begin('renderDuctsMs');this.coolingDucts.draw(scene,world,this.tile,this.mode,this.camera.zoom,bounds);this.monitor?.end('renderDuctsMs');this.monitor?.set('renderedDucts',this.coolingDucts.stats?.renderedDucts||0);}
       this.monitor?.begin('renderEffectsMs');
       this.effects.draw(scene,world,this.tile,this.mode,time,bounds);
       this.monitor?.end('renderEffectsMs');
@@ -101,6 +104,7 @@ export class Renderer {
       this.coolingOverlay.draw(ctx,world,this.tile,time,this.camera.zoom,this.selectedEntity,bounds);
       this.coolingFlow.draw(ctx,simulation.cooling.networks,this.tile,time,this.camera.zoom,this.selectedEntity,bounds);
       const viewport=ViewportCulling.fromBounds(bounds,this.tile,2);for(const unit of simulation.cooling.units)if(viewport.contains(unit.x,unit.y))this.coolingUnits.draw(ctx,unit,this.tile,this.camera.zoom);
+      this.coolingDucts.drawOutletConnections(ctx,world,this.tile,time,this.camera.zoom,bounds);
     }
     if(this.mode==='airflow'){
       this.airflow.draw(ctx,world,this.tile,time,this.camera.zoom,bounds);
@@ -403,6 +407,13 @@ export class Renderer {
       ctx.fillStyle='#fff7ed';ctx.font='900 '+Math.max(7,this.tile*.22)+'px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('!',x,y);
       }
     }
+    if(selectingFluid&&selected?.circuitClosed&&selected.flowRate>0){
+      const input=Number(selected.inletTemperature??selected.waterTemperature??25),output=Number(selected.outletTemperature??selected.waterTemperature??input);
+      const exchanged=Math.abs(Number(selected.thermalPower)||selected.flowRate*4186*Math.abs(output-input));
+      const x=(selected.x+.5)*this.tile,y=selected.y*this.tile-this.tile*.55,label=`IN ${input.toFixed(1)}°  ·  Q ${(exchanged/1000).toFixed(1)} kW  ·  OUT ${output.toFixed(1)}°`;
+      ctx.save();ctx.font='700 '+Math.max(8,this.tile*.25)+'px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='middle';const width=(ctx.measureText?.(label)?.width||label.length*Math.max(8,this.tile*.25)*.62)+this.tile*.35,height=Math.max(15,this.tile*.46);
+      ctx.globalAlpha=1;ctx.fillStyle='rgba(2,6,23,.94)';ctx.fillRect(x-width/2,y-height/2,width,height);ctx.strokeStyle='#38bdf8';ctx.lineWidth=Math.max(1,1/zoom);ctx.strokeRect(x-width/2,y-height/2,width,height);ctx.fillStyle='#e0f2fe';ctx.fillText(label,x,y);ctx.restore();
+    }
     ctx.globalAlpha=1;ctx.restore();this.monitor?.set('renderedFluidLinks',renderedLinks);
   }
 
@@ -448,10 +459,10 @@ export class Renderer {
     for(const cell of previewCells)ctx.fillRect(cell.x*this.tile,cell.y*this.tile,this.tile,this.tile);
     ctx.strokeStyle=selected?(valid?'#4ade80':'#f87171'):'#f8fafc';ctx.globalAlpha=.72+pulse*.25;ctx.lineWidth=Math.max(1,2/this.camera.zoom);
     for(const cell of previewCells)ctx.strokeRect(cell.x*this.tile+1,cell.y*this.tile+1,this.tile-2,this.tile-2);ctx.globalAlpha=1;
-    if(selected&&['fan','exhaust','pump','supplyVent','coolingUnit','industrialCoolingUnit'].includes(selected)){
+    if(selected&&['fan','exhaust','pump','radiator','supplyVent','coolingUnit','industrialCoolingUnit'].includes(selected)){
       const d=this.buildSystem.direction(),cx=(x+.5)*this.tile,cy=(y+.5)*this.tile;
-      const distance=selected==='pump'?this.tile*1.4:this.tile*4;
-      const spread=selected==='pump'?this.tile*.28:this.tile*.9;
+      const distance=['pump','radiator'].includes(selected)?this.tile*1.4:this.tile*4;
+      const spread=['pump','radiator'].includes(selected)?this.tile*.28:this.tile*.9;
       ctx.fillStyle='rgba(14,165,233,.07)';ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+d.x*distance-d.y*spread,cy+d.y*distance+d.x*spread);ctx.lineTo(cx+d.x*distance+d.y*spread,cy+d.y*distance-d.x*spread);ctx.closePath();ctx.fill();
       ctx.strokeStyle='#7dd3fc';ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+d.x*(distance*.85),cy+d.y*(distance*.85));ctx.stroke();
     }

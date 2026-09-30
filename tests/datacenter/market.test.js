@@ -53,20 +53,31 @@ test('offers remain at base scale until both infrastructure and day progression 
 test('new offers price from a contract base and saved legacy fees migrate only once',()=>{
   const nova=CONTRACT_TEMPLATES.find(item=>item.clientName==='NovaBank');
   const offer=market(50).system.addOffer(nova,1);
-  assert.equal(offer.baseMonthlyFee,42000);
-  assert.equal(offer.monthlyFee,42000,'reputation 50 applies a neutral 1.00 multiplier');
+  assert.equal(offer.baseMonthlyFee,46200);
+  assert.equal(offer.monthlyFee,46200,'reputation 50 applies a neutral 1.00 multiplier');
 
   const state={day:1,reputation:75,offerSequence:1,marketInitialized:true,lastMarketGeneratedDay:1,
     offers:[{id:'offer-1',monthlyFee:28000}],contracts:[{id:'contract-1',status:'active',monthlyFee:8000}]};
   new ContractSystem(state);
-  assert.equal(state.offers[0].monthlyFee,46200);
-  assert.equal(state.contracts[0].monthlyFee,12000);
-  assert.equal(state.offers[0].baseMonthlyFee,42000);
+  assert.equal(state.offers[0].monthlyFee,50820);
+  assert.equal(state.contracts[0].monthlyFee,13200);
+  assert.equal(state.offers[0].baseMonthlyFee,46200);
   assert.equal(state.offers[0].reputationMultiplier,1.1);
-  assert.equal(state.contractPayoutRevision,1);
+  assert.equal(state.contractPayoutRevision,2);
   new ContractSystem(state);
-  assert.equal(state.offers[0].monthlyFee,46200);
-  assert.equal(state.contracts[0].monthlyFee,12000);
+  assert.equal(state.offers[0].monthlyFee,50820);
+  assert.equal(state.contracts[0].monthlyFee,13200);
+});
+
+test('revision 1 contracts and their pricing bases receive the ten percent increase once',()=>{
+  const state={day:1,reputation:80,offerSequence:1,contractPayoutRevision:1,reputationPricingRevision:1,marketInitialized:true,
+    offers:[{id:'offer-1',monthlyFee:46200,baseMonthlyFee:42000,reputationMultiplier:1.1}],
+    contracts:[{id:'contract-1',status:'active',monthlyFee:42000,baseMonthlyFee:42000,reputationMultiplier:1}]};
+  new ContractSystem(state);
+  assert.equal(state.offers[0].monthlyFee,50820);assert.equal(state.offers[0].baseMonthlyFee,46200);
+  assert.equal(state.contracts[0].monthlyFee,46200);assert.equal(state.contracts[0].baseMonthlyFee,46200);
+  new ContractSystem(state);
+  assert.equal(state.offers[0].monthlyFee,50820);assert.equal(state.contracts[0].monthlyFee,46200);
 });
 
 test('new offers receive warmer thermal SLAs and saved contracts are relieved once',()=>{

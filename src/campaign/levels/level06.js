@@ -7,7 +7,7 @@ export const level06={
   briefing:'Organize o resfriamento das duas salas de servidores: insufle ar frio pelos corredores externos e recolha o ar quente nos corredores centrais, onde as traseiras dos racks se encontram. Preserve também a infraestrutura elétrica e de processo durante picos de carga e uma onda de calor.',
   thermalSystems:{simpleCooling:true,waterCooling:true,coolingUnitModel:'commercial'},
   map:level06Map,environment:{outdoorTemperature:25},budget:65000,powerLimit:20000,missionDuration:600,
-  inventory:{pipe:200,pump:4,tank:3,radiator:6,exchanger:8,wall:70,insulation:80,copper:30,fan:12,exhaust:6,sensor:16,coolingUnit:4,duct:400,supplyVent:8,demolish:Infinity},
+  inventory:{pipe:200,pump:4,tank:3,radiator:6,exchanger:8,waterChiller:1,wall:70,insulation:80,copper:30,fan:12,exhaust:6,sensor:16,coolingUnit:4,duct:400,supplyVent:8,demolish:Infinity},
   zones:[
     {id:'server-a-cold-north',name:'Cold Aisle A · Norte',x:7,y:8,width:22,height:4,target:36,visualStyle:'server'},
     {id:'server-a-hot',name:'Hot Aisle A · Central',x:7,y:13,width:22,height:5,target:48,visualStyle:'industrial'},

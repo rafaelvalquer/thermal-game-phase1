@@ -7,7 +7,7 @@ export const level05={
   briefing:'Nem tudo precisa estar frio. Isole o forno e use unidades independentes para proteger motores, processo, corredores e operadores sem recircular o calor da condensadora.',
   thermalSystems:{simpleCooling:true,waterCooling:true,coolingUnitModel:'commercial'},
   map:level05Map,environment:{outdoorTemperature:27},budget:60000,powerLimit:18000,missionDuration:420,
-  inventory:{pipe:120,pump:3,tank:2,radiator:4,exchanger:6,wall:50,insulation:70,copper:30,fan:10,exhaust:5,sensor:14,coolingUnit:3,duct:300,supplyVent:6,demolish:Infinity},
+  inventory:{pipe:120,pump:3,tank:2,radiator:4,exchanger:6,waterChiller:1,wall:50,insulation:70,copper:30,fan:10,exhaust:5,sensor:14,coolingUnit:3,duct:300,supplyVent:6,demolish:Infinity},
   zones:[
     {id:'furnace-zone',name:'Zona do Forno',x:7,y:8,width:20,height:20,target:900,visualStyle:'industrial'},
     {id:'service-corridor',name:'Corredor de Serviço',x:4,y:29,width:80,height:10,target:45,visualStyle:'corridor'},

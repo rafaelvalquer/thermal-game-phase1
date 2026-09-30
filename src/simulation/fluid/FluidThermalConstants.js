@@ -1,0 +1,18 @@
+export const FLUID_THERMAL={
+  waterSpecificHeat:4186,
+  maxThermalCourant:.35,
+  exchangerRatedCapacity:30000,
+  exchangerCaptureFraction:.9,
+  exchangerUA:6000,
+  exchangerAirUA:1800,
+  exchangerAirRatedCapacity:12000,
+  exchangerRecoverySeconds:30,
+  exchangerSourceTemperatureLift:15,
+  radiatorRatedCapacity:40000,
+  radiatorUA:5000,
+  radiatorFanPower:600,
+  radiatorMinimumApproach:2.5,
+  pumpFlowEco:1,
+  pumpFlowNormal:1.5,
+  pumpFlowBoost:2,
+};

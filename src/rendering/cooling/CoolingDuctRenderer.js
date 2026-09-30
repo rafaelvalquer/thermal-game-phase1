@@ -50,10 +50,35 @@ export class CoolingDuctRenderer {
       ctx.fillStyle=color;ctx.beginPath();ctx.arc(cx,cy,Math.max(1,width*.42),0,Math.PI*2);ctx.fill();ctx.restore();
     }
   }
+  drawOutletConnections(ctx,world,tile,time=0,zoom=1,bounds=null){
+    const viewport=ViewportCulling.fromBounds(bounds,tile,2),vents=world.entitiesByType?.('supplyVent')||[];
+    for(const vent of vents){
+      if(!viewport.contains(vent.x,vent.y))continue;
+      for(const [dx,dy] of DIRS){
+        const duct=world.utilityAt(vent.x+dx,vent.y+dy,'duct');if(!duct)continue;
+        const cx=(vent.x+.5)*tile,cy=(vent.y+.5)*tile,px=cx+dx*tile*.34,py=cy+dy*tile*.34;
+        const linked=Boolean(duct.networkId&&vent.networkId&&(duct.networkId===vent.networkId||String(vent.networkId).split(',').includes(duct.networkId)));
+        const flowing=linked&&vent.networkStatus==='READY'&&vent.flowRate>.001;
+        const color=flowing?'#67e8f9':linked?'#94a3b8':'#64748b',radius=tile*.105;
+        ctx.save();ctx.lineCap='round';ctx.globalAlpha=.98;
+        // Draw a short socket over the vent sprite, on the side facing its duct.
+        ctx.strokeStyle='rgba(2,6,23,.96)';ctx.lineWidth=tile*.25;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(px,py);ctx.stroke();
+        ctx.strokeStyle=flowing?'#155e75':'#334155';ctx.lineWidth=tile*.16;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(px,py);ctx.stroke();
+        ctx.fillStyle='rgba(2,6,23,.98)';ctx.beginPath();ctx.arc(px,py,radius*1.35,0,Math.PI*2);ctx.fill();
+        ctx.strokeStyle=color;ctx.lineWidth=Math.max(1,tile*.045);ctx.beginPath();ctx.arc(px,py,radius,0,Math.PI*2);ctx.stroke();
+        ctx.fillStyle=color;ctx.beginPath();ctx.arc(px,py,radius*.34,0,Math.PI*2);ctx.fill();
+        if(flowing){
+          const phase=(time*(.7+Math.min(1.8,vent.flowRate*.45)))%1,dotX=px+(cx-px)*phase,dotY=py+(cy-py)*phase;
+          ctx.globalAlpha=.55+.4*Math.sin(time*8);ctx.fillStyle='#e0f2fe';ctx.beginPath();ctx.arc(dotX,dotY,Math.max(1,tile*.045),0,Math.PI*2);ctx.fill();
+        }
+        ctx.restore();
+      }
+    }
+  }
   linksFor(duct,world){
     const version=world.utilityTopologyVersion??0,cached=this.linkCache.get(duct);if(cached?.version===version)return cached.links;
     const links=[];
-    for(const [dx,dy] of DIRS){const adjacent=world.utilityAt(duct.x+dx,duct.y+dy,'duct');if(adjacent){links.push([dx,dy]);continue;}const entity=world.entityAt(duct.x+dx,duct.y+dy);if(entity&&COOLING_ENDPOINTS.has(entity.type)&&(entity.networkId===duct.networkId||entity.networkId?.split(',').includes(duct.networkId)))links.push([dx,dy]);}
+    for(const [dx,dy] of DIRS){const adjacent=world.utilityAt(duct.x+dx,duct.y+dy,'duct');if(adjacent){links.push([dx,dy]);continue;}const entity=world.entityAt(duct.x+dx,duct.y+dy);if(entity&&COOLING_ENDPOINTS.has(entity.type))links.push([dx,dy]);}
     this.linkCache.set(duct,{version,links});return links;
   }
   preview(ctx,x,y,tile,size,valid,zoom=1,{embedded=false}={}){const width=tile*.22,cx=(x+.5)*tile,cy=(y+.5)*tile;ctx.save();ctx.globalAlpha=.78;ctx.strokeStyle=valid?'#67e8f9':'#f87171';ctx.lineWidth=width;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(cx-tile*.36,cy);ctx.lineTo(cx+tile*.36,cy);if(embedded)ctx.setLineDash([tile*.12,tile*.08]);ctx.stroke();ctx.setLineDash([]);ctx.lineWidth=Math.max(1,1.5/zoom);ctx.strokeRect(x*tile+1,y*tile,tile-2,tile);ctx.restore();}

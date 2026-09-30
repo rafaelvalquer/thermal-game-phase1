@@ -7,7 +7,7 @@ export const level03={
   briefing:'Duas condensadoras podem manter redes independentes. Distribua capacidade entre laboratório e salas, e teste como saídas de redes diferentes podem atender o mesmo ambiente.',
   thermalSystems:{simpleCooling:true,waterCooling:true,coolingUnitModel:'commercial'},
   map:level03Map,environment:{outdoorTemperature:26},budget:30000,powerLimit:18000,missionDuration:300,
-  inventory:{pipe:50,pump:2,tank:1,radiator:2,exchanger:3,wall:28,insulation:35,copper:12,fan:7,exhaust:2,sensor:9,coolingUnit:2,duct:220,supplyVent:6,demolish:Infinity},
+  inventory:{pipe:50,pump:2,tank:1,radiator:2,exchanger:3,waterChiller:1,wall:28,insulation:35,copper:12,fan:7,exhaust:2,sensor:9,coolingUnit:2,duct:220,supplyVent:6,demolish:Infinity},
   zones:[
     {id:'office-a',name:'Escritório A',x:8,y:9,width:12,height:13,target:30,visualStyle:'office'},
     {id:'office-b',name:'Escritório B',x:25,y:9,width:10,height:13,target:30,visualStyle:'office'},

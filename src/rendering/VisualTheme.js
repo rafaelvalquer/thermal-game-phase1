@@ -3,7 +3,7 @@ import { thermalColor, thermalCss } from './thermal/ThermalPalette.js';
 
 export { thermalColor, thermalCss, thermalState as thermalGameplayState, THERMAL_STOPS, THERMAL_MIN, THERMAL_MAX } from './thermal/ThermalPalette.js';
 
-export const FLUID_TYPES = new Set(['pipe','pump','tank','radiator','exchanger']);
+export const FLUID_TYPES = new Set(['pipe','pump','tank','radiator','exchanger','waterChiller']);
 
 export const thermalState = (temperature) => {
   if (temperature >= 80) return { id:'critical', label:'CRÍTICO', color:'#ef4444', glow:1 };
@@ -58,5 +58,6 @@ export const entityLabel = (type) => ({
   tank:'Tanque térmico',
   radiator:'Radiador',
   exchanger:'Trocador de calor',
+  waterChiller:'Chiller de água',
   sensor:'Sensor térmico',
 }[type]||type);

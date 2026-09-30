@@ -6,8 +6,10 @@ export class EnergySystem {
   totalInternalEnergy(){
     let total=this.world.totalTileEnergy();
     for(const e of powerEquipment(this.world)){
-      if(e.isHeatMachine||['pipe','pump','tank','radiator','exchanger'].includes(e.type))total+=e.energy||0;
+      if(e.isHeatMachine)total+=e.energy||0;
     }
+    // Water components are thermal stores even when they draw no electrical power.
+    for(const type of ['pipe','pump','tank','radiator','exchanger','waterChiller'])for(const entity of this.world.entitiesByType(type))total+=entity.energy||0;
     return total;
   }
 

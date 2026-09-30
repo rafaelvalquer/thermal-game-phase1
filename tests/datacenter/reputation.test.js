@@ -88,10 +88,10 @@ test('a saved legacy offer migrates its reputation price once while signed contr
     offers:[{id:'offer-1',clientName:'NovaBank',monthlyFee:42000}],
     contracts:[{id:'contract-1',clientName:'NovaBank',status:'active',monthlyFee:42000}]};
   new ContractSystem(state);
-  assert.equal(state.offers[0].monthlyFee,47040);
-  assert.equal(state.offers[0].baseMonthlyFee,42000);
-  assert.equal(state.contracts[0].monthlyFee,42000);
+  assert.equal(state.offers[0].monthlyFee,51744);
+  assert.equal(state.offers[0].baseMonthlyFee,46200);
+  assert.equal(state.contracts[0].monthlyFee,46200);
   new ContractSystem(state);
-  assert.equal(state.offers[0].monthlyFee,47040);
-  assert.equal(state.contracts[0].monthlyFee,42000);
+  assert.equal(state.offers[0].monthlyFee,51744);
+  assert.equal(state.contracts[0].monthlyFee,46200);
 });

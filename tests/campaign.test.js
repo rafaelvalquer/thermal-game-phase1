@@ -30,7 +30,7 @@ test('all six levels load from data definitions',()=>{
     assert.ok(world.entities.length>0);
     assert.equal(level.thermalSystems.simpleCooling,true);
     assert.equal(level.thermalSystems.waterCooling,true);
-    for(const waterTool of ['pipe','pump','tank','radiator','exchanger'])assert.ok(level.inventory[waterTool]>0,`${level.name} should stock ${waterTool}`);
+    for(const waterTool of ['pipe','pump','tank','radiator','exchanger','waterChiller'])assert.ok(level.inventory[waterTool]>0,`${level.name} should stock ${waterTool}`);
     for(const legacyTool of ['airHandler','returnVent','refrigerantLine','smallDuct','mediumDuct','largeDuct','damper'])assert.equal(level.inventory[legacyTool],undefined);
     assert.ok(level.inventory.coolingUnit>=1);
     assert.ok(level.inventory.duct>0);
@@ -102,12 +102,12 @@ test('campaign data center keeps water-cooling tools available alongside simple 
   const level=LEVELS[5],world=new LevelManager().load(level),simulation=new Simulation(world,level);
   const locked=world.entities.filter(e=>e.locked);
   assert.ok(locked.length>=2);
-  assert.equal(world.entities.some(e=>['pipe','pump','tank','radiator','exchanger'].includes(e.type)),false);
+  assert.equal(world.entities.some(e=>['pipe','pump','tank','radiator','exchanger','waterChiller'].includes(e.type)),false);
   assert.equal(simulation.simpleCooling,true);
   assert.equal(simulation.waterCooling,true);
   assert.ok(simulation.fluid);
   const build=new BuildSystem(world,simulation,{inventory:level.inventory});
-  for(const tool of ['pipe','pump','tank','radiator','exchanger'])assert.ok(build.catalog[tool],tool);
+  for(const tool of ['pipe','pump','tank','radiator','exchanger','waterChiller'])assert.ok(build.catalog[tool],tool);
   for(const tool of ['airHandler','condenser','refrigerantLine','smallDuct','returnVent'])assert.equal(build.catalog[tool],undefined);
 });
 
@@ -115,6 +115,6 @@ test('engineering sandbox uses climatization tools alongside water equipment',()
   const world=new LevelManager().load(engineeringSandbox),simulation=new Simulation(world,engineeringSandbox);
   const build=new BuildSystem(world,simulation,{inventory:engineeringSandbox.inventory});
   assert.equal(simulation.simpleCooling,true);assert.equal(simulation.engineeringHvac,undefined);assert.equal(simulation.waterCooling,true);
-  for(const tool of ['coolingUnit','duct','supplyVent','pipe','pump','tank','radiator','exchanger'])assert.ok(build.catalog[tool],tool);
+  for(const tool of ['coolingUnit','duct','supplyVent','pipe','pump','tank','radiator','exchanger','waterChiller'])assert.ok(build.catalog[tool],tool);
   for(const tool of ['airHandler','condenser','refrigerantLine','smallDuct','mediumDuct','largeDuct','returnVent','damper'])assert.equal(build.catalog[tool],undefined);
 });
