@@ -86,6 +86,16 @@ export class AirGrid {
   buildExteriorMask(){
     const rooms=this.world.airRooms||[];
     this.exteriorCells.fill(0);
+    if(this.world.landOwnership){
+      const queue=new Int32Array(this.size),seen=this.exteriorCells;let head=0,tail=0;
+      for(let i=0;i<this.size;i++){
+        const {x,y}=this.world.coords(i);
+        if(this.solid[i])continue;
+        if(!this.world.landOwnership.isOwned(x,y)||x===0||y===0||x===this.width-1||y===this.height-1){seen[i]=1;queue[tail++]=i;}
+      }
+      while(head<tail){const i=queue[head++],x=i%this.width,y=(i/this.width)|0;for(const next of [x?i-1:-1,x+1<this.width?i+1:-1,y?i-this.width:-1,y+1<this.height?i+this.width:-1])if(next>=0&&!this.solid[next]&&!seen[next]){seen[next]=1;queue[tail++]=next;}}
+      this.hasExteriorCells=tail>0;return;
+    }
     this.hasExteriorCells=rooms.length>0;
     if(!rooms.length)return;
     for(let y=0;y<this.height;y++)for(let x=0;x<this.width;x++){

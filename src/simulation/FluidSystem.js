@@ -68,9 +68,14 @@ export class FluidSystem {
     entity.networkId=networkId;entity.networkStatus='DISCONNECTED';entity.circuitClosed=false;entity.flowRate=0;entity.upstreamId=null;entity.downstreamId=null;entity.flowVector={x:0,y:0};entity.flowLinks=[];entity.inletTemperature=entity.waterTemperature;entity.outletTemperature=entity.waterTemperature;entity.deltaTemperature=0;entity.thermalPower=0;
     if(entity.type==='exchanger'){entity.machineId=null;entity.airCoolingPower=0;entity.captureMode='IDLE';}
     if(entity.type==='waterChiller'){entity.coolingPower=0;entity.rejectedHeatPower=0;}
-    if(entity.type==='radiator'){entity.airInTemperature=this.world.inBounds(entity.x,entity.y)?this.world.temperatureAt(entity.x,entity.y):this.world.environment.temperature;entity.airOutTemperature=entity.airInTemperature;entity.fanBoost=1;entity.rejectedToExterior=Boolean(entity.outdoor);}
+    if(entity.type==='radiator'){entity.airInTemperature=this.world.inBounds(entity.x,entity.y)?this.world.temperatureAt(entity.x,entity.y):this.world.environment.temperature;entity.airOutTemperature=entity.airInTemperature;entity.fanBoost=1;entity.rejectedToExterior=this.radiatorIsOutdoor(entity);}
   }
-  resetNetworkDiagnostics(network){for(const entity of network.entities){entity.thermalPower=0;if(entity.type==='exchanger'){entity.airCoolingPower=0;entity.captureMode='IDLE';}if(entity.type==='radiator')entity.rejectedToExterior=Boolean(entity.outdoor);}}
+  radiatorIsOutdoor(radiator){
+    if(!this.world.landOwnership)return Boolean(radiator.outdoor);
+    const grid=this.world.airflowSystem?.grid;if(!grid)return Boolean(radiator.outdoor);grid.syncTopology();
+    return grid.inCell(radiator.x,radiator.y)&&grid.exteriorCells[grid.cellIndex(radiator.x,radiator.y)]===1;
+  }
+  resetNetworkDiagnostics(network){for(const entity of network.entities){entity.thermalPower=0;if(entity.type==='exchanger'){entity.airCoolingPower=0;entity.captureMode='IDLE';}if(entity.type==='radiator')entity.rejectedToExterior=this.radiatorIsOutdoor(entity);}}
 
   recordTransfer(entity,joules,dt,kind='total'){
     if(this.accumulating){this.stepEnergy.set(entity,(this.stepEnergy.get(entity)||0)+joules);if(kind==='direct')this.stepCaptureEnergy.set(entity,(this.stepCaptureEnergy.get(entity)||0)+joules);if(kind==='air')this.stepAirEnergy.set(entity,(this.stepAirEnergy.get(entity)||0)+joules);return;}
@@ -140,7 +145,7 @@ export class FluidSystem {
     const world=this.world;
     for(const radiator of network?network.radiators:world.entitiesByType('radiator')){
       if(dt<=0||!isPowered(radiator))continue;
-      const {cells,weightSum}=this.radiatorCells(radiator),outdoor=Boolean(radiator.outdoor);let weightedAir=0,totalAirCapacity=0;
+      const {cells,weightSum}=this.radiatorCells(radiator),outdoor=this.radiatorIsOutdoor(radiator);let weightedAir=0,totalAirCapacity=0;
       for(const cell of cells){weightedAir+=world.temperatureAtIndex(cell.index)*cell.weight;totalAirCapacity+=world.capacityAtIndex(cell.index);}
       const airIn=outdoor?world.environment.temperature:(weightSum>0?weightedAir/weightSum:world.environment.temperature),waterIn=radiator.flowRate>MIN_FLOW?Number(radiator.inletTemperature??radiator.waterTemperature):radiator.waterTemperature,deltaT=waterIn-airIn;
       radiator.airInTemperature=airIn;

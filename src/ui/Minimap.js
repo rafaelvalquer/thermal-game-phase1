@@ -11,9 +11,11 @@ export class Minimap {
     const width=W/dpr,height=H/dpr,sx=width/w.width,sy=height/w.height;
     ctx.fillStyle='#030712';ctx.fillRect(0,0,width,height);
     for(let y=0;y<w.height;y++)for(let x=0;x<w.width;x++){
+      if(w.landOwnership&&!w.landOwnership.isOwned(x,y)){ctx.fillStyle='#0b1220';ctx.fillRect(x*sx,y*sy,Math.max(1,sx),Math.max(1,sy));continue;}
       const m=w.materialAt(x,y);if(m.id==='air')continue;
       ctx.fillStyle=m.id==='insulation'?'#a39158':m.id==='copper'?'#b86132':'#475569';ctx.fillRect(x*sx,y*sy,Math.max(1,sx),Math.max(1,sy));
     }
+    if(w.landOwnership){for(const area of w.landOwnership.areas.values()){ctx.strokeStyle=w.landOwnership.isAreaOwned(area.id)?'#22d3ee':'#64748b';ctx.lineWidth=1;ctx.setLineDash(w.landOwnership.isAreaOwned(area.id)?[]:[2,2]);ctx.strokeRect(area.x*sx,area.y*sy,area.width*sx,area.height*sy);}ctx.setLineDash([]);}
     for(const e of w.entities){
       if(!e.isHeatMachine)continue;
       ctx.fillStyle=e.temperature>60?'#ef4444':e.temperature>40?'#f59e0b':'#22d3ee';ctx.fillRect(e.x*sx-1,e.y*sy-1,3,3);

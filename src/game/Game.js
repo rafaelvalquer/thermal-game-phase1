@@ -17,6 +17,8 @@ import { TechnicianSystem } from '../simulation/TechnicianSystem.js';
 import { technicianAt } from '../entities/Technician.js';
 import { PerformanceMonitor } from '../performance/PerformanceMonitor.js';
 import { BrowserPerformanceBenchmark } from '../dev/BrowserPerformanceBenchmark.js';
+import { DirtyStateTracker } from '../bridge/DirtyStateTracker.js';
+import { WorldSnapshot } from '../bridge/WorldSnapshot.js';
 
 export class Game {
   constructor(canvas,level,campaign,{saveSystem=null}={}){
@@ -33,12 +35,13 @@ export class Game {
     if(this.datacenter)this.staff.payrollDay=this.datacenter.state.lastSettledDay||0;
     this.datacenter?.attach(this.build,this.sim);
     this.camera=new Camera();this.renderer=new Renderer(canvas,this.camera,{monitor:this.performance});this.renderer.buildSystem=this.build;this.renderer.zones=this.level.zones||[];this.renderer.level=this.level;
+    this.viewMode='2d';this.threeView=null;this.threeViewPromise=null;this.disposed=false;this.worldViewBridge=new DirtyStateTracker();this.worldViewBridge.observe(this.world);this.worldSnapshot=null;this.worldSnapshotElapsed=Infinity;this.viewCanvas=canvas;
     if(this.datacenter)this.datacenter.monitor=this.performance;
     this.assetsReady=this.renderer.preloadSprites();
     this.input=new InputManager(canvas);this.mouse=new MouseController(canvas,this.camera,this.renderer.tile);this.hover={x:0,y:0};
-    this.setupInput();this.sim.initialize();this.ui=new UIManager(this,campaign);this.setSpeed(1);this.centerCamera();
+    this.setupInput();this.sim.initialize();this.ui=new UIManager(this,campaign);this.setSpeed(1);
     document.querySelector('#benchmarkDownload')?.addEventListener('click',()=>this.browserBenchmark?.download());
-    this.camera.setBounds(this.world.width*this.renderer.tile,this.world.height*this.renderer.tile);
+    this.camera.setBounds(this.datacenter?.land?this.ui.cameraLandBounds():{x:0,y:0,width:this.world.width*this.renderer.tile,height:this.world.height*this.renderer.tile});this.centerCamera();
     this.loop=new GameLoop(dt=>this.update(dt),()=>this.render(),{monitor:this.performance});
   }
 
@@ -46,9 +49,10 @@ export class Game {
     this.pipeDrag=null;this.demolishDrag=null;
     this.renderer.pipePreview=()=>this.pipeDrag?.path||null;
     this.mouse.onMove=grid=>{this.hover=grid;this.renderer.hover=grid;if(this.pipeDrag)this.pipeDrag.path=extendPipePath(this.pipeDrag.path,grid);if(this.demolishDrag){this.demolishDrag.end={...grid};this.renderer.demolishSelection=this.demolishDrag;}};
-    this.mouse.onPrimaryDown=grid=>{if(technicianAt(this.world,grid.x,grid.y))return;if(this.build.selected==='demolish'){this.demolishDrag={start:{...grid},end:{...grid}};this.renderer.demolishSelection=this.demolishDrag;return;}if(this.build.selected==='pipe'||DUCT_TOOLS.has(this.build.selected)||STRUCTURE_TOOLS.has(this.build.selected))this.pipeDrag={path:[{x:grid.x,y:grid.y}],tool:this.build.selected};};
+    this.mouse.onPrimaryDown=grid=>{if(this.ui?.landPanel?.mode||technicianAt(this.world,grid.x,grid.y))return;if(this.build.selected==='demolish'){this.demolishDrag={start:{...grid},end:{...grid}};this.renderer.demolishSelection=this.demolishDrag;return;}if(this.build.selected==='pipe'||DUCT_TOOLS.has(this.build.selected)||STRUCTURE_TOOLS.has(this.build.selected))this.pipeDrag={path:[{x:grid.x,y:grid.y}],tool:this.build.selected};};
     this.mouse.onPrimary=grid=>{
       if(!this.world.inBounds(grid.x,grid.y))return;
+      if(this.ui?.landPanel?.mode){if(!this.ui.selectLandAt(grid.x,grid.y))this.toast('Esta área não faz parte de uma expansão.');return;}
       if(technicianAt(this.world,grid.x,grid.y)){this.ui?.inspectAt(grid.x,grid.y);return;}
       if(this.build.selected==='demolish')return;
       if(this.build.selected==='pipe'||DUCT_TOOLS.has(this.build.selected)||STRUCTURE_TOOLS.has(this.build.selected))return;
@@ -70,43 +74,57 @@ export class Game {
       this.pipeDrag=null;
       if(result.failed)this.toast(`${result.placed} ${STRUCTURE_TOOLS.has(tool)?'blocos':'trechos'} instalados; ${result.failed} posição(ões) ignorada(s)`);
     };
-    this.mouse.onSecondary=()=>{this.pipeDrag=null;this.demolishDrag=null;this.renderer.demolishSelection=null;this.build.select(null);};
+    this.mouse.onSecondary=()=>{this.pipeDrag=null;this.demolishDrag=null;this.renderer.demolishSelection=null;if(this.ui?.landPanel?.mode){this.ui.landPanel.setMode(false);return;}this.build.select(null);};
     addEventListener('keydown',e=>{
       if(window.__thermalLab!==this)return;
       if(e.repeat)return;
+      if(this.viewMode!=='2d'){
+        if(e.code==='Space'){e.preventDefault();this.sim.togglePause();}
+        return;
+      }
       if(e.code==='Space'){e.preventDefault();this.sim.togglePause();}
       if(e.code==='KeyR')this.build.rotate();
       if(e.code==='KeyI'&&DUCT_TOOLS.has(this.build.selected))this.toast('Isolamento: '+(this.build.toggleDuctInsulation()?'ativado':'padrão'));
       if(e.code==='KeyM'&&this.build.selected==='coolingUnit'){const model=this.build.cycleCoolingUnitModel();this.toast('Modelo '+model.label+' · '+(model.ratedCoolingCapacity/1000)+' kW · $'+model.cost);}
       if(e.code==='KeyM'&&this.build.selected?.startsWith('computeRack')){const model=this.build.cycleComputeRackModel();const capacity=model.specialization==='cpu'?model.capacity.vcpu+' vCPU · '+model.capacity.ramGB+' GB RAM':model.specialization==='gpu'?model.capacity.gpuCount+' GPUs · '+model.capacity.vramPerGpuGB+' GB/GPU':model.capacity.storageTB+' TB';this.toast('Modelo '+model.label+' · '+capacity+' · '+(model.maxPowerW/1000)+' kW · R$ '+model.cost.toLocaleString('pt-BR'));}
       if(e.code==='F3'){e.preventDefault();this.renderer.debug=!this.renderer.debug;}
-      if(e.code==='Escape'){this.pipeDrag=null;this.demolishDrag=null;this.renderer.demolishSelection=null;this.build.select(null);}
+      if(e.code==='Escape'){this.pipeDrag=null;this.demolishDrag=null;this.renderer.demolishSelection=null;if(this.ui?.landPanel?.mode)this.ui.landPanel.setMode(false);else this.build.select(null);}
       if(['Digit1','Digit2','Digit4','Digit8'].includes(e.code))this.setSpeed(Number(e.code.at(-1)));
     });
   }
 
   centerCamera(){
-    const r=this.canvas.getBoundingClientRect(),worldW=this.world.width*this.renderer.tile,worldH=this.world.height*this.renderer.tile;
+    const r=this.canvas.getBoundingClientRect(),tile=this.renderer.tile,b=this.datacenter?.land?.bounds({margin:2})||{x:0,y:0,width:this.world.width,height:this.world.height},worldW=b.width*tile,worldH=b.height*tile;
     const fit=Math.min(r.width/worldW,r.height/worldH);
     this.camera.zoom=clamp(fit*.92,.45,1.15);
-    this.camera.x=Math.max(0,(worldW-r.width/this.camera.zoom)/2);
-    this.camera.y=Math.max(0,(worldH-r.height/this.camera.zoom)/2);
+    this.camera.x=b.x*tile+Math.max(0,(worldW-r.width/this.camera.zoom)/2);
+    this.camera.y=b.y*tile+Math.max(0,(worldH-r.height/this.camera.zoom)/2);
   }
 
   setSpeed(v){this.sim.setSpeed(v);this.ui?.setSpeedButtons(v);}
 
   update(dt){
-    const speed=360*dt;
-    if(this.input.down('KeyW'))this.camera.move(0,-speed);
-    if(this.input.down('KeyS'))this.camera.move(0,speed);
-    if(this.input.down('KeyA'))this.camera.move(-speed,0);
-    if(this.input.down('KeyD'))this.camera.move(speed,0);
-    const r=this.canvas.getBoundingClientRect();this.camera.constrain(r.width,r.height);
+    if(this.viewMode==='2d'){
+      const speed=360*dt;
+      if(this.input.down('KeyW'))this.camera.move(0,-speed);
+      if(this.input.down('KeyS'))this.camera.move(0,speed);
+      if(this.input.down('KeyA'))this.camera.move(-speed,0);
+      if(this.input.down('KeyD'))this.camera.move(speed,0);
+      const r=this.canvas.getBoundingClientRect();this.camera.constrain(r.width,r.height);
+    }
     this.sim.update(dt);this.performance.begin('uiMs');this.ui?.update(dt);this.performance.end('uiMs');this.datacenter?.updateAutoSave(dt);
+    if(this.viewMode!=='2d'){
+      this.worldSnapshotElapsed+=dt;this.worldViewBridge.observe(this.world);
+      if(!this.worldSnapshot||this.worldViewBridge.isDirty()||this.worldSnapshotElapsed>=.2){
+        this.worldSnapshot=WorldSnapshot.capture(this.world,this.sim,this.datacenter,{version:this.worldViewBridge.version});
+        this.worldViewBridge.setSnapshot(this.worldSnapshot);this.worldSnapshotElapsed=0;
+      }
+    }
   }
 
   render(){
-    this.renderer.draw(this.world,this.sim);
+    if(this.viewMode==='2d')this.renderer.draw(this.world,this.sim);
+    else if(this.threeView)this.threeView.update(this.worldSnapshot||WorldSnapshot.capture(this.world,this.sim,this.datacenter,{version:this.worldViewBridge.version}),1/60);
     const report=this.browserBenchmark?.frame();
     if(report){
       const output=document.querySelector('#benchmarkOutput'),download=document.querySelector('#benchmarkDownload');
@@ -115,6 +133,42 @@ export class Game {
       if(download)download.disabled=false;
     }
   }
+
+  setViewMode(mode){
+    const next=mode==='walk'?'walk':'2d';
+    if(next==='2d'){
+      this.viewMode='2d';this.canvas.hidden=false;this.threeView?.setVisible(false);this.canvas.focus?.();return true;
+    }
+    if(!this.level.datacenterSandbox){this.toast('A visualização 3D está disponível no Data Center Sandbox.');return false;}
+    if(!this.threeView)return this.ensureThreeView().then(created=>{
+      if(!created||this.disposed)return false;
+      this.activateThreeView(next);return true;
+    });
+    this.activateThreeView(next);return true;
+  }
+
+  async ensureThreeView(){
+    if(this.threeView)return true;
+    if(this.threeViewPromise)return this.threeViewPromise;
+    this.threeViewPromise=import('../rendering/three/ThreeView.js').then(({ThreeView})=>{
+      if(this.disposed)return false;
+      const host=document.querySelector('.viewport-wrap');
+      this.worldSnapshot=WorldSnapshot.capture(this.world,this.sim,this.datacenter,{version:this.worldViewBridge.version});this.worldViewBridge.setSnapshot(this.worldSnapshot);this.worldSnapshotElapsed=0;
+        this.threeView=new ThreeView(host,{world:this.world,simulation:this.sim,datacenter:this.datacenter,snapshot:this.worldSnapshot,onMessage:message=>this.toast(message),onSelect:(runtimeId,record)=>{
+        const entity=this.world.getEntityById?.(Number(runtimeId))||this.world.entities?.find(item=>String(item.id)===String(runtimeId));
+        if(entity)this.ui?.inspectEntity(entity,record?.x||0,record?.y||0);else if(record)this.ui?.inspectEntity(null,record.x,record.y);
+      }});
+      return !this.threeView.error;
+    }).catch(error=>{this.toast('Falha ao carregar a visualização 3D: '+error.message);return false;});
+    const result=await this.threeViewPromise;this.threeViewPromise=null;return result;
+  }
+
+  activateThreeView(next){
+    this.viewMode=next;this.canvas.hidden=true;this.threeView.setMode(next);this.threeView.setVisible(true);
+    if(this.worldSnapshot)this.threeView.update(this.worldSnapshot,1/60);
+  }
+
+  dispose(){this.disposed=true;this.loop?.stop();this.threeView?.dispose();this.threeView=null;}
 
   toast(text){
     const t=document.querySelector('#toast');if(!t)return;t.textContent=text;t.classList.add('show');

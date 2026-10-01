@@ -34,6 +34,24 @@ export class PlacementValidator {
   }
 
   canPlace(tool,x,y,{additionalEntities=[],additionalUtilities=[],direction={x:1,y:0},footprintLength=1}={}){
+    return this.validatePlacement(tool,x,y,{additionalEntities,additionalUtilities,direction,footprintLength}).ok;
+  }
+
+  validatePlacement(tool,x,y,{additionalEntities=[],additionalUtilities=[],direction={x:1,y:0},footprintLength=1}={}){
+    const w=this.world,fail=reason=>({ok:false,reason});if(!w.inBounds(x,y))return fail('OUT_OF_BOUNDS');
+    const footprint=COOLING_TOOLS.has(tool)?entityFootprintCells({type:'coolingUnit',x,y,direction,footprintLength}):[{x,y}];
+    if(footprint.some(cell=>!w.inBounds(cell.x,cell.y)))return fail('OUT_OF_BOUNDS');
+    if(tool!=='demolish'&&w.landOwnership&&!w.landOwnership.ownsFootprint(footprint))return fail('LAND_LOCKED');
+    if(!this.canPlacePhysical(tool,x,y,{additionalEntities,additionalUtilities,direction,footprintLength})){
+      const entity=footprint.some(cell=>w.entityAt(cell.x,cell.y)||additionalEntities.some(e=>entityFootprintCells(e).some(item=>item.x===cell.x&&item.y===cell.y)));
+      const utility=footprint.some(cell=>w.utilityAt(cell.x,cell.y)||additionalUtilities.some(item=>item.x===cell.x&&item.y===cell.y));
+      const solid=footprint.some(cell=>!w.isAir(cell.x,cell.y));
+      return fail(entity?'OCCUPIED':utility?'UTILITY_CONFLICT':solid?'OCCUPIED':'INVALID_CONNECTION');
+    }
+    return {ok:true,reason:null};
+  }
+
+  canPlacePhysical(tool,x,y,{additionalEntities=[],additionalUtilities=[],direction={x:1,y:0},footprintLength=1}={}){
     const w=this.world;if(!w.inBounds(x,y))return false;
     if(tool==='demolish')return Boolean(w.entityAt(x,y))||Boolean(w.utilityAt(x,y))||!w.isAir(x,y);
     if(['wall','insulation','copper'].includes(tool)){
@@ -54,7 +72,7 @@ export class PlacementValidator {
     if(tool==='serverRack'||tool.startsWith('computeRack')){
       if(tool.startsWith('computeRack')&&!w.datacenterConfig)return false;
       const hall=w.datacenterConfig?.serverHall;
-      const inHall=!hall||(x>=hall.x&&y>=hall.y&&x<hall.x+hall.width&&y<hall.y+hall.height);
+      const inHall=w.datacenterConfig?.land||!hall||(x>=hall.x&&y>=hall.y&&x<hall.x+hall.width&&y<hall.y+hall.height);
       return inHall&&w.isAir(x,y)&&!w.entityAt(x,y)&&!w.utilityAt(x,y);
     }
     if(tool==='supplyVent'&&w.thermalSystems?.simpleCooling&&this.adjacentCoolingDuctComponents(x,y).length>1)return false;

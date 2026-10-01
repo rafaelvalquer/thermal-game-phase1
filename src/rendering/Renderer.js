@@ -26,7 +26,7 @@ export class Renderer {
   constructor(canvas,camera,{tilePixels=14,monitor=null}={}){
     this.canvas=canvas;this.ctx=canvas.getContext('2d');this.camera=camera;this.tile=tilePixels;
     this.monitor=monitor;
-    this.mode='normal';this.debug=false;this.hover=null;this.buildSystem=null;this.selectedEntity=null;this.highlightedContractId=null;this.level=null;
+    this.mode='normal';this.debug=false;this.hover=null;this.buildSystem=null;this.selectedEntity=null;this.highlightedContractId=null;this.highlightedContractEntityIds=new Set();this.level=null;
     this.tileRenderer=new TileRenderer();this.heatmap=new HeatmapRenderer();this.airflow=new AirflowRenderer();this.pressure=new PressureRenderer();
     this.staticMap=new StaticMapCache();
     this.entities=new EntityRenderer();this.effects=new EffectsRenderer();
@@ -66,6 +66,7 @@ export class Renderer {
       if(this.mode==='normal')this.staticMap.draw(scene,world,this.tile,this.zones||[],this.tileRenderer,bounds);
       else this.tileRenderer.draw(scene,world,this.tile,this.zones||[],this.mode,bounds);
       this.monitor?.end('renderTilesMs');
+      if(world.landOwnership)this.drawLandOwnership(scene,world);
       // Draw utility ducts before equipment so a hydraulic pipe crossing this
       // tile remains visually on top without joining the air network.
       if(this.mode!=='thermal'){this.monitor?.begin('renderDuctsMs');this.coolingDucts.draw(scene,world,this.tile,this.mode,this.camera.zoom,bounds);this.monitor?.end('renderDuctsMs');this.monitor?.set('renderedDucts',this.coolingDucts.stats?.renderedDucts||0);}
@@ -83,7 +84,7 @@ export class Renderer {
       this.monitor?.begin('renderEffectsMs');
       this.effects.draw(scene,world,this.tile,this.mode,time,bounds);
       this.monitor?.end('renderEffectsMs');
-      if(this.buildSystem?.selected)this.drawBuildPreview(scene,world,uiTime);
+      if(this.buildSystem?.selected&&!this.landExpansionMode)this.drawBuildPreview(scene,world,uiTime);
       this.drawRecentPlacement(scene,uiTime);
       scene.restore();
 
@@ -150,6 +151,17 @@ export class Renderer {
 
   preloadSprites(){return this.entities.preloadSprites();}
 
+  drawLandOwnership(ctx,world){
+    const land=world.landOwnership,t=this.tile,available=new Set(land.availableExpansions().filter(item=>item.available).map(item=>item.id));ctx.save();
+    for(const area of land.areas.values()){
+      const x=area.x*t,y=area.y*t,w=area.width*t,h=area.height*t,owned=land.isAreaOwned(area.x,area.y),active=this.landExpansionMode;
+      const hovered=active&&this.hover&&this.hover.x>=area.x&&this.hover.y>=area.y&&this.hover.x<area.x+area.width&&this.hover.y<area.y+area.height;
+      if(!owned){ctx.fillStyle=active?(hovered?'rgba(250,204,21,.22)':available.has(area.id)?'rgba(34,211,238,.12)':'rgba(2,6,23,.38)'):'rgba(2,6,23,.19)';ctx.fillRect(x,y,w,h);}
+      ctx.strokeStyle=owned?'rgba(103,232,249,.62)':active&&available.has(area.id)?'rgba(250,204,21,.8)':'rgba(100,116,139,.55)';ctx.lineWidth=Math.max(1.5,2/this.camera.zoom);ctx.setLineDash(owned?[]:[7/this.camera.zoom,5/this.camera.zoom]);ctx.strokeRect(x,y,w,h);ctx.setLineDash([]);
+      if(active){ctx.fillStyle=this.landExpansionPanel?.selected===area.id||hovered?'#fef08a':owned?'#a5f3fc':available.has(area.id)?'#fde68a':'#94a3b8';ctx.font='800 '+Math.max(9,11/this.camera.zoom)+'px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(area.name,x+w/2,y+h/2-7);ctx.font='700 '+Math.max(8,9/this.camera.zoom)+'px ui-monospace,monospace';ctx.fillText(owned?'ADQUIRIDO':available.has(area.id)?'R$ '+(area.cost||0).toLocaleString('pt-BR'):'BLOQUEADO',x+w/2,y+h/2+8);}
+    }ctx.restore();
+  }
+
   drawBuildPreview(ctx,world,time){
     const p=this.hover,tool=this.buildSystem.selected;
     if(tool==='demolish'&&this.demolishSelection){
@@ -201,7 +213,7 @@ export class Renderer {
       }
       return;
     }
-    const valid=this.buildSystem.canPlace(tool,p.x,p.y)&&this.buildSystem.canAfford(tool),c=BUILD_CATALOG[tool];
+    const placement=this.buildSystem.placementResult(tool,p.x,p.y),valid=placement.ok,c=BUILD_CATALOG[tool];
     if(c?.kind==='material'){
       ctx.save();ctx.globalAlpha=valid?.48:.24;
       this.tileRenderer.material(ctx,world.registry.get(c.material),p.x,p.y,p.x*this.tile,p.y*this.tile,this.tile);
@@ -272,7 +284,8 @@ export class Renderer {
 
   drawContractRackHighlights(ctx,world,time){
     if(!this.highlightedContractId)return;
-    for(const rack of world.entities)if(rack.type==='serverRack'&&rack.contractId===this.highlightedContractId)this.outlineEntity(ctx,rack,'#38bdf8',time,1.55);
+    const ids=this.highlightedContractEntityIds;
+    for(const rack of world.entities)if(ids?.size?ids.has(rack.id):rack.type==='serverRack'&&rack.contractId===this.highlightedContractId)this.outlineEntity(ctx,rack,'#38bdf8',time,1.55);
   }
 
   drawFailureAlerts(ctx,world,simulation,time){

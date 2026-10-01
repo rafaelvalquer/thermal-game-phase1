@@ -1,0 +1,67 @@
+/* Keep every simulation control inside the top bar at each supported width. */
+.shell{grid-template-rows:86px minmax(0,1fr)}
+.topbar{grid-template-columns:minmax(185px,205px) minmax(100px,1fr) minmax(350px,420px) auto auto auto;gap:10px;padding:7px 12px}
+.topbar>.brand{grid-column:1;grid-row:1}
+.topbar>.mission-box{grid-column:2;grid-row:1;min-width:0}
+.topbar>.top-telemetry{grid-column:3;grid-row:1;min-width:0}
+.topbar>#contractCenterButton{grid-column:4;grid-row:1;justify-self:end}
+.topbar>.land-trigger{grid-column:5;grid-row:1;justify-self:end}
+.topbar>.sim-controls{grid-column:6;grid-row:1;justify-self:end}
+.sim-controls{min-width:0;gap:5px;padding:5px;border:1px solid #1c3448;border-radius:9px;background:linear-gradient(145deg,#081725,#07111c);box-shadow:inset 0 0 12px #0891b20b}
+.sim-controls>span:first-child{min-width:0;padding:0 4px;font-size:12px;white-space:nowrap}
+.sim-controls #speedLabel{min-width:19px;text-align:center}
+.sim-controls button{flex:none;padding:6px 8px}
+.speed-group{flex:none}
+.speed-group button{min-width:31px;padding-inline:6px}
+.sim-controls #exitBtn{width:32px;padding-inline:0;font-size:15px}
+.clock-compact{display:none}
+.sim-controls button:focus-visible,.speed-group button:focus-visible{position:relative;z-index:1;outline:2px solid #67e8f9;outline-offset:2px}
+
+@media(max-width:1319px) and (min-width:841px){
+  .shell{grid-template-rows:104px minmax(0,1fr)}
+  .topbar{height:104px;grid-template-columns:170px minmax(80px,1fr) auto auto auto;grid-template-rows:38px 52px;gap:2px 9px;padding:5px 10px}
+  .topbar>.brand{grid-column:1;grid-row:1}
+  .topbar>.mission-box{grid-column:2;grid-row:1;text-align:left}
+  .topbar>#contractCenterButton{grid-column:3;grid-row:1}
+  .topbar>.land-trigger{grid-column:4;grid-row:1}
+  .topbar>.sim-controls{grid-column:5;grid-row:1}
+  .topbar>.top-telemetry{grid-column:1/-1;grid-row:2;height:52px}
+  .mission-box .eyebrow{font-size:7px;letter-spacing:.1em}
+  .mission-box strong{font-size:10px}
+  .mission-box #rotateHint{font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sim-controls{gap:4px;padding:4px}
+  .sim-controls>span:first-child{font-size:11px}
+  .sim-controls button{padding:5px 6px}
+  .speed-group button{min-width:28px;padding-inline:5px}
+}
+
+@media(max-width:840px){
+  .shell{grid-template-columns:minmax(0,1fr);grid-template-rows:132px minmax(0,1fr)}
+  .topbar{display:grid;grid-column:1/-1;height:132px;grid-template-columns:minmax(0,1fr) auto auto;grid-template-rows:32px 40px 48px;align-content:center;gap:2px 7px;padding:4px 7px}
+  .topbar>.brand{grid-column:1;grid-row:1}
+  .topbar>.mission-box{display:none}
+  .topbar>#contractCenterButton{grid-column:2;grid-row:1;min-height:29px}
+  .topbar>.land-trigger{grid-column:3;grid-row:1;min-height:29px}
+  .topbar>.sim-controls{display:flex;grid-column:1/-1;grid-row:2;justify-self:stretch;justify-content:center;width:100%;min-width:0;padding:3px 5px;gap:4px}
+  .topbar>.top-telemetry{grid-column:1/-1;grid-row:3;height:46px;gap:5px}
+  .sim-controls>span:first-child{font-size:11px;min-width:0}
+  .sim-controls button{padding:5px 7px;font-size:10px}
+  .speed-group button{min-width:27px;padding-inline:5px}
+  .sim-controls #speedLabel{display:none}
+  .shell .left-panel,.shell .right-panel{top:132px;max-height:calc(100% - 144px)}
+  .shell .viewport-wrap{grid-row:2;grid-column:1}
+  .shell #game{inset:0;width:100%;height:100%}
+}
+
+@media(max-width:520px){
+  .topbar{padding-inline:5px}
+  .topbar>.sim-controls{justify-content:space-between;gap:2px;padding:3px}
+  .sim-controls>span:first-child{font-size:10px}
+  .sim-controls button{padding:4px 5px;font-size:9px}
+  .speed-group button{min-width:21px;padding-inline:3px}
+  .sim-controls #exitBtn{width:28px}
+  .clock-full{display:none}
+  .clock-compact{display:inline}
+}
+
+@media(prefers-reduced-motion:reduce){.sim-controls button{transition:none}}

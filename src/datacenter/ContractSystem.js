@@ -56,6 +56,13 @@ export class ContractSystem {
       const reputation=state.reputation??50,eligible=this.generator.eligibleClients(reputation),band=MARKET_BANDS.findLast(item=>reputation>=item.minimum)||MARKET_BANDS[0];
       const initialCount=Math.min(band.maxOffers,eligible.length);
       for(const template of eligible.slice(0,initialCount))this.addOffer(template,day);
+      const initialComputeProducts=['cloud-cpu',...(reputation>=20?['cloud-storage']:[])];
+      const expirationRange=reputationTier(reputation).expirationRange;
+      for(const productId of initialComputeProducts){
+        const offer=this.computeGenerator.generate({id:'offer-'+(++state.offerSequence),day,reputation,
+          expiresIn:this.integer(expirationRange[0],expirationRange[1]),productId});
+        if(offer)state.offers.push(offer);
+      }
       state.marketInitialized=true;
     }
     state.lastMarketGeneratedDay??=day;
@@ -74,6 +81,7 @@ export class ContractSystem {
     const id='offer-'+(++this.state.offerSequence),reputation=this.state.reputation??50;
     const duration=reputationTier(reputation).expirationRange;
     const offer=this.generator.create(template,{id,day,reputation,expiresIn:this.integer(duration[0],duration[1]),vary});
+    offer.modality='colocation';
     this.state.offers.push(offer);return offer;
   }
   generateRenewalOffer(contract,day,reputation=this.state.reputation){
@@ -179,7 +187,7 @@ export class ContractSystem {
       const physicalPlan=this.computePreflight?.(offer);if(physicalPlan&&!physicalPlan.ok)return physicalPlan;
       const plan=(this.computePlanner||new ContractCapacityPlanner(this.computeAllocations)).analyze(offer);
       if(!plan.ok){const missing=plan.missing.map(item=>item.resource==='GPU'?`${item.missing} GPU(s) com ${item.minVramGB} GB por dispositivo`:item.resource==='Storage'?`${item.missing} TB de Storage`:`${item.missing} ${item.resource}`).join(', ');return {...plan,reason:'Capacidade insuficiente. Faltam '+missing+'.'};}
-      const contract={...offer,offerId:offer.id,offerExpiresDay:offer.expiresDay,isNew:false,status:'active',acceptedDay:day,activeFromDay:day,
+      const contract={...offer,allocations:undefined,commercialResourceSnapshot:undefined,totalRecurringRevenue:0,totalSetupRevenue:0,totalPenalties:0,lastBilledDay:null,offerId:offer.id,offerExpiresDay:offer.expiresDay,isNew:false,status:'active',acceptedDay:day,activeFromDay:day,
         expiresDay:day+offer.termDays,installedRacks:0,dailyViolation:false,consecutiveViolationDays:0,violationDays:0,
         activeSeconds:0,uptimeSeconds:0,downtimeSeconds:0,dailyActiveSeconds:0,dailyUptimeSeconds:0,dailyDowntimeSeconds:0,
         finesPaid:0,completedDay:null,cancelReason:null};
@@ -191,7 +199,7 @@ export class ContractSystem {
     this.state.offers.splice(index,1);
     const renewal=offer.renewalContractId?this.state.contracts.find(item=>item.id===offer.renewalContractId):null;
     if(renewal)renewal.renewalAcceptedDay=day;
-    const contract={...offer,offerId:offer.id,offerExpiresDay:offer.expiresDay,isNew:false,status:'installing',acceptedDay:day,expiresDay:day+offer.termDays,installedRacks:0,
+    const contract={...offer,allocations:undefined,commercialResourceSnapshot:undefined,totalRecurringRevenue:0,totalSetupRevenue:0,totalPenalties:0,lastBilledDay:null,offerId:offer.id,offerExpiresDay:offer.expiresDay,isNew:false,status:'installing',acceptedDay:day,expiresDay:day+offer.termDays,installedRacks:0,
       dailyViolation:false,consecutiveViolationDays:0,violationDays:0,activeSeconds:0,uptimeSeconds:0,downtimeSeconds:0,
       dailyActiveSeconds:0,dailyUptimeSeconds:0,dailyDowntimeSeconds:0,
       finesPaid:0,completedDay:null,cancelReason:null};

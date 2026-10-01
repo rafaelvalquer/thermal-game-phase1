@@ -47,10 +47,17 @@ export class BuildSystem {
   isIndustrialCooling(tool){return tool==='industrialCoolingUnit'||tool==='coolingUnit'&&this.coolingUnitModel==='industrial';}
   placementCells(tool,x,y){const length=this.isIndustrialCooling(tool)?2:1,d=this.direction();return Array.from({length},(_,offset)=>({x:x+d.x*offset,y:y+d.y*offset}));}
   canPlace(tool,x,y){const footprintLength=this.isIndustrialCooling(tool)?2:1;return this.validator.canPlace(tool,x,y,{direction:this.direction(),footprintLength});}
+  placementResult(tool=this.selected,x=0,y=0){
+    const footprintLength=this.isIndustrialCooling(tool)?2:1,result=this.validator.validatePlacement(tool,x,y,{direction:this.direction(),footprintLength});
+    if(!result.ok)return result;
+    if(tool!=='demolish'&&!this.canAfford(tool))return {ok:false,reason:'INSUFFICIENT_FUNDS'};
+    return result;
+  }
   canAfford(tool){const c=this.catalog[tool],compute=this.computeRackModel(tool),cost=tool==='coolingUnit'?COOLING_UNIT_MODELS[this.coolingUnitModel].cost:compute?.cost??c?.cost;return c&&this.budget>=cost&&(this.inventory[tool]??0)>0;}
 
   place(x,y,{refreshCooling=true}={}){
-    const tool=this.selected;if(!tool||!this.catalog[tool]||!this.canPlace(tool,x,y))return {ok:false,reason:'Posição inválida ou excede as conexões permitidas'};
+    const tool=this.selected;if(!tool||!this.catalog[tool])return {ok:false,reason:'INVALID_TOOL'};
+    const placement=this.placementResult(tool,x,y);if(!placement.ok){const messages={OUT_OF_BOUNDS:'Fora dos limites do mapa.',LAND_LOCKED:'Área não adquirida. Compre uma expansão para construir aqui.',OCCUPIED:'Posição ocupada ou incompatível.',UTILITY_CONFLICT:'Conflito com uma conexão existente.',INSUFFICIENT_FUNDS:'Dinheiro insuficiente para esta construção.',INVALID_CONNECTION:'Conexão ou posicionamento inválido.'};return {ok:false,code:placement.reason,reason:messages[placement.reason]||'Posição inválida.'};}
     if(tool==='demolish')return this.demolish(x,y);
     if(!this.canAfford(tool))return {ok:false,reason:'Sem orçamento, estoque ou ferramenta bloqueada'};
     if(tool==='serverRack'&&!this.world.datacenter?.nextRackPlacement())return {ok:false,reason:'Aceite um contrato para instalar os racks solicitados.'};

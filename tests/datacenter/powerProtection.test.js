@@ -248,7 +248,7 @@ test('dashboard exposes persistent cuts and binds manual rearm',()=>{
   let click;
   const root={innerHTML:'',querySelectorAll:()=>[],querySelector:selector=>selector==='[data-rearm]'?{addEventListener:(_,fn)=>{click=fn;}}:null};
   const messages=[],panel=new DataCenterDashboard(root,dc,message=>messages.push(message));
-  panel.update();assert.match(root.innerHTML,/CORTE SELETIVO/);assert.match(root.innerHTML,/Demanda solicitada/);
+  panel.update();assert.match(root.innerHTML,/CORTE SELETIVO/);assert.match(root.innerHTML,/Consumo atual da rede/);
   assert.match(root.innerHTML,/Rearmar energia/);assert.equal(typeof click,'function');
   click();assert.match(messages[0],/0 racks religados; 1 continuam/);
   dc.upgradePower(250);click();assert.equal(dc.powerGrid.blockedRacks,0);
@@ -258,7 +258,7 @@ test('dashboard shows the physical countdown while overload is still tolerated',
   const {world,dc,sim}=fixture();rack(world,105);sim.update(.25);
   const root={innerHTML:'',querySelectorAll:()=>[],querySelector:()=>null};
   new DataCenterDashboard(root,dc).update();
-  assert.match(root.innerHTML,/SOBRECARGA/);assert.match(root.innerHTML,/Corte em 4\.8 s/);
+  assert.match(root.innerHTML,/SOBRECARGA/);assert.match(root.innerHTML,/corte seletivo em 4\.8 s de simulação/);
   assert.doesNotMatch(root.innerHTML,/data-rearm/);
 });
 

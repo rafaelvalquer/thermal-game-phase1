@@ -12,11 +12,14 @@
     "benchmark:technicians": "node scripts/benchmark-technicians.js",
     "benchmark:smoke": "node scripts/benchmark-smoke.js",
     "preview": "vite preview --host 0.0.0.0",
-    "test": "node --test",
+    "test": "node --experimental-test-isolation=none --test",
     "balance:airflow": "node scripts/balance-airflow.js",
     "sprites:generate": "node scripts/generate-sprite-assets.js"
   },
   "devDependencies": {
     "vite": "^7.1.7"
+  },
+  "dependencies": {
+    "three": "^0.186.1"
   }
 }

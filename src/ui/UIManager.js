@@ -9,6 +9,8 @@ import { formatPower } from '../utils/MathUtils.js';
 import { isPowered, powerEquipment } from '../simulation/PowerState.js';
 import { technicianAt } from '../entities/Technician.js';
 import { UIScheduler } from './UIScheduler.js';
+import { ContractCenterModal } from './datacenter/ContractCenterModal.js';
+import { LandExpansionPanel } from './datacenter/LandExpansionPanel.js';
 
 const MODE_HELP={
   normal:'Operação · zonas, equipamentos e efeitos físicos',
@@ -39,7 +41,11 @@ export class UIManager {
     this.objectives=new ObjectivePanel(document.querySelector('#objectives'));
     this.minimap=new Minimap(document.querySelector('#minimap'),game);
     this.debriefing=new MissionDebriefing(game,campaign,()=>window.__thermalShowCampaign?.(),level=>window.__thermalStartLevel?.(level));
-    this.datacenterDashboard=game.datacenter?new DataCenterDashboard(document.querySelector('#datacenterDashboard'),game.datacenter,message=>game.toast(message),()=>this.openDailyReport(true),(contractId,racks,focus)=>this.selectContractRacks(contractId,racks,focus),()=>this.forceDatacenterUiRefresh()):null;
+    this.datacenterDashboard=game.datacenter?new DataCenterDashboard(document.querySelector('#datacenterDashboard'),game.datacenter,message=>game.toast(message),()=>this.openDailyReport(true),tab=>this.openContractCenter(tab),()=>this.forceDatacenterUiRefresh()):null;
+    this.contractCenter=game.datacenter?new ContractCenterModal({root:document.querySelector('#contractCenter'),trigger:document.querySelector('#contractCenterButton'),manager:game.datacenter,
+      onRequestOpen:tab=>this.openContractCenter(tab),onRequestClose:()=>this.closeContractCenter(),onMessage:message=>game.toast(message),
+      onLocate:(contract,racks)=>{this.closeContractCenter();this.selectContractRacks(contract.id,racks,true);},onChange:(type,id)=>{if(type==='contract-ended'&&game.renderer.highlightedContractId===id)this.selectContractRacks(null,[],false);this.forceDatacenterUiRefresh();}}):null;
+    this.landPanel=game.datacenter?.land?new LandExpansionPanel({root:document.querySelector('#landExpansionLayer'),manager:game.datacenter,onMessage:message=>game.toast(message),onModeChange:active=>{game.renderer.landExpansionMode=active;game.renderer.landExpansionPanel=this.landPanel;game.camera.setBounds(active?{x:0,y:0,width:game.world.width*game.renderer.tile,height:game.world.height*game.renderer.tile}:this.cameraLandBounds());}}):null;
     this.datacenterDashboardTimer=0;
     this.staffPanelTimer=0;this.staffPanelHtml='';
     this.uiScheduler=new UIScheduler();this.forceUiRefresh=new Set(['inspector','metrics','alerts','staff','datacenterDashboard','graphs','objectives']);
@@ -62,7 +68,19 @@ export class UIManager {
   }
 
   bind(){
+    document.querySelectorAll('[data-view-mode]').forEach(button=>button.addEventListener('click',()=>{
+      const mode=button.dataset.viewMode;button.disabled=true;
+      Promise.resolve(this.game.setViewMode(mode)).then(changed=>{
+        button.disabled=false;if(!changed)return;
+        document.querySelectorAll('[data-view-mode]').forEach(item=>{const active=item===button;item.classList.toggle('active',active);item.setAttribute('aria-pressed',String(active));});
+        const isThree=mode!=='2d';document.querySelectorAll('[data-mode]').forEach(item=>item.hidden=isThree);
+        const airflowModes=document.querySelector('#airflowModes');if(airflowModes)airflowModes.classList.add('hidden');
+        const help=document.querySelector('#modeHelp');if(help)help.textContent=mode==='walk'?'Passeio 3D · WASD para andar · mouse para olhar · clique captura o mouse · Esc libera':'Operação 2D · construção, contratos e gestão';
+      }).catch(error=>{button.disabled=false;this.game.toast('Falha ao trocar a visualização: '+error.message);});
+    }));
+    const walkButton=document.querySelector('[data-view-mode="walk"]');if(walkButton&&matchMedia('(pointer:coarse)').matches){walkButton.disabled=true;walkButton.title='Passeio em primeira pessoa está disponível para mouse e teclado.';}
     document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{
+      this.game.setViewMode('2d');document.querySelectorAll('[data-view-mode]').forEach(item=>{const active=item.dataset.viewMode==='2d';item.classList.toggle('active',active);item.setAttribute('aria-pressed',String(active));});document.querySelectorAll('[data-mode]').forEach(item=>item.hidden=false);
       this.game.renderer.mode=b.dataset.mode;
       document.querySelectorAll('[data-mode]').forEach(x=>x.classList.toggle('active',x===b));
       const help=document.querySelector('#modeHelp');if(help)help.textContent=MODE_HELP[b.dataset.mode];
@@ -78,6 +96,7 @@ export class UIManager {
     document.querySelectorAll('[data-speed]').forEach(b=>b.onclick=()=>this.game.setSpeed(Number(b.dataset.speed)));
     document.querySelector('#resetBtn').onclick=()=>window.__thermalStartLevel?.(this.game.level,this.game.datacenter?{fresh:true}:undefined);
     document.querySelector('#exitBtn').onclick=()=>window.__thermalShowCampaign?.();
+    document.querySelector('#landExpansionButton')?.addEventListener('click',()=>this.landPanel?.toggle());
     this.reportRoot?.addEventListener('click',event=>{if(event.target===this.reportRoot)this.closeDailyReport();});
     this.reportRoot?.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();this.closeDailyReport();}if(event.key==='Tab')this.trapReportFocus(event);});
     addEventListener('keydown',event=>{if(event.key==='Escape'&&!this.reportRoot?.hidden){event.preventDefault();this.closeDailyReport();}});
@@ -91,6 +110,9 @@ export class UIManager {
     const e=technicianAt(this.game.world,x,y)||this.game.world.entityAt(x,y)||this.game.world.utilityAt(x,y);
     this.inspectEntity(e,x,y);
   }
+
+  cameraLandBounds(){const bounds=this.game.datacenter?.land?.bounds({margin:2})||{x:0,y:0,width:this.game.world.width,height:this.game.world.height};const tile=this.game.renderer.tile;return {x:bounds.x*tile,y:bounds.y*tile,width:bounds.width*tile,height:bounds.height*tile};}
+  selectLandAt(x,y){return this.landPanel?.selectAt(x,y)||false;}
 
   inspectEntity(entity,x=0,y=0){
     const e=entity&&this.game.world.entities.includes(entity)?entity:null;
@@ -115,6 +137,7 @@ export class UIManager {
   selectContractRacks(contractId,racks=[],focus=false){
     const {renderer,camera,canvas}=this.game;
     renderer.highlightedContractId=contractId||null;
+    renderer.highlightedContractEntityIds=new Set(contractId?(racks||[]).map(entity=>entity.id):[]);
     if(!focus||!racks.length)return;
     const tile=renderer.tile,minX=Math.min(...racks.map(rack=>rack.x)),maxX=Math.max(...racks.map(rack=>rack.x)),minY=Math.min(...racks.map(rack=>rack.y)),maxY=Math.max(...racks.map(rack=>rack.y));
     const padding=tile*2,worldX=(minX+maxX+1)*tile/2,worldY=(minY+maxY+1)*tile/2;
@@ -123,6 +146,22 @@ export class UIManager {
     camera.zoom=Math.max(camera.minZoom,Math.min(1.6,fit*.9));
     camera.x=worldX-rect.width/(2*camera.zoom);camera.y=worldY-rect.height/(2*camera.zoom);
     camera.constrain(rect.width,rect.height);
+  }
+
+  openContractCenter(tab='market',{fromReport=false}={}){
+    const center=this.contractCenter,dc=this.game.datacenter;if(!center||!dc)return false;
+    const reportOpen=this.reportRoot&&!this.reportRoot.hidden,expansionOpen=Boolean(this.expansionModalOfferId),endOpen=document.querySelector('#endModal')?.classList.contains('show');
+    if(reportOpen||expansionOpen||(!fromReport&&dc.state.pendingExpansionOffer)||endOpen)return false;
+    if(center.opened){center.setTab(tab);return true;}
+    this.centerRestorePaused=this.game.sim.paused;this.game.sim.paused=true;
+    if(!center.show(tab)){this.game.sim.paused=this.centerRestorePaused;return false;}
+    this.forceDatacenterUiRefresh();return true;
+  }
+
+  closeContractCenter(){
+    if(!this.contractCenter?.opened)return false;
+    this.contractCenter.hide();this.game.sim.paused=Boolean(this.centerRestorePaused);this.centerRestorePaused=false;
+    this.forceDatacenterUiRefresh();return true;
   }
 
   togglePower(entity){
@@ -151,7 +190,7 @@ export class UIManager {
     const budget=document.querySelector('#budgetValue');if(budget)budget.textContent=(g.datacenter?'R$ ':'$ ')+Math.floor(g.build.budget).toLocaleString('pt-BR');
     if(due.has('metrics'))this.metrics.update(s,g.build,g.level);if(due.has('objectives'))this.objectives.update(s);if(due.has('inspector'))this.inspector.update(g.world);if(due.has('minimap'))this.minimap.update(.2);
     if(due.has('staff'))this.updateStaffPanel();
-    if(this.datacenterDashboard&&due.has('datacenterDashboard'))this.datacenterDashboard.update();
+    if(this.datacenterDashboard&&due.has('datacenterDashboard')){this.datacenterDashboard.update();this.contractCenter?.update();}
     if(g.datacenter){
       const dc=g.datacenter;
       const pendingBefore=Boolean(dc.state.reportPending),offerVersion=dc.state.marketGeneratedVersion||0,reputation=dc.state.reputation;
@@ -163,9 +202,12 @@ export class UIManager {
       if((!pendingBefore&&dc.state.reportPending)||offerVersion!==(dc.state.marketGeneratedVersion||0)||reputation!==dc.state.reputation)
         this.forceDatacenterUiRefresh();
     }
-    if(due.has('clock'))document.querySelector('#clock').textContent=g.datacenter?g.datacenter.clock.format():this.formatTime(s.elapsed);
+    if(due.has('clock')){
+      const clock=document.querySelector('#clock'),full=g.datacenter?g.datacenter.clock.format():this.formatTime(s.elapsed);
+      if(clock){const compact=clock.querySelector('.clock-compact'),fullLabel=clock.querySelector('.clock-full');if(compact&&fullLabel){fullLabel.textContent=full;compact.textContent=g.datacenter?'D'+g.datacenter.clock.day+' · '+full.split(' · ').at(-1):full;clock.setAttribute('aria-label',full);}else clock.textContent=full;}
+    }
     if(due.has('objectives'))document.querySelector('#missionText').textContent=s.mission.message;
-    document.querySelector('#pauseBtn').textContent=s.paused?'▶ Continuar':'Ⅱ Pausar';
+    const pauseButton=document.querySelector('#pauseBtn');pauseButton.textContent=s.paused?'▶ Continuar':'Ⅱ Pausar';pauseButton.setAttribute('aria-label',s.paused?'Continuar simulação':'Pausar simulação');
     document.querySelector('#speedLabel').textContent=s.speed+'×';
     document.querySelector('#rotateHint').textContent=DUCT_HINT(g);
     if(due.has('alerts'))this.updateAlerts();if(due.has('graphs')){g.performance?.begin?.('uiGraphMs');try{this.drawGraph();}finally{g.performance?.end?.('uiGraphMs');}}
@@ -184,7 +226,7 @@ export class UIManager {
     if(html!==this.staffPanelHtml){const active=document.activeElement,focused=root.contains(active)?active.dataset.fireTech||active.dataset.hireTech||active.dataset.selectTech:null,selector=active?.dataset.fireTech!=null?`[data-fire-tech="${focused}"]`:active?.dataset.hireTech!=null?'[data-hire-tech]':`[data-select-tech="${focused}"]`;root.innerHTML=html;this.staffPanelHtml=html;if(focused!=null)root.querySelector(selector)?.focus();}
   }
   openDailyReport(manual=false){
-    const dc=this.game.datacenter,result=dc?.state.dailyResult;if(!dc||!result||!this.reportRoot)return;
+    const dc=this.game.datacenter,result=dc?.state.dailyResult;if(!dc||!result||!this.reportRoot||this.contractCenter?.opened)return;
     this.reportManual=manual;this.resumeAfterReport=manual?this.game.sim.paused:false;this.reportShownDay=result.day;
     if(result.reputation?.tierChanged)dc.state.reputationTierNotification=null;
     this.game.sim.paused=true;
@@ -197,16 +239,15 @@ export class UIManager {
     const reputationSummary=reputation?'<h3>Reputação</h3><div class="report-reputation"><b>'+reputation.tierStart+' → '+reputation.tierEnd+'</b><span>'+reputation.start.toFixed(0)+' → '+reputation.end.toFixed(0)+' pontos ('+(reputation.change>0?'+':'')+reputation.change.toFixed(2)+')</span>'+(reputation.tierChanged?'<strong>Você alcançou o nível '+reputation.tierEnd+'. As novas condições já aparecem no mercado.</strong>':'')+'</div>':'';
     this.reportRoot.innerHTML='<section class="daily-report" role="dialog" aria-modal="true" aria-labelledby="dailyReportTitle"><button class="daily-report-close" data-report-close aria-label="Fechar relatório">×</button><p class="eyebrow">FECHAMENTO OPERACIONAL</p><h2 id="dailyReportTitle">RELATÓRIO — DIA '+result.day+'</h2>'+(operations.partial?'<p class="report-partial">Dados operacionais parciais neste primeiro relatório.</p>':'')+'<h3>Financeiro</h3><div class="report-finance">'+finance+'<div class="report-net"><span>Resultado</span><b class="'+(result.net<0?'negative':'positive')+'">'+(result.net<0?'−':'+')+this.money(Math.abs(result.net))+'</b></div></div><h3>Operação</h3><div class="report-kpis"><div><span>Potência média</span><b>'+(operations.averagePowerKW==null?'—':this.managerKw(operations.averagePowerKW))+'</b></div><div><span>Pico</span><b>'+(operations.peakPowerKW==null?'—':this.managerKw(operations.peakPowerKW))+'</b></div><div><span>PUE</span><b>'+(operations.pue==null?'—':operations.pue.toFixed(2))+'</b></div><div><span>Temperatura máxima</span><b>'+(operations.maxAirTemperature==null?'—':operations.maxAirTemperature.toFixed(1)+' °C')+'</b></div></div>'+reputationSummary+'<h3>SLA</h3><div class="report-sla">'+slaText+'</div><h3>Novas oportunidades · Dia '+(result.day+1)+'</h3><div class="report-offers">'+offers+'</div><label class="report-pause"><input type="checkbox" data-report-pause '+(dc.state.pauseOnNewContracts?'checked':'')+'> Pausar quando novos contratos chegarem</label><footer>'+(manual?'<button data-report-close>Fechar relatório</button>':'<button data-view-contracts>Ver contratos</button><button class="primary" data-start-day>Iniciar dia '+(result.day+1)+'</button>')+'</footer></section>';
     this.reportRoot.hidden=false;
-    dc.markOffersSeen(opportunities.map(offer=>offer.id));
     this.reportRoot.querySelector('[data-report-pause]')?.addEventListener('change',event=>dc.setPauseOnNewContracts(event.target.checked));
     this.reportRoot.querySelectorAll('[data-report-close]').forEach(button=>button.addEventListener('click',()=>this.closeDailyReport()));
-    this.reportRoot.querySelector('[data-view-contracts]')?.addEventListener('click',()=>{dc.dismissReport();this.closeDailyReport({keepPaused:true,scrollMarket:true});});
+    this.reportRoot.querySelector('[data-view-contracts]')?.addEventListener('click',()=>{dc.dismissReport();this.closeDailyReport({keepPaused:true});this.openContractCenter('market',{fromReport:true});});
     this.reportRoot.querySelector('[data-start-day]')?.addEventListener('click',()=>{dc.dismissReport();this.closeDailyReport({resume:true});});
     this.reportRoot.querySelector('[data-report-close]')?.focus();
   }
   updateExpansionOfferModal(){
     const dc=this.game.datacenter,offer=dc?.state.pendingExpansionOffer;
-    if(!offer||dc.state.reportPending||!this.reportRoot||!this.reportRoot.hidden||this.expansionModalOfferId===offer.id)return;
+    if(!offer||this.contractCenter?.opened||dc.state.reportPending||!this.reportRoot||!this.reportRoot.hidden||this.expansionModalOfferId===offer.id)return;
     this.resumeAfterExpansionOffer=this.game.sim.paused;this.game.sim.paused=true;this.expansionModalOfferId=offer.id;
     const currentExpiry='Dia '+offer.currentExpiresDay,proposedExpiry='Dia '+offer.expiresDay;
     const extraRacks=offer.rackCount-offer.currentRackCount,description=offer.expansionType==='racks'?'A expansão inclui '+extraRacks+(extraRacks===1?' rack adicional':' racks adicionais')+', que poderão ser instalados pelo fluxo normal.':'A expansão aumenta a potência máxima de cada rack existente e dos próximos racks instalados.';
@@ -276,7 +317,7 @@ export class UIManager {
     root.innerHTML=alerts.length?alerts.slice(0,3).map(a=>'<div class="alert '+a[0]+'"><b>'+a[1]+'</b><span>'+a[2]+'</span></div>').join(''):'<div class="alert ok"><b>SYSTEM NOMINAL</b><span>Nenhum alerta operacional</span></div>';
   }
 
-  setSpeedButtons(v){document.querySelectorAll('[data-speed]').forEach(b=>b.classList.toggle('active',Number(b.dataset.speed)===v));}
+  setSpeedButtons(v){document.querySelectorAll('[data-speed]').forEach(b=>{const active=Number(b.dataset.speed)===v;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});}
   formatTime(s){const m=Math.floor(s/60),sec=Math.floor(s%60);return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0');}
 
   safeLine(){

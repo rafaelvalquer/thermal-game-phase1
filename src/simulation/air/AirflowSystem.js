@@ -15,6 +15,7 @@ import { AirFaceTopologyCache } from './AirFaceTopologyCache.js';
 export class AirflowSystem {
   constructor(world,metrics){
     this.world=world;this.metrics=metrics;
+    world.airflowSystem=this;
     this.grid=new AirGrid(world);
     this.faceTopology=new AirFaceTopologyCache(this.grid);
     this.boundaries=new AirBoundarySystem(this.grid);

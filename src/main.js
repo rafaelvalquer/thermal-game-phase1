@@ -2,6 +2,9 @@ import './style.css';
 import './datacenter.css';
 import './industrial.css';
 import './staff.css';
+import './contract-center.css';
+import './sim-controls.css';
+import './three.css';
 import { Game } from './game/Game.js';
 import { CampaignManager } from './campaign/CampaignManager.js';
 import { CampaignScreen } from './ui/CampaignScreen.js';
@@ -20,7 +23,9 @@ const gameShell=(level)=>{
       '<div class="brand"><div class="brand-mark"><span>Δ</span><small>T</small></div><div><h1>'+ (isDatacenter?'DATA CENTER SIMULATOR':'THERMAL LAB')+'</h1><p>'+ (isDatacenter?'OPERAÇÃO CONTÍNUA · SANDBOX':'FASE '+String(level.number).padStart(2,'0')+' · '+level.name.toUpperCase())+'</p></div></div>',
       '<div class="mission-box '+(isDatacenter?'sandbox-mission':'')+'"><span class="eyebrow">'+level.tagline.toUpperCase()+'</span><strong id="missionText">Carregando missão...</strong><span id="rotateHint"></span></div>',
       '<div class="top-telemetry"><div class="budget-chip"><span>ORÇAMENTO</span><strong id="budgetValue">'+(isDatacenter?'R$ ':'$ ')+Number(level.budget||0).toLocaleString('pt-BR')+'</strong></div><div class="top-chart temperature-chart"><div class="top-chart-head"><span>TEMPERATURA</span><small><i class="max-dot"></i> máx <i class="avg-dot"></i> média <i class="safe-dot"></i> alvo</small></div><canvas id="history" aria-label="Gráfico do histórico de temperatura"></canvas></div><div class="top-chart power-chart"><div class="top-chart-head"><span>ENERGIA USADA</span><small><i class="limit-dot"></i> rede <i class="battery-use-dot"></i> descarga <i class="battery-stock-dot"></i> estoque</small></div><div id="powerSummary" class="power-summary" aria-live="polite">Rede 0 / '+(level.powerLimit/1000).toFixed(1)+' kW · Bat 0/0 kWh</div><canvas id="powerHistory" aria-label="Consumo da rede e descarga da bateria em kW; energia armazenada em kWh; limite elétrico tracejado"></canvas></div></div>',
-      '<div class="sim-controls"><span id="clock">'+(isDatacenter?'Ano 1 · Mês 1 · Dia 1 · 00:00':'00:00')+'</span><button id="pauseBtn">Ⅱ Pausar</button><div class="speed-group">'+speeds.map(speed=>'<button data-speed="'+speed+'">'+speed+'×</button>').join('')+'</div><span id="speedLabel">1×</span><button id="exitBtn" title="Voltar ao menu">⌂</button></div>',
+      (isDatacenter?'<button type="button" id="contractCenterButton" class="contract-center-trigger" aria-controls="contractCenter" aria-haspopup="dialog" aria-expanded="false"><span class="cc-trigger-icon" aria-hidden="true">▤</span><span class="cc-trigger-label">CONTRATOS</span><b data-contract-badge hidden></b></button>':''),
+      (isDatacenter?'<button type="button" id="landExpansionButton" class="contract-center-trigger land-trigger" aria-controls="landExpansionLayer"><span aria-hidden="true">▦</span><span>TERRENO</span></button>':''),
+      '<div class="sim-controls" role="group" aria-label="Controles da simulação"><span id="clock" aria-label="Relógio"><span class="clock-full">'+(isDatacenter?'Ano 1 · Mês 1 · Dia 1 · 00:00':'00:00')+'</span><span class="clock-compact">00:00</span></span><button id="pauseBtn" aria-label="Pausar simulação">Ⅱ Pausar</button><div class="speed-group" role="group" aria-label="Velocidade da simulação">'+speeds.map(speed=>'<button type="button" data-speed="'+speed+'" aria-label="Velocidade '+speed+' vezes" aria-pressed="'+(speed===1)+'">'+speed+'×</button>').join('')+'</div><span id="speedLabel">1×</span><button id="exitBtn" title="Voltar ao menu" aria-label="Voltar ao menu">⌂</button></div>',
     '</header>',
     '<aside id="toolsPanel" class="left-panel panel">',
       '<div class="panel-head"><span>CONSTRUÇÃO</span><small>R gira · RMB cancela</small><button class="mobile-panel-toggle" data-panel-toggle="rightPanel" aria-controls="rightPanel" aria-expanded="false">Telemetria</button></div>',
@@ -31,7 +36,7 @@ const gameShell=(level)=>{
       '<canvas id="game"></canvas>',
       benchmarkHud,
       '<div class="sprite-loading" role="status">CARREGANDO EQUIPAMENTOS<span><i></i></span></div>',
-      '<div class="view-switcher"><button class="active" data-mode="normal">◫ Normal</button><button data-mode="thermal">△ Térmico</button><button data-mode="airflow">〰 Airflow</button><button data-mode="cooling" class="hidden">❄ Climatização</button><button data-mode="pressure">◌ Pressão</button><button data-mode="fluid">≈ Fluido</button></div>',
+      '<div class="view-switcher" role="toolbar" aria-label="Modos de visualização"><button class="active" data-view-mode="2d" aria-pressed="true">▦ Construção 2D</button><button data-view-mode="walk" aria-pressed="false">◎ Passeio 3D</button><span class="view-divider" aria-hidden="true"></span><button class="active" data-mode="normal">◫ Normal</button><button data-mode="thermal">△ Térmico</button><button data-mode="airflow">〰 Airflow</button><button data-mode="cooling" class="hidden">❄ Climatização</button><button data-mode="pressure">◌ Pressão</button><button data-mode="fluid">≈ Fluido</button></div>',
       '<div id="airflowModes" class="airflow-submodes hidden"><button data-airflow-mode="vectors">Vetores</button><button class="active" data-airflow-mode="streamlines">Streamlines</button><button data-airflow-mode="particles">Partículas</button></div>',
       '<div id="modeHelp" class="mode-help">Operação · zonas, equipamentos e efeitos físicos</div><div id="toast" class="toast"></div>',
     '</main>',
@@ -45,6 +50,8 @@ const gameShell=(level)=>{
     '</aside>',
   '</div>',
   '<div id="dailyReport" class="daily-report-layer" hidden></div>',
+  (isDatacenter?'<div id="contractCenter" class="contract-center-layer" hidden></div>':''),
+  (isDatacenter?'<div id="landExpansionLayer" class="land-expansion-layer" hidden></div>':''),
   '<div id="endModal" class="end-modal"></div>',
 ].join('');
 };
@@ -53,7 +60,7 @@ let startSequence=0;
 function startLevel(level,{fresh=false}={}){
   const sequence=++startSequence;
   if(fresh)window.__thermalLab?.datacenter?.clearSave();
-  window.__thermalLab?.loop.stop();
+  window.__thermalLab?.dispose?.();
   app.innerHTML=gameShell(level);
   window.__thermalLab=null;
   const initialize=async()=>{
@@ -75,6 +82,6 @@ if(benchmarkName)startLevel(createBrowserBenchmarkLevel(benchmarkName,{sandboxSa
 else screen.render();
 window.__thermalCampaign=campaign;
 window.__thermalStartLevel=startLevel;
-window.__thermalShowCampaign=()=>{const game=window.__thermalLab;if(game?.level?.performanceBenchmarkSave)game.datacenter?.clearSave();else game?.datacenter?.persist({syncBackup:true});game?.loop.stop();window.__thermalLab=null;screen.render();};
+window.__thermalShowCampaign=()=>{const game=window.__thermalLab;if(game?.level?.performanceBenchmarkSave)game.datacenter?.clearSave();else game?.datacenter?.persist({syncBackup:true});game?.dispose?.();window.__thermalLab=null;screen.render();};
 window.addEventListener('pagehide',()=>{const game=window.__thermalLab;if(game?.level?.performanceBenchmarkSave)game?.datacenter?.clearSave();else game?.datacenter?.persist({syncBackup:true});});
 window.__thermalShowBriefing=level=>{window.__thermalShowCampaign();screen.briefing.show(level);};

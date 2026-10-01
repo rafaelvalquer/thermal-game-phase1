@@ -1,0 +1,25 @@
+import {contractRequirements,escapeContractHtml as esc,formatContractDaily as daily,formatContractKw as kw,formatContractMoney as money} from '../ContractCenterDataService.js';
+
+const missingText=analysis=>analysis.missing?.length?analysis.missing.map(item=>`${Math.max(0,Number(item.missing)||0).toLocaleString('pt-BR')} ${item.resource}${item.unit?` ${item.unit}`:''}`).join(' · '):analysis.reason||'Capacidade disponível';
+function analysisView(offer,analysis){
+  const preview=analysis.preview;
+  return `<div class="cc-analysis" data-market-analysis="${esc(offer.id)}"><b>${analysis.ok?'Viabilidade favorável':'Viabilidade insuficiente'}</b><p>${esc(missingText(analysis))}</p>${preview?`<p>Receita ${money(preview.monthlyRevenue)}/mês · energia estimada ${money(preview.monthlyEnergyCost)}/mês · margem estimada ${money(preview.estimatedMargin)}/mês · carga incremental ${kw(preview.incrementalPowerKW)}</p>`:`<p>Potência necessária ${kw((offer.rackCount||0)*(offer.powerPerRackKW||0))} · reserva elétrica ${kw(analysis.managerPower??0)} · taxa de implantação ${money(offer.installationFee)}</p>`}<small>Estimativas não alteram a oferta nem reservam capacidade.</small></div>`;
+}
+export function renderMarketTab(manager,service,ui){
+  const offers=service.validOffers().filter(offer=>{
+    const group=offer.modality==='compute'?'cloud':'colocation',analysis=service.analyze(offer);
+    if(ui.marketType!=='all'&&ui.marketType!==group)return false;
+    if(ui.marketCapacity==='available'&&!analysis.ok)return false;
+    if(ui.marketCapacity==='insufficient'&&analysis.ok)return false;
+    return true;
+  });
+  const compare=(a,b)=>ui.marketSort==='expiry'?a.expiresDay-b.expiresDay:ui.marketSort==='arrival'?b.offeredDay-a.offeredDay:b.monthlyFee-a.monthlyFee;
+  offers.sort(compare);
+  const cards=offers.length?offers.map(offer=>{
+    const analysis=service.analyze(offer),requirements=contractRequirements(offer),isNew=offer.isNew===true;
+    const lock=analysis.locked?` · BLOQUEADA · reputação ${offer.requiredReputation}`:'';
+    const sla=offer.availability==null?'—':`${Number(offer.availability).toFixed(2)}%`;
+    return `<article class="cc-offer ${isNew?'is-new':''} ${analysis.ok?'':'is-unavailable'}" data-offer="${esc(offer.id)}"><header><div><small>${esc(offer.productName||offer.tier||'Contrato')} · ${offer.modality==='compute'?'CLOUD':'COLOCATION'}${isNew?' · NOVA':''}${lock}</small><h3>${esc(offer.clientName)}</h3></div><strong>${daily(offer.monthlyFee)}<small>/dia</small></strong></header><p>${esc(requirements)}</p><dl><div><dt>Implantação</dt><dd>${money(offer.installationFee)}</dd></div><div><dt>Prazo</dt><dd>${Number(offer.termDays)||0} dias</dd></div><div><dt>SLA térmico</dt><dd>${offer.maxInletTemperature==null?'—':`${Number(offer.maxInletTemperature).toFixed(1)} °C`}</dd></div><div><dt>Disponibilidade</dt><dd>${sla}</dd></div><div><dt>Expiração</dt><dd>${esc(offer.expiresDay===manager.clock.day?'Hoje':`${Math.max(0,offer.expiresDay-manager.clock.day)} dias`)}</dd></div><div><dt>Reputação</dt><dd>${(Number(offer.reputationMultiplier)||1).toFixed(2)}×</dd></div></dl><div class="cc-offer-viability ${analysis.ok?'':'is-risk'}"><i></i>${esc(missingText(analysis))}</div><footer><button type="button" data-market-analyze="${esc(offer.id)}" aria-expanded="${ui.marketAnalysis===offer.id}">Analisar viabilidade</button><button type="button" data-market-decline="${esc(offer.id)}">Recusar</button><button class="primary" type="button" data-market-accept="${esc(offer.id)}" ${analysis.ok?'':'disabled'}>${analysis.ok?'Aceitar':'Indisponível'}</button></footer>${ui.marketAnalysis===offer.id?analysisView(offer,analysis):''}</article>`;
+  }).join(''):'<p class="cc-empty">Nenhuma proposta corresponde aos filtros. As ofertas expiradas deixam de poder ser aceitas.</p>';
+  return `<section class="cc-tab cc-market"><div class="cc-tab-heading"><div><span class="cc-eyebrow">OPORTUNIDADES</span><h2>Mercado</h2></div><b>${service.validOffers().length} propostas abertas</b></div><div class="cc-filters"><label>Modalidade<select data-market-type><option value="all" ${ui.marketType==='all'?'selected':''}>Todas</option><option value="colocation" ${ui.marketType==='colocation'?'selected':''}>Colocation</option><option value="cloud" ${ui.marketType==='cloud'?'selected':''}>Cloud Services</option></select></label><label>Viabilidade<select data-market-capacity><option value="all" ${ui.marketCapacity==='all'?'selected':''}>Qualquer capacidade</option><option value="available" ${ui.marketCapacity==='available'?'selected':''}>Capacidade disponível</option><option value="insufficient" ${ui.marketCapacity==='insufficient'?'selected':''}>Capacidade insuficiente</option></select></label><label>Ordenar por<select data-market-sort><option value="revenue" ${ui.marketSort==='revenue'?'selected':''}>Mensalidade</option><option value="expiry" ${ui.marketSort==='expiry'?'selected':''}>Expiração</option><option value="arrival" ${ui.marketSort==='arrival'?'selected':''}>Chegada</option></select></label></div><div class="cc-offer-list">${cards}</div></section>`;
+}

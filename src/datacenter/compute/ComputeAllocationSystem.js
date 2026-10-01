@@ -3,6 +3,10 @@ const toRequest=value=>({
   gpuMinVramGB:Number(value?.gpuMinVramGB)||0,storageTB:Number(value?.storageTB)||0,
 });
 const equalRequest=(a,b)=>['vcpu','ramGB','gpuCount','gpuMinVramGB','storageTB'].every(key=>(Number(a?.[key])||0)===(Number(b?.[key])||0));
+function satisfies(allocations,request){
+  const values=(allocations||[]).reduce((sum,item)=>({vcpu:sum.vcpu+(Number(item.vcpu)||0),ramGB:sum.ramGB+(Number(item.ramGB)||0),storageTB:sum.storageTB+(Number(item.storageTB)||0),gpuDevices:[...sum.gpuDevices,...(item.gpuDevices||[])]}),{vcpu:0,ramGB:0,storageTB:0,gpuDevices:[]});
+  return values.vcpu>=request.vcpu&&values.ramGB>=request.ramGB&&values.storageTB>=request.storageTB&&values.gpuDevices.length>=request.gpuCount&&values.gpuDevices.filter(device=>(Number(device.vramGB)||0)>=request.gpuMinVramGB).length>=request.gpuCount;
+}
 
 export class ComputeAllocationSystem {
   constructor(capacitySystem){this.capacity=capacitySystem;}
@@ -61,7 +65,7 @@ export class ComputeAllocationSystem {
   commit(contract,requirements=contract?.computeRequirements){
     if(!contract)return {ok:false,reason:'Contrato ausente.'};
     const request=toRequest(requirements);
-    if(contract.modality==='compute'&&Array.isArray(contract.allocations)&&equalRequest(contract.computeRequirements,request))return {ok:true,alreadyAllocated:true,allocations:contract.allocations};
+    if(contract.modality==='compute'&&Array.isArray(contract.allocations)&&equalRequest(contract.computeRequirements,request)&&satisfies(contract.allocations,request))return {ok:true,alreadyAllocated:true,allocations:contract.allocations};
     const result=this.plan(request,{excludeContractId:contract.id});if(!result.ok)return result;
     contract.modality='compute';contract.computeRequirements=request;contract.allocations=result.allocations;
     this.capacity.invalidate();return {...result,contract};

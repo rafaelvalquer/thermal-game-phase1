@@ -104,7 +104,10 @@ export class CoolingSystem {
       if(unitIds&&!unitIds.has(unit.id))continue;
       const related=this.networksByUnitId.get(unit.id)||EMPTY_PATHS;let network=related[0],relatedIds='';
       let selectedReady=false;for(const candidate of related){if(relatedIds)relatedIds+=',';relatedIds+=candidate.id;if(!selectedReady&&candidate.status==='READY'){network=candidate;selectedReady=true;}}
-      unit.indoor=(this.world.zones||[]).some(z=>unit.x>=z.x&&unit.y>=z.y&&unit.x<z.x+z.width&&unit.y<z.y+z.height);
+      if(this.world.landOwnership){
+        const grid=this.airflow.grid;grid.syncTopology();const index=grid.cellIndex(unit.x,unit.y);
+        unit.indoor=grid.isAir(unit.x,unit.y)&&grid.exteriorCells[index]===0;
+      }else unit.indoor=(this.world.zones||[]).some(z=>unit.x>=z.x&&unit.y>=z.y&&unit.x<z.x+z.width&&unit.y<z.y+z.height);
       unit.outdoorTemperature=unit.indoor?this.world.temperatureAt(unit.x,unit.y):this.world.environment.temperature;
       const branches=network?this.pathsByNetworkUnitId.get(this.networkUnitKey(network,unit))||EMPTY_PATHS:EMPTY_PATHS;
       let total=0,weightedTemperature=0;for(const path of branches){const temp=this.exchange.returnTemperature(path.vent);total+=path.flowRate;weightedTemperature+=temp*path.flowRate;}

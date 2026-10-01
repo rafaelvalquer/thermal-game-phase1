@@ -3,8 +3,8 @@ import { priceComputeProduct } from '../products/ProductPricing.js';
 
 export class ComputeContractGenerator {
   constructor({random=Math.random}={}){this.random=random;}
-  generate({id,day,reputation=0,expiresIn=5,growth=1}={}){
-    const eligible=COMPUTE_PRODUCTS.filter(product=>reputation>=product.minimumReputation);
+  generate({id,day,reputation=0,expiresIn=5,growth=1,productId=null}={}){
+    const eligible=COMPUTE_PRODUCTS.filter(product=>reputation>=product.minimumReputation&&(!productId||product.id===productId));
     if(!eligible.length)return null;
     const product=eligible[Math.floor(this.random()*eligible.length)];
     const scale=Math.max(1,Math.min(3,growth));

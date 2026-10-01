@@ -12,20 +12,28 @@ import { ComputeAllocationSystem } from './compute/ComputeAllocationSystem.js';
 import { ComputeLoadSystem } from './compute/ComputeLoadSystem.js';
 import { ComputeSlaSystem } from './compute/ComputeSlaSystem.js';
 import { ContractCapacityPlanner } from './contracts/ContractCapacityPlanner.js';
+import { ContractHistorySystem } from './ContractHistorySystem.js';
+import { LandOwnershipSystem } from './land/LandOwnershipSystem.js';
 
 const DEFAULT_STATE=()=>({cash:150000,clockSeconds:0,day:1,reputation:50,powerCapacityKW:100,energyTariff:0.55,
   offerSequence:0,offers:[],marketInitialized:false,contracts:[],pendingExpansionOffer:null,lastExpansionInviteByClient:{},ledger:[],dailyViolation:false,lastPowerEnergy:0,rackSequence:0,
-  reputationHistory:[],dailyPositiveReputation:0,reputationStreakDays:0,computeCommercialRevision:1});
+  reputationHistory:[],dailyPositiveReputation:0,reputationStreakDays:0,computeCommercialRevision:1,
+  commercialHistoryRevision:1,commercialDailyHistory:[],commercialEvents:[],commercialEventSequence:0,commercialHistoryPartial:false});
 
 export class DataCenterManager {
   constructor(world,level,{saveSystem=new DataCenterSaveSystem(),random=Math.random}={}){
     this.world=world;this.level=level;this.saveSystem=saveSystem;this.random=random;this.snapshot=saveSystem.load();
     const defaults=DEFAULT_STATE();defaults.cash=level.datacenter.initialCash??defaults.cash;defaults.powerCapacityKW=level.datacenter.powerCapacityKW??defaults.powerCapacityKW;defaults.energyTariff=level.datacenter.energyTariff??defaults.energyTariff;defaults.coolingMaintenanceDaily=level.datacenter.coolingMaintenanceDaily??110;
     this.state={...defaults,...(this.snapshot?.state||{})};
+    if(this.snapshot&&this.snapshot.state?.commercialHistoryRevision==null){
+      this.state.commercialHistoryRevision=1;this.state.commercialDailyHistory=[];this.state.commercialEvents=[];this.state.commercialHistoryPartial=true;
+    }
     // Bring existing sandbox saves onto the new base electricity tariff while
     // preserving custom tariffs configured by other scenarios.
     if(level.datacenter.energyTariff===0.55&&this.snapshot?.state?.energyTariff===0.85)this.state.energyTariff=0.55;
     normalizeDailyState(this.state,this.snapshot?.state);
+    this.commercialHistory=new ContractHistorySystem(this.state);
+    for(const contract of this.state.contracts)this.commercialHistory.ensureContract(contract);
     this.reputation=new ReputationSystem(this.state);
     this.clock=new GameClock(this.state.clockSeconds);
     this.powerGrid=new PowerGridSystem({capacityKW:this.state.powerCapacityKW,...this.state.powerProtection});
@@ -39,7 +47,13 @@ export class DataCenterManager {
     this.computeLoad=new ComputeLoadSystem(world,this.state.contracts);this.computeSla=new ComputeSlaSystem(world);
     this.build=null;this.simulation=null;this.saveTimer=0;this.saveDirty=false;this.saveDebounceRemaining=0;
     world.datacenter=this;world.datacenterConfig=level.datacenter;
-    if(this.snapshot)saveSystem.restoreWorld(world,this.snapshot);
+    if(this.snapshot)saveSystem.restoreWorld(world,this.snapshot,{migrateOpenTerrain:Boolean(level.datacenter.land)});
+    if(level.datacenter.land){
+      this.land=new LandOwnershipSystem(world,level.datacenter.land,this.state);
+      if(!this.snapshot){this.state.landRevision=1;this.state.ownedLandAreas=this.land.ownedAreaIds();this.state.landInvestmentTotal=0;}
+      this.land.migrate(this.state,this.snapshot);
+      world.landOwnership=this.land;
+    }
     this.computeSla.refreshDiagnostics(this.state.contracts);
     this.powerGrid.refresh(world);
   }
@@ -93,6 +107,27 @@ export class DataCenterManager {
     ),0);
     const computeIds=new Set(this.state.contracts.filter(contract=>contract.modality==='compute'&&contract.status==='active').flatMap(contract=>(contract.allocations||[]).map(item=>item.assetId)));
     return coloc+this.world.entitiesByType('computeRack').reduce((sum,rack)=>sum+(computeIds.has(rack.assetId)?(rack.power||0)/1000:0),0);
+  }
+  availableLandExpansions(){return this.land?.availableExpansions()||[];}
+  quoteLandExpansion(id){
+    const area=this.land?.areas.get(id);if(!area)return {ok:false,reason:'AREA_UNAVAILABLE'};
+    if(this.land.isAreaOwned(id))return {ok:false,reason:'ALREADY_OWNED',area};
+    const available=this.land.availableExpansions().find(item=>item.id===id)?.available;
+    if(!available)return {ok:false,reason:'AREA_NOT_ADJACENT',area};
+    return {ok:true,area,tileCount:area.width*area.height,cost:area.cost,available:true,cashAfter:this.cash-area.cost};
+  }
+  purchaseLandExpansion(id){
+    const quote=this.quoteLandExpansion(id);if(!quote.ok)return quote;
+    if(this.cash<quote.cost)return {ok:false,reason:'INSUFFICIENT_FUNDS',area:quote.area,cost:quote.cost};
+    const unlocked=this.land.unlockArea(id);if(!unlocked.ok)return unlocked;
+    this.build.budget-=quote.cost;this.state.landInvestmentTotal=(Number(this.state.landInvestmentTotal)||0)+quote.cost;
+    this.state.landRevision=1;this.state.ownedLandAreas=this.land.ownedAreaIds();
+    this.record('Aquisição de terreno · '+quote.area.name,-quote.cost);
+    this.world.airTopologyVersion++;this.world.navigationTopologyVersion++;this.world.bumpUtilityTopology();
+    this.simulation?.cooling?.rebuild();this.simulation?.airflow?.grid?.syncTopology(true);
+    this.land.onChange?.(this.land.bounds({margin:2}));this.persist();
+    this.build.onChange?.();
+    return {ok:true,area:quote.area,statistics:this.land.statistics({placedMaterials:[...this.build.placedMaterials.keys()].map(index=>({x:index%this.world.width,y:Math.floor(index/this.world.width)})),investment:this.state.landInvestmentTotal})};
   }
   get otherFacilityPowerKW(){return Math.max(0,this.facilityPowerKW-this.currentContractRackPowerKW);}
   get computeCommittedPowerKW(){
@@ -152,10 +187,15 @@ export class DataCenterManager {
     const available=this.world.entitiesByType('serverRack').filter(rack=>rack.status==='CANCELLED'&&!rack.contractId);
     for(const rack of available.slice(0,contract.rackCount)){
       this.assignRackToContract(rack,contract,contract.installedRacks+1);
-      this.contracts.attachRack(rack);
+      this.attachRackToContract(rack);
     }
   }
-  onRackPlaced(rack){this.contracts.attachRack(rack);this.markSaveDirty();}
+  attachRackToContract(rack){
+    const contract=this.state.contracts.find(item=>item.id===rack.contractId),before=contract?.status;
+    this.contracts.attachRack(rack);
+    if(contract&&before!==contract.status&&contract.status==='active')this.commercialHistory.recordEvent('operational-start',contract,this.clock.day,{dedupeKey:`operational:${contract.id}:${this.clock.day}`});
+  }
+  onRackPlaced(rack){this.attachRackToContract(rack);this.markSaveDirty();}
   onRackRemoved(rack){
     const contract=this.state.contracts.find(item=>item.id===rack.contractId);if(!contract)return;
     contract.installedRacks=Math.max(0,contract.installedRacks-1);
@@ -169,6 +209,12 @@ export class DataCenterManager {
     if(!result.alreadyAccepted&&result.contract.modality!=='compute')this.assignAvailableRacks(result.contract);
     this.build.budget+=result.installationIncome;
     if(!result.alreadyAccepted)this.record(result.contract.modality==='compute'?'Provisionamento Cloud · '+result.contract.clientName:'Instalação · '+result.contract.clientName,result.installationIncome);
+    if(!result.alreadyAccepted){
+      this.commercialHistory.ensureContract(result.contract);
+      this.commercialHistory.recordEvent(result.contract.renewalContractId?'renewal-signed':'signed',result.contract,this.clock.day);
+      this.commercialHistory.recordSetup(result.contract,result.installationIncome,this.clock.day);
+      if(result.contract.modality==='compute')this.commercialHistory.recordEvent('operational-start',result.contract,this.clock.day,{dedupeKey:`operational:${result.contract.id}:${this.clock.day}`});
+    }
     this.persist();this.build.onChange?.();return result;
   }
   declineOffer(offerId){const declined=this.contracts.decline(offerId);if(declined)this.persist();return declined;}
@@ -177,6 +223,7 @@ export class DataCenterManager {
     if(!this.contracts.cancel(contractId)){return false;}
     this.reputation.change(-2,'Cancelamento manual',this.clock.day);
     contract.reputationProcessed=true;
+    this.commercialHistory.recordEvent('cancelled',contract,this.clock.day,{dedupeKey:`cancelled:${contract.id}:${this.clock.day}`});
     this.releaseContractRacks(contractId);
     this.record('Cancelamento · '+contract.clientName,0);this.persist();return true;
   }
@@ -242,18 +289,20 @@ export class DataCenterManager {
       contract.dailyUptimeSeconds/contract.dailyActiveSeconds>=.9995)this.reputation.changeDaily(.05,'Disponibilidade excelente · '+contract.clientName,day);
     for(const contract of operatingContracts)if(contract.dailyDowntimeSeconds>=21600)
       this.reputation.change(-3,'Indisponibilidade crítica prolongada · '+contract.clientName,day);
+    const previousStatuses=new Map(this.state.contracts.map(contract=>[contract.id,contract.status]));
     this.contracts.updateDay(day);
+    this.commercialHistory.recordStatusTransitions(previousStatuses,this.state.contracts,day);
     for(const contract of this.state.contracts)if(['completed','cancelled'].includes(contract.status))this.releaseContractRacks(contract.id);
     for(const contract of this.state.contracts)if(['completed','cancelled'].includes(contract.status)&&contract.modality==='compute')this.computeAllocations.release(contract);
     let revenue=0,penalties=0;
     for(const contract of this.state.contracts){
       if(billableContracts.includes(contract)){
         const activeSeconds=activeSecondsAtClose.get(contract.id)||0,activeDayFraction=activeSeconds>0?Math.min(1,activeSeconds/86400):1;
-        const dailyRevenue=contract.monthlyFee/30*activeDayFraction;revenue+=dailyRevenue;
+        const dailyRevenue=contract.monthlyFee/30*activeDayFraction;revenue+=this.commercialHistory.recordBilling(contract,day-1,dailyRevenue);
       }
       if(violations.has(contract.id)){
         contract.lastSlaViolationDay=day;
-        penalties+=5000;contract.finesPaid+=5000;this.reputation.change(-1,'Violação de SLA · '+contract.clientName,day);
+        penalties+=this.commercialHistory.recordPenalty(contract,day-1,5000,'SLA');contract.finesPaid+=5000;this.reputation.change(-1,'Violação de SLA · '+contract.clientName,day);
       }
       if(contract.status==='completed'&&contract.completedDay===day&&!contract.reputationProcessed){
         this.reputation.change(2,'Contrato concluído · '+contract.clientName,day);
@@ -298,6 +347,7 @@ export class DataCenterManager {
     this.state.dailyResult={day:day-1,revenue,energyCost,fixedPowerCost,coolingMaintenance,penalties,staffPayroll,net,energyKWh,
       reputation:{start:reputationStart,end:this.reputation.value,change:this.reputation.value-reputationStart,tierStart:reputationTierStart.name,tierEnd:reputationTierEnd.name,tierChanged:reputationTierStart.id!==reputationTierEnd.id,history:this.state.reputationHistory.filter(event=>event.day===day)},
       operations:summarizeDailyOperations(this.state.dailyOperations),sla,newOffers};
+    this.commercialHistory.finalizeDay(day-1,{energyCost,fixedCosts:fixedPowerCost+coolingMaintenance,otherExpenses:staffPayroll,net,contracts:this.state.contracts});
     this.state.dailyOperations=createDailyOperations();
     this.state.lastSettledDay=day-1;
     this.state.reportPending=this.state.pauseOnNewContracts;
@@ -318,15 +368,17 @@ export class DataCenterManager {
     contract.baseMonthlyFee=Math.round((contract.baseMonthlyFee||contract.monthlyFee)*(offer.capacityKW/offer.currentCapacityKW));
     contract.reputationMultiplier=contract.baseMonthlyFee?contract.monthlyFee/contract.baseMonthlyFee:1;
     contract.expiresDay=offer.expiresDay;contract.lastAmendedDay=this.clock.day;contract.amendmentCount=(contract.amendmentCount||0)+1;
+    this.commercialHistory.recordEvent('amended',contract,this.clock.day,{dedupeKey:`amended:${contract.id}:${this.clock.day}:${contract.amendmentCount}`});
     for(const rack of this.world.entitiesByType('serverRack'))if(rack.contractId===contract.id){
       rack.maxPowerKW=contract.powerPerRackKW;rack.baseHeatOutput=contract.powerPerRackKW*980;rack.heatOutput=rack.baseHeatOutput;
     }
     this.build.budget+=offer.installationFee;
     this.record('Aditivo de expansão · '+contract.clientName,offer.installationFee);
+    this.commercialHistory.recordSetup(contract,offer.installationFee,this.clock.day);
     this.persist();this.build.onChange?.();
     return {ok:true,accepted:true,contract,offer};
   }
-  markOffersSeen(ids){if(this.contracts.markSeen(ids))this.markSaveDirty();}
+  markOffersSeen(ids){if(this.contracts.markSeen(ids))this.persist();}
   dismissReport(){this.state.reportPending=false;this.persist();}
   consumeNotification(){
     if(!this.state.notificationPending)return null;
@@ -370,12 +422,16 @@ export class DataCenterManager {
   }
   load(){
     const snapshot=this.saveSystem.load();if(!snapshot)return false;
-    this.snapshot=snapshot;this.saveSystem.restoreWorld(this.world,snapshot);
-    this.state={...DEFAULT_STATE(),...snapshot.state};normalizeDailyState(this.state,snapshot.state);this.reputation=new ReputationSystem(this.state);this.clock=new GameClock(this.state.clockSeconds);
+    this.snapshot=snapshot;this.saveSystem.restoreWorld(this.world,snapshot,{migrateOpenTerrain:Boolean(this.level.datacenter.land)});
+    this.state={...DEFAULT_STATE(),...snapshot.state};
+    if(snapshot.state?.commercialHistoryRevision==null){this.state.commercialHistoryRevision=1;this.state.commercialDailyHistory=[];this.state.commercialEvents=[];this.state.commercialHistoryPartial=true;}
+    normalizeDailyState(this.state,snapshot.state);this.commercialHistory=new ContractHistorySystem(this.state);for(const contract of this.state.contracts)this.commercialHistory.ensureContract(contract);this.reputation=new ReputationSystem(this.state);this.clock=new GameClock(this.state.clockSeconds);
     if(this.world.technicianSystem)this.world.technicianSystem.payrollDay=this.state.lastSettledDay||0;
     this.powerGrid=new PowerGridSystem({capacityKW:this.state.powerCapacityKW,...this.state.powerProtection});this.contracts=new ContractSystem(this.state,{random:this.random});
     this.racks=new RackSystem(this.world,this.contracts);this.computeCapacity.setContracts(this.state.contracts);this.computeAllocations=new ComputeAllocationSystem(this.computeCapacity);this.contracts.computeAllocations=this.computeAllocations;this.contracts.computePlanner=new ContractCapacityPlanner(this.computeAllocations);this.contracts.computePreflight=offer=>this.planComputeOffer(offer);this.computeLoad=new ComputeLoadSystem(this.world,this.state.contracts);this.computeSla=new ComputeSlaSystem(this.world);this.saveSystem.restoreBuild(this.build,snapshot);this.computeSla.refreshDiagnostics(this.state.contracts);
-    this.world.datacenter=this;this.world.onPowerEquipmentIndexed=equipment=>{if(this.powerGrid.breakerOpen)equipment.powerBlocked=true;};this.level.powerLimit=this.powerGrid.capacityKW*1000;
+    this.world.datacenter=this;this.world.onPowerEquipmentIndexed=equipment=>{if(this.powerGrid.breakerOpen)equipment.powerBlocked=true;};
+    if(this.level.datacenter.land){this.land ||= new LandOwnershipSystem(this.world,this.level.datacenter.land,this.state);this.land.migrate(this.state,snapshot);this.world.landOwnership=this.land;}
+    this.level.powerLimit=this.powerGrid.capacityKW*1000;
     this.powerGrid.refresh(this.world);
     this.simulation.cooling?.rebuild();
     Object.assign(this.simulation.metrics,{generatedHeat:0,externalEnergy:0,powerDraw:0,powerEnergy:this.state.powerEnergyTotal,energyBalance:0,maxTempEver:25,maxPowerEver:0});

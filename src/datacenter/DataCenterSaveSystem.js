@@ -2,6 +2,7 @@ import { createLevelEntity } from '../campaign/LevelManager.js';
 import { HeatExchanger } from '../entities/HeatExchanger.js';
 import { Radiator } from '../entities/Radiator.js';
 import { migrateCoolingUnitBalance } from '../entities/CoolingUnitModels.js';
+import { TILE_VOLUME } from '../utils/Constants.js';
 
 const STORAGE_KEY='thermal-lab-datacenter-sandbox-v1';
 const EXCLUDED_KEYS=new Set(['id','world']);
@@ -144,7 +145,7 @@ export class DataCenterSaveSystem {
   }
   capture(world,state,build){
     const started=now(),phases={};let phase=now();
-    const snapshot={version:1,state:copySerializable(state),world:{},build:{budget:build.budget}};
+    const snapshot={version:1,state:copySerializable(state),world:{width:world.width,height:world.height},build:{budget:build.budget}};
     phases.state=now()-phase;phase=now();
     snapshot.world.materials=Array.from(world.material);snapshot.world.energy=Array.from(world.energy);phases.tiles=now()-phase;phase=now();
     snapshot.world.entities=world.entities.map(serializeEntity);phases.entities=now()-phase;phase=now();
@@ -154,9 +155,29 @@ export class DataCenterSaveSystem {
     snapshot.build.placedMaterials=Array.from(build.placedMaterials,([index,item])=>({index,...item}));phases.build=now()-phase;
     this.lastCapturePhases=phases;this.lastCaptureMs=Math.max(0,now()-started);return snapshot;
   }
-  restoreWorld(world,snapshot){
+  restoreWorld(world,snapshot,{migrateOpenTerrain=false}={}){
     if(!snapshot?.world)return false;
-    world.material.set(snapshot.world.materials);world.energy.set(snapshot.world.energy);world.rebuildMaterialProperties();
+    const saved=snapshot.world,sourceWidth=Number(saved.width)||((saved.materials?.length===112*72)?112:world.width),sourceHeight=Number(saved.height)||Math.ceil((saved.materials?.length||0)/sourceWidth);
+    const sameSize=sourceWidth===world.width&&sourceHeight===world.height;
+    if(!migrateOpenTerrain){
+      if(sameSize){world.material.set(saved.materials);world.energy.set(saved.energy);}
+      else for(let y=0;y<Math.min(sourceHeight,world.height);y++)for(let x=0;x<Math.min(sourceWidth,world.width);x++){
+        const from=y*sourceWidth+x,to=y*world.width+x;if(from>=saved.materials.length)continue;
+        world.material[to]=saved.materials[from];world.energy[to]=saved.energy?.[from]??world.energy[to];
+      }
+    }else if(!sameSize){
+      for(let y=0;y<Math.min(sourceHeight,world.height);y++)for(let x=0;x<Math.min(sourceWidth,world.width);x++){
+        const from=y*sourceWidth+x,to=y*world.width+x;if(from>=saved.materials.length)continue;
+        const oldMaterial=world.registry.fromIndex(saved.materials[from]),oldCapacity=Math.max(.001,(oldMaterial?.density||1.225)*TILE_VOLUME*(oldMaterial?.heatCapacity||1005));
+        const temp=(saved.energy?.[from]||0)/oldCapacity;if(Number.isFinite(temp))world.energy[to]=world.capacityAtIndex(to)*temp;
+      }
+      for(const item of snapshot.build?.placedMaterials||[]){
+        const oldIndex=Number(item.index);if(!Number.isInteger(oldIndex)||oldIndex<0)continue;
+        const x=oldIndex%sourceWidth,y=Math.floor(oldIndex/sourceWidth);if(!world.inBounds(x,y))continue;
+        const id=world.registry.fromIndex(saved.materials[oldIndex])?.id||'air';if(id!=='air')world.setMaterial(x,y,id);
+      }
+    }else {world.material.set(saved.materials);world.energy.set(saved.energy);}
+    world.rebuildMaterialProperties();
     world.airTopologyVersion++;
     world.clearEntities();world.clearUtilities();
     for(const definition of snapshot.world.entities||[]){
@@ -203,7 +224,10 @@ export class DataCenterSaveSystem {
       const entity=build.world.entities.find(candidate=>candidate.x===item.x&&candidate.y===item.y&&candidate.type===item.type);
       if(entity)build.placedEntities.set(entity.id,{tool:item.tool,cost:item.cost});
     }
-    build.placedMaterials=new Map((snapshot.build.placedMaterials||[]).map(({index,tool,cost})=>[index,{tool,cost}]));
+    const oldWidth=Number(snapshot.world?.width)||112;
+    build.placedMaterials=new Map((snapshot.build.placedMaterials||[]).map(({index,tool,cost})=>{
+      const oldIndex=Number(index),x=oldIndex%oldWidth,y=Math.floor(oldIndex/oldWidth);return [y*build.world.width+x,{tool,cost}];
+    }).filter(([index])=>index>=0&&index<build.world.size));
     return true;
   }
 }

@@ -20,6 +20,27 @@ test('daily proposal count follows every reputation band',()=>{
   }
 });
 
+test('new markets include Cloud CPU and reputation-eligible storage beside Colocation',()=>{
+  const state={day:1,reputation:50,offerSequence:0,offers:[],contracts:[],marketInitialized:false};
+  new ContractSystem(state,{random:()=>0});
+  assert.ok(state.offers.some(offer=>offer.modality==='compute'&&offer.productId==='cloud-cpu'));
+  assert.ok(state.offers.some(offer=>offer.modality==='compute'&&offer.productId==='cloud-storage'));
+  assert.ok(state.offers.some(offer=>offer.modality==='colocation'));
+});
+
+test('initial Cloud offers respect product reputation and existing initialized markets are not reseeded',()=>{
+  const low={day:1,reputation:10,offerSequence:0,offers:[],contracts:[],marketInitialized:false};
+  new ContractSystem(low,{random:()=>0});
+  assert.ok(low.offers.some(offer=>offer.productId==='cloud-cpu'));
+  assert.ok(!low.offers.some(offer=>offer.productId==='cloud-storage'));
+
+  const saved={day:3,reputation:50,offerSequence:1,offers:[{id:'offer-kept',modality:'colocation',monthlyFee:100}],
+    contracts:[],marketInitialized:true,lastMarketGeneratedDay:3};
+  new ContractSystem(saved,{random:()=>0});
+  assert.equal(saved.offers.length,1);
+  assert.equal(saved.offers[0].id,'offer-kept');
+});
+
 test('reputation unlocks only eligible client categories and creates premium opportunities at high tiers',()=>{
   const low=market(10,()=>.99),mid=market(40,()=>.99),high=market(99,()=>.99);
   assert.ok(low.system.generateDaily(2).every(offer=>['startup','small'].includes(offer.clientTier)));

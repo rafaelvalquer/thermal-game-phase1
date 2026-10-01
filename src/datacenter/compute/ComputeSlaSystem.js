@@ -9,7 +9,8 @@ export class ComputeSlaSystem {
       if(contract.modality!=='compute'||contract.status!=='active')continue;
       contract.computeDiagnostics=diagnoseComputeContract(this.world,contract);
       const allocations=contract.allocations||[],racks=allocations.map(item=>this.world.entitiesByType('computeRack').find(rack=>rack.assetId===item.assetId));
-      const powered=allocations.length>0&&racks.every(rack=>rack&&rack.enabled&&isPowered(rack));
+      const provisioned=contract.computeDiagnostics.length===0;
+      const powered=provisioned&&allocations.length>0&&racks.every(rack=>rack&&rack.enabled&&isPowered(rack));
       const hot=racks.some(rack=>rack&&(rack.intakeAirTemperature??rack.inletTemperature??25)>contract.maxInletTemperature);
       contract.computeThermalViolationSeconds=hot?(contract.computeThermalViolationSeconds||0)+physicalDt:0;
       const available=powered&&contract.computeThermalViolationSeconds<=60;
