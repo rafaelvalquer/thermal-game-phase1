@@ -50,6 +50,23 @@ export class WorldSnapshot {
     };
     for(const entity of world?.entities||[])append(entity,'entity');
     for(const utility of world?.allUtilities?.()||[])append(utility,'utility');
+    // Mirror CoolingNetworkBuilder's four-sided tile adjacency in the render snapshot.
+    // Hydraulic pipes are deliberately excluded so crossing systems never join visually.
+    const airDucts=records.filter(record=>record.type==='duct'),ductAt=new Map(airDucts.map(record=>[`${record.x},${record.y}`,record]));
+    const airTerminals=new Map();
+    for(const record of records){if(!['coolingUnit','supplyVent'].includes(record.type))continue;
+      const direction=record.direction||{x:1,y:0},dx=Math.sign(direction.x||0)||(!direction.y?1:0),dy=Math.sign(direction.y||0),length=Math.max(1,Math.floor(record.footprintLength||1));
+      for(let offset=0;offset<length;offset++){
+        const x=record.x+dx*offset,y=record.y+dy*offset,key=`${x},${y}`,items=airTerminals.get(key)||[];items.push(record.type);airTerminals.set(key,items);
+      }
+    }
+    const cardinal=[{dx:1,dy:0,name:'east'},{dx:-1,dy:0,name:'west'},{dx:0,dy:1,name:'south'},{dx:0,dy:-1,name:'north'}];
+    for(const duct of airDucts){duct.ductConnections=[];
+      for(const side of cardinal){const key=`${duct.x+side.dx},${duct.y+side.dy}`;
+        if(ductAt.has(key))duct.ductConnections.push({direction:side.name,type:'duct'});
+        else for(const type of airTerminals.get(key)||[])duct.ductConnections.push({direction:side.name,type});
+      }
+    }
     const temperatures=new Float32Array(world?.size||0),materialIds=new Array(world?.size||0);
     for(let i=0;i<temperatures.length;i++){
       temperatures[i]=numeric(world.temperatureAtIndex?.(i),25);

@@ -5,7 +5,7 @@ import { CoordinateMapper } from '../../src/bridge/CoordinateMapper.js';
 import { DirtyStateTracker } from '../../src/bridge/DirtyStateTracker.js';
 import { WorldSnapshot } from '../../src/bridge/WorldSnapshot.js';
 import { World } from '../../src/world/World.js';
-import { ComputeRack, CoolingUnit, Fan, ServerRack } from '../../src/entities/index.js';
+import { AirDuct, ComputeRack, CoolingUnit, Fan, Pipe, ServerRack, SupplyVent } from '../../src/entities/index.js';
 import { NavigationGrid } from '../../src/rendering/three/visual/NavigationGrid.js';
 import { ThermalColorScale } from '../../src/rendering/three/visual/ThermalColorScale.js';
 import { Equipment3DFactory } from '../../src/rendering/three/equipment/Equipment3DFactory.js';
@@ -136,6 +136,61 @@ test('fifty racks keep a fixed number of instanced draw groups across live updat
   for(let i=0;i<8;i++){racks[i].setUtilization((i+1)/10);factory.sync(WorldSnapshot.capture(world));}
   assert.equal(factory.getPickableMeshes().length,groups.length);assert.equal(factory.detailed.meshes.get('computeRackCpu:module'),moduleMesh);
   factory.dispose();
+});
+
+test('air duct snapshot connections include adjacent air terminals and never join hydraulic pipes',()=>{
+  const world=new World(8,6),cooling=world.addEntity(new CoolingUnit(0,2)),first=world.addUtility(new AirDuct(1,2)),second=world.addUtility(new AirDuct(2,2));
+  world.addEntity(new Pipe(1,1));world.addEntity(new SupplyVent(3,2));
+  const snapshot=WorldSnapshot.capture(world),a=snapshot.equipment.find(record=>record.id===String(first.id)),b=snapshot.equipment.find(record=>record.id===String(second.id));
+  assert.deepEqual(a.ductConnections,[{direction:'east',type:'duct'},{direction:'west',type:'coolingUnit'}]);
+  assert.deepEqual(b.ductConnections,[{direction:'east',type:'supplyVent'},{direction:'west',type:'duct'}]);
+  assert.equal(snapshot.equipment.find(record=>record.id===String(cooling.id)).type,'coolingUnit');
+});
+
+test('air duct fittings appear at a cooling unit and an outlet, then update when a terminal is removed',()=>{
+  const scene=new Scene(),world=new World(7,5),duct=world.addUtility(new AirDuct(2,2));
+  const cooling=world.addEntity(new CoolingUnit(1,2)),vent=world.addEntity(new SupplyVent(3,2)),factory=new Equipment3DFactory(scene);
+  factory.sync(WorldSnapshot.capture(world));const couplers=factory.ducts.meshes.get('couplers'),matrix=new Matrix4();
+  couplers.getMatrixAt(0,matrix);assert.notEqual(matrix.determinant(),0);
+  couplers.getMatrixAt(1,matrix);assert.notEqual(matrix.determinant(),0);
+  world.removeEntity(vent);assert.equal(factory.sync(WorldSnapshot.capture(world)),true);
+  factory.ducts.meshes.get('couplers').getMatrixAt(0,matrix);assert.equal(matrix.determinant(),0);
+  factory.ducts.meshes.get('couplers').getMatrixAt(1,matrix);assert.notEqual(matrix.determinant(),0);
+  assert.equal(factory.recordAt({object:couplers,instanceId:0}),String(duct.id));assert.ok(cooling);factory.dispose();
+});
+
+test('air duct models build shared arms, caps and terminal couplers with pickable logical IDs',()=>{
+  const scene=new Scene(),world=new World(8,8),ducts=[];
+  for(const [x,y] of [[3,3],[4,3],[3,2],[3,4],[2,3],[6,3],[7,3],[5,3],[6,2]])ducts.push(world.addUtility(new AirDuct(x,y)));
+  const factory=new Equipment3DFactory(scene);factory.sync(WorldSnapshot.capture(world));
+  const arms=factory.ducts.meshes.get('arms'),caps=factory.ducts.meshes.get('caps'),couplers=factory.ducts.meshes.get('couplers');
+  assert.ok(arms.geometry===factory.ducts.geometry.arm);assert.equal(arms.count,ducts.length*4);
+  assert.equal(factory.recordAt({object:arms,instanceId:0}),String(ducts[0].id));
+  const connections=WorldSnapshot.capture(world).equipment;
+  const crossConnections=connections.find(record=>record.id===String(ducts[0].id)).ductConnections;
+  const teeConnections=connections.find(record=>record.id===String(ducts[5].id)).ductConnections;
+  assert.deepEqual(crossConnections.map(connection=>connection.direction).sort(),['east','north','south','west']);
+  assert.deepEqual(teeConnections.map(connection=>connection.direction).sort(),['east','north','west']);
+  const matrix=new Matrix4();caps.getMatrixAt(0,matrix);assert.equal(matrix.determinant(),0);
+  couplers.getMatrixAt(0,matrix);assert.equal(matrix.determinant(),0);
+  const ids=factory.getEquipmentIds();assert.deepEqual(ids,factory.getMeshIds());factory.dispose();
+});
+
+test('air duct instancing updates after topology changes and preserves selection IDs when a tile is removed',()=>{
+  const scene=new Scene(),world=new World(6,5),first=world.addUtility(new AirDuct(1,2)),second=world.addUtility(new AirDuct(2,2)),factory=new Equipment3DFactory(scene);
+  factory.sync(WorldSnapshot.capture(world));const arms=factory.ducts.meshes.get('arms');assert.equal(arms.count,8);
+  world.removeUtility(second);assert.equal(factory.sync(WorldSnapshot.capture(world)),true);
+  const updatedArms=factory.ducts.meshes.get('arms');assert.notEqual(updatedArms,arms);assert.equal(updatedArms.count,4);
+  assert.equal(factory.recordAt({object:updatedArms,instanceId:0}),String(first.id));assert.deepEqual(factory.getEquipmentIds(),[String(first.id)]);factory.dispose();
+});
+
+test('hydraulic pipe crossing remains above the connected air duct',()=>{
+  const scene=new Scene(),world=new World(5,5);world.addUtility(new AirDuct(2,2));const pipeEntity=world.addEntity(new Pipe(2,2));
+  const factory=new Equipment3DFactory(scene);factory.sync(WorldSnapshot.capture(world));
+  const pipe=factory.meshes.get('pipe'),duct=factory.ducts.meshes.get('body'),pipeMatrix=new Matrix4(),ductMatrix=new Matrix4(),pipePosition=new Vector3(),ductPosition=new Vector3();
+  pipe.getMatrixAt(0,pipeMatrix);duct.getMatrixAt(0,ductMatrix);pipePosition.setFromMatrixPosition(pipeMatrix);ductPosition.setFromMatrixPosition(ductMatrix);
+  assert.ok(pipePosition.y-.075>ductPosition.y+.12);
+  assert.equal(factory.recordAt({object:pipe,instanceId:0}),String(pipeEntity.id));factory.dispose();
 });
 
 test('world builder creates an instanced floor, grouped walls and supports ceiling visibility',()=>{
