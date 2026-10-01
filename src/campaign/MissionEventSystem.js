@@ -10,7 +10,7 @@ export class MissionEventSystem {
       const event=this.level.events[i],id=event.id||'event-'+i;
       if(this.fired.has(id)||elapsed<event.time)continue;
       this.apply(event);this.fired.add(id);
-      this.lastEvent={event,targets:this.targets(event),time:elapsed,expires:elapsed+6};
+      this.lastEvent={event,targets:this.targets(event),time:elapsed,expires:elapsed+(this.level.number===6?8:6)};
       this.lastAnnouncement=event.message||this.describe(event);
     }
   }

@@ -24,7 +24,7 @@ export class LandOwnershipSystem {
       for(let y=y0;y<y1;y++)this.ownedMask.fill(1,y*this.world.width+x0,y*this.world.width+x1);
     }
     this.revision++;this.world.landTopologyVersion=(this.world.landTopologyVersion||0)+1;
-    this.world.airTopologyVersion++;this.world.thermalStatisticsVersion=(this.world.thermalStatisticsVersion||0)+1;
+    this.world.thermalStatisticsVersion=(this.world.thermalStatisticsVersion||0)+1;
     this.world.navigationTopologyVersion++;
     return this;
   }

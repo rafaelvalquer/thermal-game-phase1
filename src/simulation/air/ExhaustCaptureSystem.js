@@ -37,21 +37,9 @@ export class ExhaustCaptureSystem {
   }
 
   updateExterior(){
-    const g=this.grid;
-    if(this.exteriorVersion===g.topologyVersion)return;
-    this.exteriorVersion=g.topologyVersion;this.exterior=new Uint8Array(g.size);
-    const rooms=g.world.airRooms||[],queue=[];
-    const add=(x,y)=>{
-      if(!g.isAir(x,y))return;
-      const i=g.cellIndex(x,y);if(this.exterior[i])return;
-      if(rooms.some(r=>x>r.x&&y>r.y&&x<r.x+r.w-1&&y<r.y+r.h-1))return;
-      this.exterior[i]=1;queue.push({x,y});
-    };
-    for(let x=0;x<g.width;x++){add(x,0);add(x,g.height-1);}
-    for(let y=0;y<g.height;y++){add(0,y);add(g.width-1,y);}
-    for(let head=0;head<queue.length;head++){
-      const {x,y}=queue[head];add(x-1,y);add(x+1,y);add(x,y-1);add(x,y+1);
-    }
+    const environment=this.grid.world.environmentTopology;
+    if(!environment){this.exterior=this.grid.exteriorCells;this.exteriorVersion=this.grid.topologyVersion;return;}
+    environment.ensureCurrent();this.exterior=environment.exteriorMask;this.exteriorVersion=environment.revision;
   }
 
   apply(dt){

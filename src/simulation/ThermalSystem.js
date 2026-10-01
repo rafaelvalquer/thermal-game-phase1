@@ -83,12 +83,16 @@ export class ThermalSystem {
   }
 
   passiveOutdoorExchange(dt){
-    const w=this.world,out=w.environment.temperature;
+    const w=this.world,out=w.environment.temperature,topology=w.environmentTopology;
+    if(topology){topology.ensureCurrent();for(let i=0;i<topology.exteriorCount;i++)this.exchangeBoundary(topology.exteriorIndices[i],dt,out);return;}
     for(let x=0;x<w.width;x++){this.exchangeBoundary(w.index(x,0),dt,out);this.exchangeBoundary(w.index(x,w.height-1),dt,out);}
     for(let y=1;y<w.height-1;y++){this.exchangeBoundary(w.index(0,y),dt,out);this.exchangeBoundary(w.index(w.width-1,y),dt,out);}
   }
   exchangeBoundary(i,dt,out){
     const w=this.world;if(!w.isAirIndex(i))return;
-    const T=w.temperatureAtIndex(i),q=C.passiveOutdoorLeakWPerK*(T-out)*dt;w.energy[i]-=q;w.environment.energyReceived+=q;this.metrics.externalEnergy+=q;
+    const T=w.temperatureAtIndex(i),difference=T-out;if(Math.abs(difference)<1e-9)return;
+    const equilibriumEnergy=difference*w.capacityAtIndex(i),limit=Math.abs(equilibriumEnergy)*C.maxOutdoorEqualizationFraction;
+    const q=clamp(C.passiveOutdoorLeakWPerK*difference*dt,-limit,limit);
+    w.energy[i]-=q;w.environment.energyReceived+=q;this.metrics.externalEnergy+=q;
   }
 }

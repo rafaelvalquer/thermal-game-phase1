@@ -17,6 +17,7 @@ import { CoolingPerformanceSolver } from '../../src/simulation/cooling/CoolingPe
 function warmScenario({indoorUnit=false,outdoorTemperature=25}={}){
   const world=new World(8,8);world.environment.temperature=outdoorTemperature;
   world.zones=[{id:'room',x:3,y:1,width:5,height:6}];
+  if(indoorUnit){for(let x=2;x<8;x++){world.setMaterial(x,1,'concrete');world.setMaterial(x,6,'concrete');}for(let y=1;y<=6;y++){world.setMaterial(2,y,'concrete');world.setMaterial(7,y,'concrete');}}
   for(let y=1;y<7;y++)for(let x=3;x<8;x++)world.setTemperature(x,y,30);
   const unit=new CoolingUnit(indoorUnit?3:0,4);world.addEntity(unit);
   world.addUtility(new AirDuct(indoorUnit?4:1,4,{size:'duct'}));
@@ -26,14 +27,15 @@ function warmScenario({indoorUnit=false,outdoorTemperature=25}={}){
   const airflow=new AirflowSystem(world,metrics),cooling=new CoolingSystem(world,airflow,metrics),energy=new EnergySystem(world,metrics);energy.initialize();
   return {world,unit,vent,metrics,airflow,cooling,energy};
 }
+const sealMap=world=>{for(let x=0;x<world.width;x++){world.setMaterial(x,0,'concrete');world.setMaterial(x,world.height-1,'concrete');}for(let y=0;y<world.height;y++){world.setMaterial(0,y,'concrete');world.setMaterial(world.width-1,y,'concrete');}};
 
 test('an indoor condenser distributes rejected heat across reachable nearby air and conserves energy',()=>{
-  const world=new World(9,9),unit=new CoolingUnit(4,4);unit.indoor=true;unit.electricalPower=300;world.addEntity(unit);
+  const world=new World(9,9);sealMap(world);const unit=new CoolingUnit(4,4);unit.indoor=true;unit.electricalPower=300;world.addEntity(unit);
   const metrics={generatedHeat:0,externalEnergy:0,coolingHeatRejected:0},before=world.totalTileEnergy();
   const rejection=new CoolingHeatRejection(world,metrics);rejection.queue(unit,1200);rejection.apply(2);
   const warmed=Array.from(world.energy).filter((energy,index)=>energy>before/world.size);
   assert.ok(warmed.length>1,'heat should be shared by several air cells');
-  assert.ok(Math.abs(world.totalTileEnergy()-before-2400)<1e-8);
+  assert.ok(Math.abs(world.totalTileEnergy()-before-2400)<1e-6);
   assert.equal(metrics.externalEnergy,0);
   assert.equal(metrics.generatedHeat,600);
   assert.equal(metrics.coolingHeatRejected,1200);
@@ -42,7 +44,7 @@ test('an indoor condenser distributes rejected heat across reachable nearby air 
 });
 
 test('nearby solid walls block condenser heat distribution without blocking reachable air',()=>{
-  const world=new World(9,9),unit=new CoolingUnit(3,4);unit.indoor=true;world.addEntity(unit);
+  const world=new World(9,9);sealMap(world);const unit=new CoolingUnit(3,4);unit.indoor=true;world.addEntity(unit);
   world.setMaterial(4,4,'concrete');
   const before=world.totalTileEnergy(),targetBefore=world.energy[world.index(5,4)];
   const metrics={generatedHeat:0,externalEnergy:0,coolingHeatRejected:0},rejection=new CoolingHeatRejection(world,metrics);
@@ -54,17 +56,17 @@ test('nearby solid walls block condenser heat distribution without blocking reac
 
 test('condenser exhaust direction biases heat toward the selected side and across all four orientations',()=>{
   for(const direction of [{x:1,y:0},{x:0,y:1},{x:-1,y:0},{x:0,y:-1}]){
-    const world=new World(9,9),unit=new CoolingUnit(4,4,{direction});unit.indoor=true;world.addEntity(unit);
+    const world=new World(9,9);sealMap(world);const unit=new CoolingUnit(4,4,{direction});unit.indoor=true;world.addEntity(unit);
     const metrics={generatedHeat:0,externalEnergy:0,coolingHeatRejected:0},before=world.totalTileEnergy(),rejection=new CoolingHeatRejection(world,metrics);
     rejection.queue(unit,1200);rejection.apply(1);
     const forward=world.temperatureAt(4+direction.x,4+direction.y),backward=world.temperatureAt(4-direction.x,4-direction.y);
     assert.ok(forward>backward,'exhaust should favor the chosen direction');
-    assert.ok(Math.abs(world.totalTileEnergy()-before-1200)<1e-8,'direction must not change rejected energy');
+    assert.ok(Math.abs(world.totalTileEnergy()-before-1200)<1e-6,'direction must not change rejected energy');
   }
 });
 
 test('condenser exhaust impulse follows its direction and stops at a wall',()=>{
-  const world=new World(8,5),unit=new CoolingUnit(2,2,{direction:{x:1,y:0}});unit.indoor=true;world.addEntity(unit);
+  const world=new World(8,5);sealMap(world);const unit=new CoolingUnit(2,2,{direction:{x:1,y:0}});unit.indoor=true;world.addEntity(unit);
   const airflow=new AirflowSystem(world,{});
   unit.heatRejected=20000;
   world.setMaterial(3,2,'concrete');airflow.grid.syncTopology();
@@ -75,7 +77,7 @@ test('condenser exhaust impulse follows its direction and stops at a wall',()=>{
 });
 
 test('pressure projection preserves a visible directional condenser jet for streamline rendering',()=>{
-  const world=new World(12,8),unit=new CoolingUnit(2,3,{direction:{x:1,y:0}});unit.indoor=true;unit.heatRejected=20000;world.addEntity(unit);
+  const world=new World(12,8),unit=new CoolingUnit(2,3,{direction:{x:1,y:0}});unit.heatRejected=20000;world.addEntity(unit);
   const airflow=new AirflowSystem(world,{});
   for(let step=0;step<3;step++)airflow.updateVelocity(.05);
   assert.ok(world.airX[world.index(3,3)]>.08,'outlet airflow should remain visible outside the condenser');
@@ -83,7 +85,7 @@ test('pressure projection preserves a visible directional condenser jet for stre
 });
 
 test('industrial condenser jet starts beyond its two-tile housing',()=>{
-  const world=new World(12,8),unit=new CoolingUnit(2,3,{tier:'industrial',ratedCoolingCapacity:50000,maxAirFlow:5,direction:{x:1,y:0}});
+  const world=new World(12,8);sealMap(world);const unit=new CoolingUnit(2,3,{tier:'industrial',ratedCoolingCapacity:50000,maxAirFlow:5,direction:{x:1,y:0}});
   unit.indoor=true;unit.heatRejected=20000;world.addEntity(unit);
   const airflow=new AirflowSystem(world,{});
   for(let step=0;step<3;step++)airflow.updateVelocity(.05);

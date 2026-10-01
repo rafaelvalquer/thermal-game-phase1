@@ -71,9 +71,9 @@ export class FluidSystem {
     if(entity.type==='radiator'){entity.airInTemperature=this.world.inBounds(entity.x,entity.y)?this.world.temperatureAt(entity.x,entity.y):this.world.environment.temperature;entity.airOutTemperature=entity.airInTemperature;entity.fanBoost=1;entity.rejectedToExterior=this.radiatorIsOutdoor(entity);}
   }
   radiatorIsOutdoor(radiator){
-    if(!this.world.landOwnership)return Boolean(radiator.outdoor);
-    const grid=this.world.airflowSystem?.grid;if(!grid)return Boolean(radiator.outdoor);grid.syncTopology();
-    return grid.inCell(radiator.x,radiator.y)&&grid.exteriorCells[grid.cellIndex(radiator.x,radiator.y)]===1;
+    const environment=this.world.environmentTopology;
+    if(environment){environment.ensureCurrent();return environment.isExterior(radiator.x,radiator.y);}
+    return Boolean(radiator.outdoor);
   }
   resetNetworkDiagnostics(network){for(const entity of network.entities){entity.thermalPower=0;if(entity.type==='exchanger'){entity.airCoolingPower=0;entity.captureMode='IDLE';}if(entity.type==='radiator')entity.rejectedToExterior=this.radiatorIsOutdoor(entity);}}
 

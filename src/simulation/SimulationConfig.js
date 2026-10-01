@@ -11,4 +11,5 @@ export const SimulationConfig = {
   maxConductionEqualizationFraction: 0.45,
   airflowMixingFactor: 1.0,
   passiveOutdoorLeakWPerK: 2.5,
+  maxOutdoorEqualizationFraction: 0.35,
 };

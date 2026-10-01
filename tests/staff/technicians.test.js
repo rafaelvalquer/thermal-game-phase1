@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../src/world/World.js';
 import { ServerRack } from '../../src/entities/ServerRack.js';
+import { ComputeRack } from '../../src/entities/ComputeRack.js';
 import { Technician } from '../../src/entities/Technician.js';
 import { TechnicianSystem, TECHNICIAN_DAILY_WAGE, TECHNICIAN_HIRE_COST } from '../../src/simulation/TechnicianSystem.js';
 import { ThermalSystem } from '../../src/simulation/ThermalSystem.js';
@@ -24,6 +25,32 @@ test('hiring is budgeted, limited by rack count, and has a daily wage',()=>{
   const hired=system.hire();assert.equal(hired.ok,true);assert.equal(build.budget,10000-TECHNICIAN_HIRE_COST);
   assert.equal(system.payroll,TECHNICIAN_DAILY_WAGE);assert.equal(system.hire().ok,false);
   assert.equal(system.settleDay(1),TECHNICIAN_DAILY_WAGE);assert.equal(system.settleDay(1),0);
+});
+
+test('Cloud-only installations can hire technicians and count every rack toward the cap',()=>{
+  const world=new World(20,14);world.fill('air',25);
+  for(let index=0;index<7;index++)world.addEntity(new ComputeRack(4+index*2,6,{specialization:index%2?'gpu':'cpu'}));
+  const build={budget:10000,onChange(){}};const system=new TechnicianSystem(world,build);
+  assert.equal(system.maxWorkers,2);assert.equal(system.hire().ok,true);assert.equal(system.hire().ok,true);assert.equal(system.hire().reason,'Limite de técnicos atingido: 1 para cada 6 racks instalados.');
+});
+
+test('technicians dispatch to hot CPU, GPU and Storage Cloud racks',()=>{
+  for(const specialization of ['cpu','gpu','storage']){
+    const world=new World(12,12);world.fill('air',25);
+    const rack=world.addEntity(new ComputeRack(6,6,{specialization,temperature:50,slaTemperature:35}));
+    const system=new TechnicianSystem(world,{budget:0}),worker=world.addEntity(new Technician(4,6));
+    system.dispatcher.dispatch();assert.equal(worker.targetRackId,rack.id,`${specialization} rack receives the call`);
+    for(let tick=0;tick<65;tick++)system.update(.1);
+    assert.ok(rack.staffBoostRemaining>0,`${specialization} rack receives the existing thermal boost`);
+  }
+});
+
+test('Cloud and Colocation racks share the physical rack staffing limit',()=>{
+  const world=new World(24,12),build={budget:10000,onChange(){}};world.fill('air',25);
+  for(let index=0;index<4;index++)world.addEntity(new ServerRack(2+index*3,3));
+  for(let index=0;index<3;index++)world.addEntity(new ComputeRack(2+index*3,8));
+  const system=new TechnicianSystem(world,build);assert.equal(system.maxWorkers,2);
+  assert.equal(system.hire().ok,true);assert.equal(system.hire().ok,true);assert.equal(system.hire().ok,false);
 });
 
 test('technician reaches a hot rack through walkable tiles and activates a brief assist',()=>{

@@ -22,10 +22,12 @@ export class AirGrid {
     this.hasExteriorCells=false;
     this.pressureLeft=new Int32Array(this.size);this.pressureRight=new Int32Array(this.size);this.pressureUp=new Int32Array(this.size);this.pressureDown=new Int32Array(this.size);this.pressureNeighborCount=new Uint8Array(this.size);
     this.pressureCells=new Int32Array(this.size);this.pressureCellCount=0;
+    this.projectionPressureCells=new Int32Array(this.size);this.projectionPressureCellCount=0;
     this.interiorPressureCells=new Int32Array(this.size);this.interiorPressureCellCount=0;
     this.wallProximity=new Uint8Array(this.size);
     this.wallConfinement=new Uint8Array(this.size);
     this.topologyVersion=-1;
+    this.environmentVersion=-1;
 
     world.airPressure=this.pressure;
     world.airDivergence=this.divergence;
@@ -42,15 +44,13 @@ export class AirGrid {
 
   syncTopology(force=false){
     const version=this.world.airTopologyVersion??0;
-    if(!force&&version===this.topologyVersion)return false;
-    this.topologyVersion=version;
+    const environmentVersion=this.world.environmentTopologyVersion??version;
+    if(!force&&version===this.topologyVersion&&environmentVersion===this.environmentVersion)return false;
+    this.topologyVersion=version;this.environmentVersion=environmentVersion;
     this.pressure.fill(0);this.pressureNext.fill(0);this.u.fill(0);this.v.fill(0);
-
-    for(let y=0;y<this.height;y++)for(let x=0;x<this.width;x++){
-      const i=this.cellIndex(x,y);
-      this.solid[i]=this.world.registry.fromIndex(this.world.material[i]).solid?1:0;
-    }
-
+    this.world.environmentTopology?.ensureCurrent();
+    if(this.world.environmentTopology){this.solid.set(this.world.environmentTopology.solidMask);this.exteriorCells.set(this.world.environmentTopology.exteriorMask);}
+    else for(let y=0;y<this.height;y++)for(let x=0;x<this.width;x++){const i=this.cellIndex(x,y);this.solid[i]=this.world.registry.fromIndex(this.world.material[i]).solid?1:0;}
     this.buildExteriorMask();
 
     for(let y=0;y<this.height;y++)for(let x=0;x<this.width;x++){
@@ -84,41 +84,27 @@ export class AirGrid {
   }
 
   buildExteriorMask(){
-    const rooms=this.world.airRooms||[];
-    this.exteriorCells.fill(0);
-    if(this.world.landOwnership){
-      const queue=new Int32Array(this.size),seen=this.exteriorCells;let head=0,tail=0;
-      for(let i=0;i<this.size;i++){
-        const {x,y}=this.world.coords(i);
-        if(this.solid[i])continue;
-        if(!this.world.landOwnership.isOwned(x,y)||x===0||y===0||x===this.width-1||y===this.height-1){seen[i]=1;queue[tail++]=i;}
-      }
-      while(head<tail){const i=queue[head++],x=i%this.width,y=(i/this.width)|0;for(const next of [x?i-1:-1,x+1<this.width?i+1:-1,y?i-this.width:-1,y+1<this.height?i+this.width:-1])if(next>=0&&!this.solid[next]&&!seen[next]){seen[next]=1;queue[tail++]=next;}}
-      this.hasExteriorCells=tail>0;return;
-    }
-    this.hasExteriorCells=rooms.length>0;
-    if(!rooms.length)return;
-    for(let y=0;y<this.height;y++)for(let x=0;x<this.width;x++){
-      const inside=rooms.some(room=>x>room.x&&y>room.y&&x<room.x+(room.w??room.width)-1&&y<room.y+(room.h??room.height)-1);
-      if(!inside)this.exteriorCells[this.cellIndex(x,y)]=1;
-    }
+    if(this.world.environmentTopology){this.world.environmentTopology.ensureCurrent();this.exteriorCells.set(this.world.environmentTopology.exteriorMask);}
+    this.hasExteriorCells=this.exteriorCells.some(value=>value===1);
   }
 
   buildPressureStencil(){
-    const {width,height,solid,exteriorCells,pressureLeft:left,pressureRight:right,pressureUp:up,pressureDown:down,pressureNeighborCount:counts,pressureCells,interiorPressureCells}=this;
+    const {width,height,solid,exteriorCells,pressureLeft:left,pressureRight:right,pressureUp:up,pressureDown:down,pressureNeighborCount:counts,pressureCells,projectionPressureCells,interiorPressureCells}=this;
     const zero=this.size;left.fill(zero);right.fill(zero);up.fill(zero);down.fill(zero);counts.fill(0);
-    let pressureCellCount=0,interiorPressureCellCount=0;
+    let pressureCellCount=0,projectionPressureCellCount=0,interiorPressureCellCount=0;
     for(let y=0;y<height;y++)for(let x=0;x<width;x++){
-      const i=y*width+x;if(solid[i])continue;pressureCells[pressureCellCount++]=i;
-      if(exteriorCells[i])continue;
-      interiorPressureCells[interiorPressureCellCount++]=i;let count=0;
-      if(x===0)count++;else if(!solid[i-1]){if(exteriorCells[i-1])count++;else{left[i]=i-1;count++;}}
-      if(x===width-1)count++;else if(!solid[i+1]){if(exteriorCells[i+1])count++;else{right[i]=i+1;count++;}}
-      if(y===0)count++;else if(!solid[i-width]){if(exteriorCells[i-width])count++;else{up[i]=i-width;count++;}}
-      if(y===height-1)count++;else if(!solid[i+width]){if(exteriorCells[i+width])count++;else{down[i]=i+width;count++;}}
+      const i=y*width+x;if(solid[i])continue;
+      pressureCells[pressureCellCount++]=i;projectionPressureCells[projectionPressureCellCount++]=i;
+      if(!exteriorCells[i])interiorPressureCells[interiorPressureCellCount++]=i;
+      let count=0;
+      if(x===0)count++;else if(!solid[i-1]){left[i]=i-1;count++;}
+      if(x===width-1)count++;else if(!solid[i+1]){right[i]=i+1;count++;}
+      if(y===0)count++;else if(!solid[i-width]){up[i]=i-width;count++;}
+      if(y===height-1)count++;else if(!solid[i+width]){down[i]=i+width;count++;}
       counts[i]=count;
     }
     this.pressureCellCount=pressureCellCount;
+    this.projectionPressureCellCount=projectionPressureCellCount;
     this.interiorPressureCellCount=interiorPressureCellCount;
   }
 

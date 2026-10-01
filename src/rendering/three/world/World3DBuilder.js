@@ -9,7 +9,8 @@ export class World3DBuilder {
   constructor(scene){this.scene=scene;this.floor=null;this.walls=[];this.ceiling=null;this.builtKey=null;this.dummy=new Object3D();this.floorColor=new Color();this.floorMaterial=new MeshStandardMaterial({color:'#172330',roughness:.88,metalness:.16});this.lastThermalKey=null;}
   build(snapshot){
     const {width,height,materialIds,ownedTiles}=snapshot.world;
-    const key=[width,height,snapshot.world.materialTopologyVersion,snapshot.world.landTopologyVersion,ownedTiles?Array.from(ownedTiles).reduce((n,v)=>n+v,0):'all'].join(':');
+    const landKey=snapshot.world.landTopologyVersion??(ownedTiles?Array.from(ownedTiles).reduce((n,value)=>n+value,0):'all');
+    const key=[width,height,snapshot.world.materialTopologyVersion,landKey].join(':');
     if(key===this.builtKey)return false;
     this.clear();this.builtKey=key;
     const floorGeo=new BoxGeometry(.98,.12,.98),count=width*height,mesh=new InstancedMesh(floorGeo,this.floorMaterial,count);mesh.name='world-floor';mesh.instanceMatrix.setUsage(35048);

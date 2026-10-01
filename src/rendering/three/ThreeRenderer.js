@@ -17,16 +17,19 @@ export class ThreeRenderer {
     const key=new DirectionalLight('#fff1d7',2.25);key.position.set(-38,60,-20);key.castShadow=this.quality.shadows;key.shadow.mapSize.set(1024,1024);this.keyLight=key;this.scene.add(key);
     const fill=new DirectionalLight('#64c6ed',.8);fill.position.set(30,24,40);this.scene.add(fill);
     this.worldBuilder=new World3DBuilder(this.scene);this.equipment=new Equipment3DFactory(this.scene);this.equipmentAnimation=new EquipmentAnimationSystem();this.airflowParticles=new AirflowParticleOverlay3D(this.scene,this.quality.airflowParticles);this.raycaster=new Raycaster();this.pointer=new Vector2();
-    this.snapshot=null;this.overlay='normal';this.selectedId=null;this.disposed=false;this.lastAirVersion=-1;
+    this.snapshot=null;this.overlay='normal';this.selectedId=null;this.disposed=false;this.lastAirVersion=-1;this.lastFrameTimings={};
     this.adapter.renderer.outputColorSpace='srgb';this.adapter.renderer.toneMappingExposure=1;
   }
   get domElement(){return this.canvas;}
   setOverlay(mode){this.overlay=['normal','thermal','airflow','power','cooling','water','alarms','contracts'].includes(mode)?mode:'normal';}
   render(snapshot,{overlay=this.overlay,ceiling=false,dt=1/60}={}){
     if(this.disposed||!snapshot)return;
-    this.snapshot=snapshot;this.worldBuilder.build(snapshot);this.equipment.sync(snapshot);this.equipmentAnimation.update(snapshot,dt,this.equipment);this.worldBuilder.setCeilingVisible(ceiling);
-    this.worldBuilder.updateOverlay(snapshot,overlay);this.airflowParticles.update(snapshot,dt,overlay==='airflow');this.overlay=overlay;
-    this.adapter.render(this.scene,this.camera);
+    const start=globalThis.performance?.now?.()??Date.now(),mark=()=>globalThis.performance?.now?.()??Date.now();
+    this.snapshot=snapshot;this.worldBuilder.build(snapshot);const worldBuildMs=mark()-start;
+    this.equipment.sync(snapshot);const equipmentSyncMs=mark()-start-worldBuildMs;
+    this.equipmentAnimation.update(snapshot,dt,this.equipment);this.worldBuilder.setCeilingVisible(ceiling);this.worldBuilder.updateOverlay(snapshot,overlay);this.airflowParticles.update(snapshot,dt,overlay==='airflow');this.overlay=overlay;
+    const visualUpdateMs=mark()-start-worldBuildMs-equipmentSyncMs,drawStart=mark();this.adapter.render(this.scene,this.camera);const drawMs=mark()-drawStart;
+    this.lastFrameTimings={worldBuildMs,equipmentSyncMs,visualUpdateMs,drawMs,totalMs:mark()-start};
   }
   setQuality(name){
     if(!THREE_QUALITY[name]||name===this.qualityName)return false;

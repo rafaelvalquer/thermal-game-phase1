@@ -3,6 +3,7 @@ import { NavigationGrid } from './staff/NavigationGrid.js';
 import { TechnicianPathfinder } from './staff/TechnicianPathfinder.js';
 import { TechnicianDispatcher } from './staff/TechnicianDispatcher.js';
 import { PatrolGraph } from './staff/PatrolGraph.js';
+import { operationalRacks, serviceableRacks, hotRacks } from '../datacenter/RackQueries.js';
 
 const DIRECTIONS=[[1,0],[0,1],[-1,0],[0,-1]];
 export const TECHNICIAN_HIRE_COST=2000;
@@ -13,13 +14,13 @@ export class TechnicianSystem {
   set monitor(value){this._monitor=value;if(this.pathfinder)this.pathfinder.monitor=value;}
   get monitor(){return this._monitor||null;}
   get workers(){return this.world.entitiesByType('technician');}
-  get maxWorkers(){const racks=this.world.entitiesByType('serverRack').length;return racks?Math.max(1,Math.ceil(racks/6)):0;}
+  get maxWorkers(){const racks=operationalRacks(this.world).length;return racks?Math.max(1,Math.ceil(racks/6)):0;}
   get payroll(){return this.workers.length*TECHNICIAN_DAILY_WAGE;}
   hire(){
     if(!this.maxWorkers)return {ok:false,reason:'É necessário ter racks para contratar técnicos.'};
-    if(this.workers.length>=this.maxWorkers)return {ok:false,reason:'Limite de técnicos atingido: 1 para cada 6 racks.'};
+    if(this.workers.length>=this.maxWorkers)return {ok:false,reason:'Limite de técnicos atingido: 1 para cada 6 racks instalados.'};
     if(this.build.budget<TECHNICIAN_HIRE_COST)return {ok:false,reason:'Orçamento insuficiente para contratar um técnico.'};
-    const rack=this.world.entitiesByType('serverRack')[0],position=this.nearestFree(rack?.x??0,rack?.y??0,true);
+    const rack=serviceableRacks(this.world)[0]||operationalRacks(this.world)[0],position=this.nearestFree(rack?.x??0,rack?.y??0,true);
     if(!position)return {ok:false,reason:'Não há espaço livre para iniciar a patrulha.'};
     const worker=this.world.addEntity(new Technician(position.x,position.y));
     worker.staffId='tech-'+worker.id;this.build.budget-=TECHNICIAN_HIRE_COST;this.build.onChange?.();this.world.datacenter?.markSaveDirty?.();return {ok:true,worker};
@@ -67,7 +68,8 @@ export class TechnicianSystem {
   }
   hottestReachable(worker){
     if(worker.cooldownRemaining>0)return null;
-    const candidates=this.world.entitiesByType('serverRack').filter(r=>r.temperature>Math.max(35,Number(r.slaTemperature)||35)&&!(r.staffBoostRemaining>0)&&!this.workers.some(other=>other!==worker&&other.targetRackId===r.id));
+    const assigned=new Set(this.workers.filter(other=>other!==worker&&other.targetRackId!=null).map(other=>other.targetRackId));
+    const candidates=hotRacks(this.world).filter(r=>!assigned.has(r.id));
     candidates.sort((a,b)=>b.temperature-a.temperature);
     for(const rack of candidates){
       const face=rack.airExhaustDirection||{x:0,y:1},goals=[{x:rack.x+face.x,y:rack.y+face.y},...DIRECTIONS.map(([dx,dy])=>({x:rack.x+dx,y:rack.y+dy}))];

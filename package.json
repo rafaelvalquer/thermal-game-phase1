@@ -11,6 +11,7 @@
     "benchmark:fluid": "node scripts/benchmark-fluid.js",
     "benchmark:technicians": "node scripts/benchmark-technicians.js",
     "benchmark:smoke": "node scripts/benchmark-smoke.js",
+    "benchmark:three": "node scripts/benchmark-three.js",
     "preview": "vite preview --host 0.0.0.0",
     "test": "node --experimental-test-isolation=none --test",
     "balance:airflow": "node scripts/balance-airflow.js",

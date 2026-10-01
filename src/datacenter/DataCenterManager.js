@@ -123,8 +123,7 @@ export class DataCenterManager {
     this.build.budget-=quote.cost;this.state.landInvestmentTotal=(Number(this.state.landInvestmentTotal)||0)+quote.cost;
     this.state.landRevision=1;this.state.ownedLandAreas=this.land.ownedAreaIds();
     this.record('Aquisição de terreno · '+quote.area.name,-quote.cost);
-    this.world.airTopologyVersion++;this.world.navigationTopologyVersion++;this.world.bumpUtilityTopology();
-    this.simulation?.cooling?.rebuild();this.simulation?.airflow?.grid?.syncTopology(true);
+    this.world.navigationTopologyVersion++;
     this.land.onChange?.(this.land.bounds({margin:2}));this.persist();
     this.build.onChange?.();
     return {ok:true,area:quote.area,statistics:this.land.statistics({placedMaterials:[...this.build.placedMaterials.keys()].map(index=>({x:index%this.world.width,y:Math.floor(index/this.world.width)})),investment:this.state.landInvestmentTotal})};

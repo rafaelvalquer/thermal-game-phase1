@@ -21,6 +21,7 @@ import { CoolingAirExchange } from '../simulation/cooling/CoolingAirExchange.js'
 import { ViewportCulling } from './ViewportCulling.js';
 import { StaticMapCache } from './StaticMapCache.js';
 import { VisualQualityManager } from './VisualQualityManager.js';
+import { OUTDOOR_TEMP } from '../utils/Constants.js';
 
 export class Renderer {
   constructor(canvas,camera,{tilePixels=14,monitor=null}={}){
@@ -65,6 +66,7 @@ export class Renderer {
       this.monitor?.begin('renderTilesMs');
       if(this.mode==='normal')this.staticMap.draw(scene,world,this.tile,this.zones||[],this.tileRenderer,bounds);
       else this.tileRenderer.draw(scene,world,this.tile,this.zones||[],this.mode,bounds);
+      this.drawHeatwaveTint(scene,world,bounds);
       this.monitor?.end('renderTilesMs');
       if(world.landOwnership)this.drawLandOwnership(scene,world);
       // Draw utility ducts before equipment so a hydraulic pipe crossing this
@@ -303,18 +305,38 @@ export class Renderer {
 
   drawEventHighlight(ctx,world,simulation,time){
     const recent=simulation.mission.events.lastEvent;if(!recent||simulation.elapsed>recent.expires)return;
-    const alpha=VisualSettings.reduceMotion?.55:clamp((recent.expires-simulation.elapsed)/1.4,0,1)*.45;
+    const palette=this.level?.number===6?this.eventPalette(recent.event):this.eventPalette(null),alpha=VisualSettings.reduceMotion?.55:clamp((recent.expires-simulation.elapsed)/1.4,0,1)*.45;
     const ids=new Set(recent.targets.map(e=>e.id));
     const zoneId=recent.event.filter?.zoneId;
     const zone=zoneId?this.zones?.find(z=>z.id===zoneId):null;
-    ctx.save();ctx.globalAlpha=alpha;ctx.strokeStyle='#67e8f9';ctx.fillStyle='rgba(34,211,238,.08)';ctx.lineWidth=Math.max(1.3,2/this.camera.zoom);ctx.setLineDash([this.tile*.24,this.tile*.12]);
+    ctx.save();ctx.globalAlpha=alpha;ctx.strokeStyle=palette.color;ctx.fillStyle=palette.fill;ctx.lineWidth=Math.max(1.3,2/this.camera.zoom);ctx.setLineDash([this.tile*.24,this.tile*.12]);
     if(zone){const x=zone.x*this.tile,y=zone.y*this.tile,w=zone.width*this.tile,h=zone.height*this.tile;ctx.fillRect(x,y,w,h);ctx.strokeRect(x,y,w,h);}
-    else for(const e of recent.targets){ctx.beginPath();ctx.arc((e.x+.5)*this.tile,(e.y+.5)*this.tile,this.tile*(.42+.1*Math.sin(time*5)),0,Math.PI*2);ctx.stroke();}
+    else for(const e of recent.targets){ctx.beginPath();ctx.arc((e.x+.5)*this.tile,(e.y+.5)*this.tile,this.tile*(VisualSettings.reduceMotion?.48:.42+.1*Math.sin(time*5)),0,Math.PI*2);ctx.stroke();}
     ctx.setLineDash([]);ctx.restore();
+  }
+
+  eventPalette(event){
+    if(event?.type==='machineLoad')return {color:'#fbbf24',fill:'rgba(245,158,11,.12)',title:'PICO DE CARGA'};
+    if(event?.type==='activateMachine')return {color:'#38bdf8',fill:'rgba(14,165,233,.12)',title:'NOVO PROCESSO EM OPERAÇÃO'};
+    if(event?.type==='outdoorTemperature')return {color:'#fb923c',fill:'rgba(239,68,68,.13)',title:'ONDA DE CALOR'};
+    return {color:'#67e8f9',fill:'rgba(34,211,238,.08)',title:'EVENTO OPERACIONAL'};
+  }
+
+  drawHeatwaveTint(ctx,world,bounds){
+    if(this.level?.number!==6||!Number.isFinite(world.environment?.temperature)||world.environment.temperature<=OUTDOOR_TEMP+1)return;
+    const topology=world.environmentTopology;if(!topology)return;topology.ensureCurrent();
+    const viewport=ViewportCulling.fromBounds(bounds,this.tile,0),mask=topology.exteriorMask,intensity=clamp((world.environment.temperature-OUTDOOR_TEMP)/22,.08,.34),alpha=.035+intensity*.13;
+    ctx.save();ctx.fillStyle=`rgba(251,116,42,${alpha.toFixed(3)})`;
+    for(let y=viewport.minY;y<=viewport.maxY;y++)for(let x=viewport.minX;x<=viewport.maxX;x++){if(!world.inBounds(x,y))continue;const index=world.index(x,y);if(mask[index])ctx.fillRect(x*this.tile,y*this.tile,this.tile,this.tile);}
+    ctx.restore();
   }
 
   drawEventBanner(ctx,simulation,width){
     const recent=simulation.mission.events.lastEvent;if(!recent||simulation.elapsed>recent.expires)return;
+    if(this.level?.number===6){
+      const palette=this.eventPalette(recent.event),title=palette.title,text=recent.event.message||'Evento operacional',narrow=width<560,w=Math.min(width-24,Math.max(narrow?260:390,Math.min(620,Math.max(ctx.measureText(text).width+36,ctx.measureText(title).width+48)))),h=narrow?60:68,x=(width-w)/2,y=narrow?92:74,alpha=VisualSettings.reduceMotion?1:clamp((recent.expires-simulation.elapsed)/.55,0,1);
+      ctx.save();ctx.globalAlpha=alpha;ctx.font='800 12px system-ui';ctx.fillStyle='rgba(5,15,27,.96)';ctx.strokeStyle=palette.color;ctx.lineWidth=1.5;ctx.beginPath();ctx.roundRect(x,y,w,h,10);ctx.fill();ctx.stroke();ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle=palette.color;ctx.font='900 10px ui-monospace,monospace';ctx.fillText(title,x+w/2,y+17,w-24);ctx.fillStyle='#e2e8f0';ctx.font='600 11px system-ui';ctx.fillText(text,x+w/2,y+43,w-22);ctx.restore();return;
+    }
     const text=recent.event.message||'Evento operacional';ctx.save();ctx.font='700 10px system-ui';
     const w=Math.min(width-24,ctx.measureText(text).width+28),x=(width-w)/2,y=width<560?86:16;
     ctx.fillStyle='rgba(8,24,38,.94)';ctx.strokeStyle='rgba(34,211,238,.7)';ctx.beginPath();ctx.roundRect(x,y,w,28,8);ctx.fill();ctx.stroke();

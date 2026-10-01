@@ -1,4 +1,5 @@
 const DIRECTIONS=[[0,-1],[1,0],[0,1],[-1,0]];
+import { hotRacks } from '../../datacenter/RackQueries.js';
 
 export class TechnicianDispatcher {
   constructor(system,{interval=1,maxPathAttempts=64}={}){
@@ -16,12 +17,10 @@ export class TechnicianDispatcher {
     try{
       const assigned=new Set(workers.filter(worker=>worker.targetRackId!=null).map(worker=>worker.targetRackId));
       const available=workers.filter(worker=>worker.action!=='working'&&worker.cooldownRemaining<=0&&!worker.targetRackId&&(worker.moveProgress||0)<=0);
-      const racks=this.world.entitiesByType('serverRack').filter(rack=>{
-        const limit=Math.max(35,Number(rack.slaTemperature)||35);
-        return rack.temperature>limit&&!(rack.staffBoostRemaining>0)&&!assigned.has(rack.id);
-      }).map(rack=>{
+      const racks=hotRacks(this.world).filter(rack=>!assigned.has(rack.id)).map(rack=>{
         const limit=Math.max(35,Number(rack.slaTemperature)||35),excess=rack.temperature-limit;
-        return {rack,priority:excess*10+(rack.temperature>limit?20:0)+(rack.currentPowerKW||0)*.1};
+        const powerKW=Number.isFinite(Number(rack.currentPowerKW))?Number(rack.currentPowerKW):Math.max(0,Number(rack.currentPowerW)||Number(rack.power)||0)/1000;
+        return {rack,priority:excess*10+(rack.temperature>limit?20:0)+powerKW*.1};
       }).sort((a,b)=>b.priority-a.priority||system.world.entityOrder(a.rack)-system.world.entityOrder(b.rack));
       let attempts=0;
       for(const job of racks){

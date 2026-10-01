@@ -1,0 +1,78 @@
+/* Campaign home: motion layer on top of the industrial identity (industrial.css). */
+.campaign-shell{position:relative;isolation:isolate;animation:campaign-grid-drift 60s linear infinite}
+.campaign-main,.campaign-footer{position:relative;z-index:1}
+
+/* Rising heat embers */
+.campaign-embers{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.campaign-embers i{position:absolute;bottom:-12px;left:calc(4% + var(--e)*7%);width:4px;height:4px;background:#e3b657;box-shadow:0 0 8px #e3b65799;opacity:0;animation:campaign-ember calc(9s + var(--e)*.7s) linear calc(var(--e)*-1.3s) infinite}
+.campaign-embers i:nth-child(3n){background:#e0794f;box-shadow:0 0 8px #e0794f99}
+.campaign-embers i:nth-child(4n){width:3px;height:3px;background:#63c6d1;box-shadow:0 0 8px #63c6d199}
+
+/* Header */
+.campaign-header{animation:campaign-drop .55s cubic-bezier(.2,.8,.2,1) both}
+.campaign-header .brand-mark{animation:campaign-heat-pulse 3.2s ease-in-out infinite}
+.campaign-progress-bar{width:110px;height:5px;margin-top:6px;margin-left:auto;background:#18262c;border:1px solid #53696e}
+.campaign-progress-bar i{display:block;height:100%;width:calc(var(--p)*100%);background:repeating-linear-gradient(90deg,#63c6d1 0 6px,#4aa5b0 6px 8px);transform-origin:left;animation:campaign-fill 1.1s .5s cubic-bezier(.2,.8,.2,1) both}
+
+/* Intro panel with a sweeping thermal scanline */
+.campaign-intro{position:relative;overflow:hidden;animation:campaign-rise .6s .1s cubic-bezier(.2,.8,.2,1) both}
+.campaign-intro h2{font-size:34px}
+.intro-scan{position:absolute;top:0;bottom:0;left:0;width:90px;pointer-events:none;background:linear-gradient(90deg,transparent,#e3b6571a 40%,#e3b65733 50%,#e3b6571a 60%,transparent);mix-blend-mode:screen;animation:campaign-scan 6s 1s ease-in-out infinite}
+
+/* Sandbox launch, aligned with the industrial look */
+.sandbox-launch{position:relative;overflow:hidden;border-left:5px solid #63c6d1;background:#2a3c42;box-shadow:inset 0 1px #607277,4px 5px #10191e66;animation:campaign-rise .6s .22s cubic-bezier(.2,.8,.2,1) both}
+.sandbox-launch:before{content:'';position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,#63c6d10a 0 2px,transparent 2px 6px);animation:campaign-rack-flow 2.4s linear infinite}
+.sandbox-launch>div{position:relative}
+.sandbox-launch>div>span{display:inline-flex;align-items:center;gap:7px;font-family:ui-monospace,Consolas,monospace;font-size:10px;letter-spacing:.12em;color:#63c6d1}
+.sandbox-launch h2{font-size:22px;color:#eee8cf}
+.sandbox-launch p{font-size:12px;color:#b2c1bc}
+.sandbox-launch button{position:relative;overflow:hidden;border-radius:2px;border:1px solid #f0d58a;background:#e3b657;color:#17262d;font-size:12px;padding:12px 18px;box-shadow:inset 0 -3px #a67c3c,3px 3px #10191e;transition:transform .15s,box-shadow .15s,filter .15s}
+.sandbox-launch button span{display:inline-block;transition:transform .2s}
+.sandbox-launch button:after{content:'';position:absolute;top:0;bottom:0;left:-60%;width:40%;background:linear-gradient(90deg,transparent,#fff6,transparent);transform:skewX(-20deg);animation:campaign-shine 3.5s 1.4s ease-in-out infinite}
+.sandbox-launch button:hover{filter:brightness(1.08);transform:translate(-1px,-1px);box-shadow:inset 0 -3px #a67c3c,5px 5px #10191e}
+.sandbox-launch button:hover span{transform:translateX(4px)}
+.sandbox-launch button:active{transform:translate(2px,2px);box-shadow:inset 0 -1px #a67c3c,1px 1px #10191e}
+
+/* Status LEDs */
+.state-led{display:inline-block;width:6px;height:6px;margin-right:6px;vertical-align:middle;background:#63c6d1;box-shadow:0 0 6px #63c6d1;animation:campaign-blink 1.6s steps(2,jump-none) infinite}
+.campaign-card .state-led{background:#e3b657;box-shadow:0 0 6px #e3b657}
+.campaign-card.completed .state-led{background:#7ecb83;box-shadow:0 0 6px #7ecb83;animation:none}
+.campaign-card.locked .state-led{background:#6b7b7d;box-shadow:none;animation:none}
+
+/* Level cards: staggered entrance + hover */
+.campaign-card{animation:campaign-rise .55s calc(.35s + var(--i,0)*.07s) cubic-bezier(.2,.8,.2,1) both;transition:transform .18s,background .18s,border-color .18s,box-shadow .18s}
+.campaign-card:before{content:'';position:absolute;left:0;top:0;height:3px;width:100%;background:#e3b657;transform:scaleX(0);transform-origin:left;transition:transform .35s cubic-bezier(.2,.8,.2,1)}
+.campaign-card:hover:not(:disabled):before,.campaign-card:focus-visible:before{transform:scaleX(1)}
+.campaign-card:hover:not(:disabled){transform:translateY(-4px)}
+.campaign-card:hover:not(:disabled) .level-no{color:#e3b657}
+.campaign-card .level-no{transition:color .18s}
+.campaign-card p{font-size:11px;line-height:1.6}
+.campaign-card.completed{border-top-color:#7ecb83}
+.campaign-card.completed .level-state{color:#7ecb83}
+.campaign-card.locked .level-state{color:#8a9a9a}
+.campaign-card.locked{opacity:.45}
+.campaign-tags span{font-size:9px;padding:4px 7px}
+
+/* Difficulty as a cold-to-hot heat meter */
+.campaign-tags .heat-meter{display:inline-flex;align-items:center;gap:2px;padding:4px 6px}
+.heat-meter i{width:6px;height:9px;background:#18262c;border:1px solid #3d5157}
+.heat-meter i.on{border-color:transparent;background:hsl(calc(190 - var(--h)*36) 62% 56%)}
+.campaign-card:hover:not(:disabled) .heat-meter i.on{animation:campaign-heat-step .5s calc(var(--h)*.05s) ease-out both}
+
+.campaign-footer{animation:campaign-rise .5s .9s both}
+.campaign-footer button{font-size:10px;transition:color .15s}
+.campaign-footer button:hover{color:#e3b657}
+
+@keyframes campaign-drop{from{opacity:0;transform:translateY(-100%)}}
+@keyframes campaign-rise{from{opacity:0;transform:translateY(18px)}}
+@keyframes campaign-fill{from{transform:scaleX(0)}}
+@keyframes campaign-scan{0%{left:-90px}60%,100%{left:100%}}
+@keyframes campaign-shine{0%{left:-60%}35%,100%{left:130%}}
+@keyframes campaign-blink{50%{opacity:.25}}
+@keyframes campaign-rack-flow{to{background-position:0 -12px}}
+@keyframes campaign-grid-drift{to{background-position:32px 32px,32px 32px}}
+@keyframes campaign-heat-pulse{0%,100%{box-shadow:3px 3px #10191e,0 0 0 #e3b65700}50%{box-shadow:3px 3px #10191e,0 0 18px #e3b65788}}
+@keyframes campaign-heat-step{50%{transform:translateY(-3px);filter:brightness(1.4)}}
+@keyframes campaign-ember{0%{opacity:0;transform:translate(0,0)}10%{opacity:.7}50%{transform:translate(14px,-50vh)}90%{opacity:.35}100%{opacity:0;transform:translate(-6px,-105vh)}}
+
+@media(max-width:620px){.campaign-intro h2{font-size:26px}.campaign-progress-bar{width:70px}}

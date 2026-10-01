@@ -1,5 +1,6 @@
 import { FirstPersonController } from './controllers/FirstPersonController.js';
 import { ThreeRenderer } from './ThreeRenderer.js';
+import { ThreeQualityController } from './visual/ThreeQualityController.js';
 
 const OVERLAYS=['normal','thermal','airflow','power','cooling','water','alarms','contracts'];
 const OVERLAY_LABELS={normal:'Normal',thermal:'Térmica',airflow:'Airflow',power:'Energia',cooling:'Refrigeração',water:'Água',alarms:'Alertas',contracts:'Contratos'};
@@ -7,7 +8,7 @@ const OVERLAY_LABELS={normal:'Normal',thermal:'Térmica',airflow:'Airflow',power
 export class ThreeView {
   constructor(host,{world,simulation,datacenter,snapshot=null,quality='medium',onSelect=()=>{},onMessage=()=>{}}={}){
     this.host=host;this.world=world;this.simulation=simulation;this.datacenter=datacenter;this.snapshot=snapshot;this.quality=quality;this.onSelect=onSelect;this.onMessage=onMessage;
-    this.mode='walk';this.overlay='normal';this.renderer=null;this.controller=null;this.hud=null;this.status=null;this.selection=null;this.disposed=false;this.elapsed=0;this.frameSamples=0;this.lastFps=60;this.slowIntervals=0;this.fastIntervals=0;
+    this.mode='walk';this.overlay='normal';this.renderer=null;this.controller=null;this.hud=null;this.status=null;this.selection=null;this.disposed=false;this.elapsed=0;this.frameSamples=0;this.lastFps=60;this.qualityController=new ThreeQualityController(quality);
     this.resizeObserver=typeof ResizeObserver==='function'?new ResizeObserver(()=>this.resize()):null;
     this.create();
   }
@@ -28,7 +29,7 @@ export class ThreeView {
     const tools=this.hud.querySelector('.three-layer-tools');
     for(const mode of OVERLAYS){const button=document.createElement('button');button.type='button';button.dataset.threeOverlay=mode;button.textContent=OVERLAY_LABELS[mode];button.setAttribute('aria-pressed',String(mode===this.overlay));button.addEventListener('click',()=>this.setOverlay(mode));tools.append(button);}
     this.hint=this.hud.querySelector('.three-hint');this.inspectCard=this.hud.querySelector('.three-inspect-card');this.equipmentPanel=this.hud.querySelector('.three-equipment-panel');this.inspectCard.addEventListener('click',()=>{if(this.hoverRecord)this.select(this.hoverRecord);});this.host.append(this.hud);
-    this.qualitySelect=this.hud.querySelector('select');this.qualitySelect.value=this.quality;this.qualitySelect.addEventListener('change',()=>{this.renderer.setQuality(this.qualitySelect.value);this.quality=this.qualitySelect.value;});
+    this.qualitySelect=this.hud.querySelector('select');this.qualitySelect.value=this.quality;this.qualitySelect.addEventListener('change',()=>{this.qualityController.set(this.qualitySelect.value);this.renderer.setQuality(this.qualitySelect.value);this.quality=this.qualitySelect.value;});
     this.statsNode=this.hud.querySelector('.three-stats');this.hud.querySelector('[data-three-stats]').addEventListener('click',event=>{const shown=this.statsNode.hidden;this.statsNode.hidden=!shown;event.currentTarget.setAttribute('aria-pressed',String(shown));});
   }
   setMode(mode){
@@ -46,13 +47,12 @@ export class ThreeView {
     this.elapsed+=Math.max(0,dt);this.frameSamples++;
     if(this.elapsed>=5){
       const fps=this.frameSamples/this.elapsed;this.frameSamples=0;this.elapsed=0;this.lastFps=fps;
-      if(fps<40){this.slowIntervals=(this.slowIntervals||0)+1;this.fastIntervals=0;if(this.slowIntervals>=1)this.stepQuality(-1);}
-      else if(fps>56){this.fastIntervals=(this.fastIntervals||0)+1;this.slowIntervals=0;if(this.fastIntervals>=2)this.stepQuality(1);}
-      else{this.slowIntervals=0;this.fastIntervals=0;}
+      const next=this.qualityController.sample(fps);if(next)this.applyQuality(next);
     }
     if(!this.statsNode?.hidden){const info=this.renderer.adapter.info;this.statsNode.textContent=`FPS ${Number(this.lastFps||0).toFixed(0)}\nRender ${Math.round(1000/Math.max(1,this.lastFps||60))} ms\nChamadas ${info.render.calls}\nTriângulos ${info.render.triangles.toLocaleString('pt-BR')}\nEquipamentos ${this.snapshot?.equipment.length||0}`;}
   }
-  stepQuality(delta){const presets=['low','medium','high','ultra'],index=presets.indexOf(this.quality),next=presets[Math.max(0,Math.min(presets.length-1,index+delta))];if(next===this.quality)return;this.quality=next;this.qualitySelect.value=next;this.renderer.setQuality(next);this.onMessage('Qualidade gráfica ajustada para '+({low:'baixa',medium:'média',high:'alta',ultra:'ultra'}[next])+'.');}
+  applyQuality(next){if(next===this.quality)return;this.quality=next;this.qualitySelect.value=next;this.renderer.setQuality(next);this.onMessage('Qualidade gráfica ajustada para '+({low:'baixa',medium:'média',high:'alta',ultra:'ultra'}[next])+'.');}
+  stepQuality(delta){const next=this.qualityController.step(delta);if(next)this.applyQuality(next);}
   select(record){this.selection=record;this.onSelect(record?.runtimeId??record?.id,record);this.updateHud();}
   updateHud(){
     if(!this.hint||!this.inspectCard)return;

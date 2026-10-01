@@ -1,5 +1,6 @@
 const DIRECTIONS=[[1,0],[-1,0],[0,1],[0,-1]];
 const EMPTY_POINTS=[];
+import { serviceableRacks } from '../../datacenter/RackQueries.js';
 
 export class PatrolGraph {
   constructor(world,navigation){this.world=world;this.navigation=navigation;this.sourceVersion=-1;this.componentId=new Int32Array(world.size);this.componentCount=0;this.pointsByComponent=new Map();this.rebuildCount=0;}
@@ -16,7 +17,7 @@ export class PatrolGraph {
       }
     }
     this.pointsByComponent.clear();const pointIndices=new Set();
-    for(const rack of world.entitySetByType?.('serverRack')||world.entitiesByType('serverRack'))for(const [dx,dy] of DIRECTIONS){
+    for(const rack of serviceableRacks(world))for(const [dx,dy] of DIRECTIONS){
       const x=rack.x+dx,y=rack.y+dy;if(!world.inBounds(x,y))continue;const index=world.index(x,y),id=this.componentId[index];if(id<0||pointIndices.has(index))continue;pointIndices.add(index);
       let points=this.pointsByComponent.get(id);if(!points)this.pointsByComponent.set(id,points=[]);
       points.push({x,y});

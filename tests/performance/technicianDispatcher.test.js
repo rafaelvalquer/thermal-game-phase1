@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../src/world/World.js';
 import { ServerRack } from '../../src/entities/ServerRack.js';
+import { ComputeRack } from '../../src/entities/ComputeRack.js';
 import { Technician } from '../../src/entities/Technician.js';
 import { TechnicianSystem } from '../../src/simulation/TechnicianSystem.js';
 
@@ -9,7 +10,7 @@ test('dispatcher assigns unique hot-rack jobs at most once per second in a large
   const world=new World(100,60);world.fill('air',25);
   for(let index=0;index<200;index++){
     const x=3+(index%20)*4,y=3+Math.floor(index/20)*5;
-    world.addEntity(new ServerRack(x,y,{temperature:45+index%20,slaTemperature:35,currentPowerKW:12}));
+    world.addEntity(index%2?new ComputeRack(x,y,{specialization:index%4===1?'gpu':'storage',temperature:45+index%20,slaTemperature:35}):new ServerRack(x,y,{temperature:45+index%20,slaTemperature:35,currentPowerKW:12}));
   }
   const system=new TechnicianSystem(world,{budget:0});system.dispatcher.maxPathAttempts=16;
   for(let index=0;index<30;index++)world.addEntity(new Technician(2+(index%10)*9,54-Math.floor(index/10)*2));

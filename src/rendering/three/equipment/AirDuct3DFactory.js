@@ -13,7 +13,10 @@ const connectionFor=(record,side)=>record.ductConnections?.find(connection=>conn
 export class AirDuct3DFactory {
   constructor(scene){
     this.scene=scene;this.meshes=new Map();this.recordIdsByMesh=new Map();this.records=[];this.signature='';this.states=[];
-    this.geometry={body:new BoxGeometry(.46,.24,.46),arm:new BoxGeometry(.62,.24,.38),cap:new BoxGeometry(.09,.3,.46),coupler:new BoxGeometry(.14,.31,.5)};
+    // The connector starts exactly at the centre module's edge and ends at the
+    // tile boundary. Adjacent modules therefore meet without the visible gaps
+    // left by the old short, inset arms.
+    this.geometry={body:new BoxGeometry(.6,.24,.6),arm:new BoxGeometry(.2,.24,.6),cap:new BoxGeometry(.04,.27,.6),coupler:new BoxGeometry(.18,.29,.64)};
     this.material=new MeshStandardMaterial({color:'#ffffff',roughness:.48,metalness:.62});
     this.dummy=new Object3D();this.color=new Color();
   }
@@ -38,12 +41,12 @@ export class AirDuct3DFactory {
       const color=this.color.set(record.networkStatus==='READY'?(record.flowRate>0?'#7da0a6':'#6a7e84'):'#505d64');
       for(let sideIndex=0;sideIndex<SIDES.length;sideIndex++){
         const side=SIDES[sideIndex],connection=connectionFor(record,side),instance=index*SIDES.length+sideIndex;
-        const position={x:center.x+side.dx*.23,y:center.y,z:center.z+side.dy*.23};
+        const position={x:center.x+side.dx*.4,y:center.y,z:center.z+side.dy*.4};
         this.setPart(this.meshes.get('arms'),instance,position,side.rotation,connection?1:0,1,1);
-        const capPosition={x:center.x+side.dx*.48,y:center.y,z:center.z+side.dy*.48};
+        const capPosition={x:center.x+side.dx*.3,y:center.y,z:center.z+side.dy*.3};
         this.setPart(this.meshes.get('caps'),instance,capPosition,side.rotation,connection?0:1,1,1);
         const terminal=connection&&connection.type!=='duct';
-        const fittingPosition={x:center.x+side.dx*.43,y:center.y,z:center.z+side.dy*.43};
+        const fittingPosition={x:center.x+side.dx*.5,y:center.y,z:center.z+side.dy*.5};
         this.setPart(this.meshes.get('couplers'),instance,fittingPosition,side.rotation,terminal?1:0,1,1);
         for(const mesh of this.meshes.values())mesh.setColorAt(mesh===this.meshes.get('body')?index:instance,color);
       }
@@ -54,7 +57,7 @@ export class AirDuct3DFactory {
     }
     return changed;
   }
-  stateOf(record){return `${record.x},${record.y}:${record.ductConnections?.map(connection=>`${connection.direction}-${connection.type}`).join(',')||''}:${record.networkStatus||''}:${record.flowRate>0?'flow':'idle'}`;}
+  stateOf(record){return `${record.x},${record.y}:${record.ductShape||''}:${record.ductConnections?.map(connection=>`${connection.direction}-${connection.type}`).join(',')||''}:${record.networkStatus||''}:${record.flowRate>0?'flow':'idle'}`;}
   createMesh(name,geometry,count,ids){
     const mesh=new InstancedMesh(geometry,this.material,count);mesh.name=`equipment-duct-${name}`;mesh.userData.equipment=true;mesh.userData.detailed=true;mesh.frustumCulled=false;
     this.scene.add(mesh);this.meshes.set(name,mesh);this.recordIdsByMesh.set(mesh,ids);

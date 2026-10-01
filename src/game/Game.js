@@ -19,6 +19,7 @@ import { PerformanceMonitor } from '../performance/PerformanceMonitor.js';
 import { BrowserPerformanceBenchmark } from '../dev/BrowserPerformanceBenchmark.js';
 import { DirtyStateTracker } from '../bridge/DirtyStateTracker.js';
 import { WorldSnapshot } from '../bridge/WorldSnapshot.js';
+import { GameAudio } from '../audio/GameAudio.js';
 
 export class Game {
   constructor(canvas,level,campaign,{saveSystem=null}={}){
@@ -34,6 +35,9 @@ export class Game {
     this.staff=new TechnicianSystem(this.world,this.build);this.staff.monitor=this.performance;this.world.technicianSystem=this.staff;this.sim.technicians=this.staff;
     if(this.datacenter)this.staff.payrollDay=this.datacenter.state.lastSettledDay||0;
     this.datacenter?.attach(this.build,this.sim);
+    this.audio=new GameAudio();
+    this.audioGesture=()=>{this.audio.unlock();document.removeEventListener('pointerdown',this.audioGesture,true);document.removeEventListener('keydown',this.audioGesture,true);};
+    document.addEventListener('pointerdown',this.audioGesture,true);document.addEventListener('keydown',this.audioGesture,true);
     this.camera=new Camera();this.renderer=new Renderer(canvas,this.camera,{monitor:this.performance});this.renderer.buildSystem=this.build;this.renderer.zones=this.level.zones||[];this.renderer.level=this.level;
     this.viewMode='2d';this.threeView=null;this.threeViewPromise=null;this.disposed=false;this.worldViewBridge=new DirtyStateTracker();this.worldViewBridge.observe(this.world);this.worldSnapshot=null;this.worldSnapshotElapsed=Infinity;this.viewCanvas=canvas;
     if(this.datacenter)this.datacenter.monitor=this.performance;
@@ -49,14 +53,14 @@ export class Game {
     this.pipeDrag=null;this.demolishDrag=null;
     this.renderer.pipePreview=()=>this.pipeDrag?.path||null;
     this.mouse.onMove=grid=>{this.hover=grid;this.renderer.hover=grid;if(this.pipeDrag)this.pipeDrag.path=extendPipePath(this.pipeDrag.path,grid);if(this.demolishDrag){this.demolishDrag.end={...grid};this.renderer.demolishSelection=this.demolishDrag;}};
-    this.mouse.onPrimaryDown=grid=>{if(this.ui?.landPanel?.mode||technicianAt(this.world,grid.x,grid.y))return;if(this.build.selected==='demolish'){this.demolishDrag={start:{...grid},end:{...grid}};this.renderer.demolishSelection=this.demolishDrag;return;}if(this.build.selected==='pipe'||DUCT_TOOLS.has(this.build.selected)||STRUCTURE_TOOLS.has(this.build.selected))this.pipeDrag={path:[{x:grid.x,y:grid.y}],tool:this.build.selected};};
+    this.mouse.onPrimaryDown=grid=>{this.audio?.unlock?.();if(this.ui?.landPanel?.mode||technicianAt(this.world,grid.x,grid.y))return;if(this.build.selected==='demolish'){this.demolishDrag={start:{...grid},end:{...grid}};this.renderer.demolishSelection=this.demolishDrag;return;}if(this.build.selected==='pipe'||DUCT_TOOLS.has(this.build.selected)||STRUCTURE_TOOLS.has(this.build.selected))this.pipeDrag={path:[{x:grid.x,y:grid.y}],tool:this.build.selected};};
     this.mouse.onPrimary=grid=>{
       if(!this.world.inBounds(grid.x,grid.y))return;
       if(this.ui?.landPanel?.mode){if(!this.ui.selectLandAt(grid.x,grid.y))this.toast('Esta área não faz parte de uma expansão.');return;}
       if(technicianAt(this.world,grid.x,grid.y)){this.ui?.inspectAt(grid.x,grid.y);return;}
       if(this.build.selected==='demolish')return;
       if(this.build.selected==='pipe'||DUCT_TOOLS.has(this.build.selected)||STRUCTURE_TOOLS.has(this.build.selected))return;
-      if(this.build.selected){const r=this.build.place(grid.x,grid.y);if(!r.ok)this.toast(r.reason);}
+      if(this.build.selected){const r=this.build.place(grid.x,grid.y);if(!r.ok)this.toast(r.reason);else this.audio.playBuild();}
       else this.ui?.inspectAt(grid.x,grid.y);
     };
     this.mouse.onPrimaryUp=grid=>{
@@ -72,12 +76,14 @@ export class Game {
       const tool=this.pipeDrag.tool;
       const result=tool==='pipe'?this.build.placePipePath(this.pipeDrag.path):DUCT_TOOLS.has(tool)?this.build.placeDuctPath(this.pipeDrag.path):this.build.placeStructurePath(this.pipeDrag.path);
       this.pipeDrag=null;
+      if(result.placed>0)this.audio.playBuild();
       if(result.failed)this.toast(`${result.placed} ${STRUCTURE_TOOLS.has(tool)?'blocos':'trechos'} instalados; ${result.failed} posição(ões) ignorada(s)`);
     };
     this.mouse.onSecondary=()=>{this.pipeDrag=null;this.demolishDrag=null;this.renderer.demolishSelection=null;if(this.ui?.landPanel?.mode){this.ui.landPanel.setMode(false);return;}this.build.select(null);};
     addEventListener('keydown',e=>{
       if(window.__thermalLab!==this)return;
       if(e.repeat)return;
+      this.audio.unlock();
       if(this.viewMode!=='2d'){
         if(e.code==='Space'){e.preventDefault();this.sim.togglePause();}
         return;
@@ -105,6 +111,7 @@ export class Game {
 
   update(dt){
     if(this.viewMode==='2d'){
+      this.updateCameraFocus(dt);
       const speed=360*dt;
       if(this.input.down('KeyW'))this.camera.move(0,-speed);
       if(this.input.down('KeyS'))this.camera.move(0,speed);
@@ -112,7 +119,7 @@ export class Game {
       if(this.input.down('KeyD'))this.camera.move(speed,0);
       const r=this.canvas.getBoundingClientRect();this.camera.constrain(r.width,r.height);
     }
-    this.sim.update(dt);this.performance.begin('uiMs');this.ui?.update(dt);this.performance.end('uiMs');this.datacenter?.updateAutoSave(dt);
+    this.sim.update(dt);this.audio.update(this.sim);this.performance.begin('uiMs');this.ui?.update(dt);this.performance.end('uiMs');this.datacenter?.updateAutoSave(dt);
     if(this.viewMode!=='2d'){
       this.worldSnapshotElapsed+=dt;this.worldViewBridge.observe(this.world);
       if(!this.worldSnapshot||this.worldViewBridge.isDirty()||this.worldSnapshotElapsed>=.2){
@@ -132,6 +139,22 @@ export class Game {
       if(output){const gc=report.gcSupported?`${report.gcCount.toFixed(1)} eventos/s · ${report.gcMs.toFixed(1)} ms`:'GC sem suporte do navegador',heap=report.heapUsedBytes==null?'n/d':(report.heapUsedBytes/1048576).toFixed(1)+' MB',saveSize=report.saveBytesEstimated?'B estimados':'B';output.textContent+=`\n${gc} · heap ${heap} · quedas ${report.heapDropCount.toFixed(1)}/s · save/quadro ${report.saveMs.toFixed(2)} ms · evento p50/p95/máx ${report.saveDurationP50Ms.toFixed(1)}/${report.saveDurationP95Ms.toFixed(1)}/${report.saveDurationMaxMs.toFixed(1)} ms · captura ${report.saveCaptureMs.toFixed(1)} ms (estado/tiles/entidades/utilidades/build ${report.saveStateMs.toFixed(1)}/${report.saveTilesMs.toFixed(1)}/${report.saveEntitiesMs.toFixed(1)}/${report.saveUtilitiesMs.toFixed(1)}/${report.saveBuildMs.toFixed(1)}) · JSON/storage ${report.saveSerializeMs.toFixed(1)}/${report.saveStorageMs.toFixed(1)} ms (${report.saveEventsPerSec.toFixed(2)}/s, ${report.saveBytes} ${saveSize}) · paths ${report.coolingPathAllocations.toFixed(1)}/s`;}
       if(download)download.disabled=false;
     }
+  }
+
+  focusThermalEntity(entity){
+    if(!entity)return false;
+    this.ui?.inspectEntity(entity,entity.x,entity.y);
+    if(this.viewMode!=='2d')this.setViewMode('2d');
+    const rect=this.canvas.getBoundingClientRect(),tile=this.renderer.tile,targetZoom=clamp(Math.min(rect.width,rect.height)/(tile*7),.85,1.65),worldX=(entity.x+.5)*tile,worldY=(entity.y+.5)*tile;
+    this.cameraFocus={fromX:this.camera.x,fromY:this.camera.y,fromZoom:this.camera.zoom,targetZoom,targetX:worldX-rect.width/(2*targetZoom),targetY:worldY-rect.height/(2*targetZoom),elapsed:0,duration:.65};
+    return true;
+  }
+
+  updateCameraFocus(dt){
+    const motion=this.cameraFocus;if(!motion)return;
+    motion.elapsed=Math.min(motion.duration,motion.elapsed+dt);const p=motion.elapsed/motion.duration,eased=1-Math.pow(1-p,3);
+    this.camera.x=motion.fromX+(motion.targetX-motion.fromX)*eased;this.camera.y=motion.fromY+(motion.targetY-motion.fromY)*eased;this.camera.zoom=motion.fromZoom+(motion.targetZoom-motion.fromZoom)*eased;
+    if(p>=1)this.cameraFocus=null;
   }
 
   setViewMode(mode){
@@ -168,7 +191,7 @@ export class Game {
     if(this.worldSnapshot)this.threeView.update(this.worldSnapshot,1/60);
   }
 
-  dispose(){this.disposed=true;this.loop?.stop();this.threeView?.dispose();this.threeView=null;}
+  dispose(){this.disposed=true;this.loop?.stop();document.removeEventListener('pointerdown',this.audioGesture,true);document.removeEventListener('keydown',this.audioGesture,true);this.audio?.dispose?.();this.threeView?.dispose();this.threeView=null;}
 
   toast(text){
     const t=document.querySelector('#toast');if(!t)return;t.textContent=text;t.classList.add('show');

@@ -20,6 +20,10 @@ import { WaterChiller } from '../src/entities/WaterChiller.js';
 
 const metrics=()=>({generatedHeat:0,externalEnergy:0,powerDraw:0,powerEnergy:0,energyBalance:0});
 const close=(a,b,tol=1e-5)=>assert.ok(Math.abs(a-b)<=tol*Math.max(1,Math.abs(a),Math.abs(b)),String(a)+' != '+String(b));
+const sealMap=world=>{
+  for(let x=0;x<world.width;x++){world.setMaterial(x,0,'concrete');world.setMaterial(x,world.height-1,'concrete');}
+  for(let y=0;y<world.height;y++){world.setMaterial(0,y,'concrete');world.setMaterial(world.width-1,y,'concrete');}
+};
 
 const addClosedLoop=(world,{machine=false,tank=false}={})=>{
   const pump=new Pump(1,1,{x:1,y:0});
@@ -223,7 +227,7 @@ test('outdoor radiator sends rejected heat to the environment and respects its a
 });
 
 test('water chiller cools circulating water to its target within capacity and returns Q plus compressor heat to the room',()=>{
-  const world=new World(7,7),pump=new Pump(1,1,{x:1,y:0}),p1=new Pipe(2,1),hx=new HeatExchanger(3,1),chiller=new WaterChiller(3,2),radiator=new Radiator(3,3),p3=new Pipe(2,3),p4=new Pipe(1,3),p5=new Pipe(1,2),fluid=[pump,p1,hx,chiller,radiator,p3,p4,p5];
+  const world=new World(7,7);sealMap(world);const pump=new Pump(1,1,{x:1,y:0}),p1=new Pipe(2,1),hx=new HeatExchanger(3,1),chiller=new WaterChiller(3,2),radiator=new Radiator(3,3),p3=new Pipe(2,3),p4=new Pipe(1,3),p5=new Pipe(1,2),fluid=[pump,p1,hx,chiller,radiator,p3,p4,p5];
   pump.flowMode='boost';for(const entity of fluid){entity.energy=entity.waterMass*WATER_CP*30;world.addEntity(entity);}
   const system=new FluidSystem(world,metrics()),before=totalThermalEnergy(world);system.update(.05);
   assert.equal(system.networks[0].status,'CLOSED');assert.ok(chiller.coolingPower>0);assert.ok(chiller.coolingPower<=chiller.ratedCapacity);
@@ -308,7 +312,7 @@ test('hot water does not reheat adjacent racks or hot-aisle air through a coolin
 });
 
 test('radiator spreads heat over surrounding air and conserves energy',()=>{
-  const w=new World(5,5),r=new Radiator(2,2);r.energy=r.waterMass*4186*80;w.addEntity(r);
+  const w=new World(5,5);sealMap(w);const r=new Radiator(2,2);r.energy=r.waterMass*4186*80;w.addEntity(r);
   const sys=new FluidSystem(w,metrics()),before=r.energy+w.totalTileEnergy(),neighborBefore=w.temperatureAt(2,1);
   sys.radiate(.1);
   assert.ok(r.waterTemperature<80);
@@ -339,7 +343,7 @@ test('placement validator allows T-junctions but rejects a fourth pipe connectio
 });
 
 test('radiator air-coil exchange follows open paths and cannot transfer across two blocked faces',()=>{
-  const world=new World(5,5),radiator=new Radiator(2,2);radiator.energy=radiator.waterMass*WATER_CP*70;
+  const world=new World(5,5);sealMap(world);const radiator=new Radiator(2,2);radiator.energy=radiator.waterMass*WATER_CP*70;
   world.setMaterial(1,2,'concrete');world.setMaterial(2,1,'concrete');world.addEntity(radiator);
   const blockedBefore=world.temperatureAt(1,1),reachableBefore=world.temperatureAt(3,3),fluid=new FluidSystem(world,metrics());fluid.radiate(.1);
   assert.equal(world.temperatureAt(1,1),blockedBefore);
@@ -347,7 +351,7 @@ test('radiator air-coil exchange follows open paths and cannot transfer across t
 });
 
 test('machine heat travels through closed loop to radiator and room air',()=>{
-  const w=new World(7,7),loop=addClosedLoop(w,{machine:true});
+  const w=new World(7,7);sealMap(w);const loop=addClosedLoop(w,{machine:true});
   const sys=new FluidSystem(w,metrics());
   const before=totalThermalEnergy(w),machineBefore=loop.machine.temperature,airBefore=w.temperatureAt(3,4);
   let peakRadiatorPower=0,peakDownstream=25;

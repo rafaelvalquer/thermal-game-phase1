@@ -14,6 +14,13 @@
 .speed-group{flex:none}
 .speed-group button{min-width:31px;padding-inline:6px}
 .sim-controls #exitBtn{width:32px;padding-inline:0;font-size:15px}
+#audioToggle{width:34px;padding-inline:0;font-size:14px;line-height:1;}
+.thermal-risk-vignette{position:absolute;inset:0;z-index:4;pointer-events:none;opacity:0;transition:opacity .25s ease;background:radial-gradient(ellipse at center,transparent 46%,rgba(185,28,28,.035) 72%,rgba(220,38,38,.18) 100%)}
+.thermal-risk-vignette.active{opacity:1;animation:thermal-risk-pulse 2.6s ease-in-out infinite alternate}
+@keyframes thermal-risk-pulse{from{filter:brightness(.88)}to{filter:brightness(1.12)}}
+.thermal-focus{display:inline-flex;align-items:center;margin-left:8px;padding:2px 7px;border:1px solid #fb7185;border-radius:5px;background:#401523;color:#ffe4e6;font-size:9px;font-weight:800;cursor:pointer}
+.thermal-focus:hover{background:#7f1d1d;color:#fff}
+.thermal-focus:focus-visible,#audioToggle:focus-visible{outline:2px solid #67e8f9;outline-offset:2px}
 .clock-compact{display:none}
 .sim-controls button:focus-visible,.speed-group button:focus-visible{position:relative;z-index:1;outline:2px solid #67e8f9;outline-offset:2px}
 
@@ -32,6 +39,7 @@
   .sim-controls{gap:4px;padding:4px}
   .sim-controls>span:first-child{font-size:11px}
   .sim-controls button{padding:5px 6px}
+  #audioToggle{width:32px;padding-inline:0}
   .speed-group button{min-width:28px;padding-inline:5px}
 }
 
@@ -46,6 +54,7 @@
   .topbar>.top-telemetry{grid-column:1/-1;grid-row:3;height:46px;gap:5px}
   .sim-controls>span:first-child{font-size:11px;min-width:0}
   .sim-controls button{padding:5px 7px;font-size:10px}
+  #audioToggle{width:29px;padding-inline:0}
   .speed-group button{min-width:27px;padding-inline:5px}
   .sim-controls #speedLabel{display:none}
   .shell .left-panel,.shell .right-panel{top:132px;max-height:calc(100% - 144px)}
@@ -58,10 +67,11 @@
   .topbar>.sim-controls{justify-content:space-between;gap:2px;padding:3px}
   .sim-controls>span:first-child{font-size:10px}
   .sim-controls button{padding:4px 5px;font-size:9px}
+  #audioToggle{width:27px;padding-inline:0}
   .speed-group button{min-width:21px;padding-inline:3px}
   .sim-controls #exitBtn{width:28px}
   .clock-full{display:none}
   .clock-compact{display:inline}
 }
 
-@media(prefers-reduced-motion:reduce){.sim-controls button{transition:none}}
+@media(prefers-reduced-motion:reduce){.sim-controls button,.thermal-risk-vignette{transition:none}.thermal-risk-vignette.active{animation:none;filter:none}}

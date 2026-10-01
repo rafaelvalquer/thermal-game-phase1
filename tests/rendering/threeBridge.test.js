@@ -147,6 +147,25 @@ test('air duct snapshot connections include adjacent air terminals and never joi
   assert.equal(snapshot.equipment.find(record=>record.id===String(cooling.id)).type,'coolingUnit');
 });
 
+test('air duct snapshot classifies real straight, curve, tee, cross and terminal connections',()=>{
+  const world=new World(12,8),ducts=[];
+  // A straight run ending at an outlet, plus an independent corner, tee and cross.
+  world.addEntity(new CoolingUnit(0,1));world.addUtility(new AirDuct(1,1));world.addUtility(new AirDuct(2,1));world.addEntity(new SupplyVent(3,1));
+  world.addUtility(new AirDuct(6,1));world.addUtility(new AirDuct(7,1));world.addUtility(new AirDuct(7,2));
+  world.addUtility(new AirDuct(2,5));world.addUtility(new AirDuct(3,5));world.addUtility(new AirDuct(4,5));world.addUtility(new AirDuct(3,4));
+  for(const [x,y] of [[8,5],[9,5],[7,5],[8,4],[8,6]])ducts.push(world.addUtility(new AirDuct(x,y)));
+  const records=WorldSnapshot.capture(world).equipment.filter(record=>record.type==='duct');
+  const at=(x,y)=>records.find(record=>record.x===x&&record.y===y);
+  assert.equal(at(2,1).ductShape,'straight');
+  assert.equal(at(7,1).ductShape,'curve');
+  assert.equal(at(3,5).ductShape,'tee');
+  assert.equal(at(8,5).ductShape,'cross');
+  assert.equal(at(1,1).ductConnections.some(connection=>connection.type==='coolingUnit'),true);
+  assert.equal(at(2,1).ductConnections.some(connection=>connection.type==='supplyVent'),true);
+  assert.equal(records.every(record=>!record.ductConnections.some(connection=>connection.type==='pipe')),true);
+  assert.equal(ducts.length,5);
+});
+
 test('air duct fittings appear at a cooling unit and an outlet, then update when a terminal is removed',()=>{
   const scene=new Scene(),world=new World(7,5),duct=world.addUtility(new AirDuct(2,2));
   const cooling=world.addEntity(new CoolingUnit(1,2)),vent=world.addEntity(new SupplyVent(3,2)),factory=new Equipment3DFactory(scene);
@@ -166,6 +185,10 @@ test('air duct models build shared arms, caps and terminal couplers with pickabl
   const arms=factory.ducts.meshes.get('arms'),caps=factory.ducts.meshes.get('caps'),couplers=factory.ducts.meshes.get('couplers');
   assert.ok(arms.geometry===factory.ducts.geometry.arm);assert.equal(arms.count,ducts.length*4);
   assert.equal(factory.recordAt({object:arms,instanceId:0}),String(ducts[0].id));
+  assert.equal(arms.geometry.parameters.width,.2);
+  const eastArm=new Matrix4();arms.getMatrixAt(0,eastArm);
+  assert.ok(Math.abs(eastArm.elements[12]-.4-3.5)<1e-6);
+  assert.ok(Math.abs(eastArm.elements[12]+.1-4)<1e-6,'east connector ends exactly at the shared tile seam');
   const connections=WorldSnapshot.capture(world).equipment;
   const crossConnections=connections.find(record=>record.id===String(ducts[0].id)).ductConnections;
   const teeConnections=connections.find(record=>record.id===String(ducts[5].id)).ductConnections;

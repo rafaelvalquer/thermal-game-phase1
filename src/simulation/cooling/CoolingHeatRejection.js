@@ -45,6 +45,8 @@ export class CoolingHeatRejection {
   apply(dt){
     for(const {unit,rejectedHeat} of this.pending){
       const joules=rejectedHeat*dt;
+      const topology=this.world.environmentTopology;
+      if(topology){topology.ensureCurrent();unit.indoor=topology.isInterior(unit.x,unit.y);}
       const distributed=unit.indoor&&this.distribute(unit,joules);
       if(!distributed){this.world.environment.energyReceived+=joules;this.metrics.externalEnergy+=joules;}
       this.metrics.generatedHeat+=(unit.electricalPower||0)*dt;

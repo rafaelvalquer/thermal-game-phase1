@@ -5,7 +5,7 @@ import { migrateCoolingUnitBalance } from '../entities/CoolingUnitModels.js';
 import { TILE_VOLUME } from '../utils/Constants.js';
 
 const STORAGE_KEY='thermal-lab-datacenter-sandbox-v1';
-const EXCLUDED_KEYS=new Set(['id','world']);
+const EXCLUDED_KEYS=new Set(['id','world','computeLoadProfiles']);
 const memoryStorage=new Map();
 const now=()=>globalThis.performance?.now?.()??Date.now();
 const DB_NAME='thermal-game-save-v2',DB_STORE='snapshots';

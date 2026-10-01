@@ -79,11 +79,12 @@ export class AirflowSystem {
       if(!isPowered(radiator))continue;
       const localAir=w.inBounds(radiator.x,radiator.y)?w.temperatureAt(radiator.x,radiator.y):radiator.waterTemperature;
       const delta=radiator.waterTemperature-localAir;
+      const outdoor=w.environmentTopology?.isExterior(radiator.x,radiator.y)??Boolean(radiator.outdoor);
       // The radiator's integrated fan draws through the coil and pushes the warm plume
       // toward its oriented discharge. Natural convection remains active around it.
       const direction=radiator.direction||{x:1,y:0},fanForce=Math.min(1.25,(radiator.fanAirflow||2.5)*.14)*(1-Math.exp(-8*dt));
       const backX=radiator.x-direction.x,backY=radiator.y-direction.y,frontX=radiator.x+direction.x,frontY=radiator.y+direction.y;
-      if(g.isAir(backX,backY)&&(g.isAir(frontX,frontY)||radiator.outdoor&&!w.inBounds(frontX,frontY))){
+      if(g.isAir(backX,backY)&&(g.isAir(frontX,frontY)||outdoor&&!w.inBounds(frontX,frontY))){
         if(direction.x>0)g.u[g.uIndex(radiator.x+(w.inBounds(frontX,frontY)?1:0),radiator.y)]+=fanForce;
         else if(direction.x<0)g.u[g.uIndex(radiator.x+(w.inBounds(frontX,frontY)?0:1),radiator.y)]-=fanForce;
         else if(direction.y>0)g.v[g.vIndex(radiator.x,radiator.y+(w.inBounds(frontX,frontY)?1:0))]+=fanForce;

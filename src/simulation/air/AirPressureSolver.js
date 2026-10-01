@@ -23,7 +23,7 @@ export class AirPressureSolver {
   }
 
   solve(dt){
-    const g=this.grid,rhsScale=AIR.density*g.dx*g.dx/Math.max(dt,1e-6),cells=this.adaptive?g.interiorPressureCells:g.pressureCells,cellCount=this.adaptive?g.interiorPressureCellCount:g.pressureCellCount;
+    const g=this.grid,rhsScale=AIR.density*g.dx*g.dx/Math.max(dt,1e-6),cells=this.adaptive?(g.projectionPressureCells||g.interiorPressureCells):g.pressureCells,cellCount=this.adaptive?(g.projectionPressureCellCount??g.interiorPressureCellCount):g.pressureCellCount;
     const left=g.pressureLeft,right=g.pressureRight,up=g.pressureUp,down=g.pressureDown,counts=g.pressureNeighborCount,divergence=g.divergence;
     let pressure=g.pressure,pressureNext=g.pressureNext;
     pressureNext.set(pressure);

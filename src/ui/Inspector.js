@@ -4,6 +4,7 @@ import { SPRITES, spriteIdFor, spriteIconStyle } from '../rendering/sprites/Spri
 import { CoolingAirExchange } from '../simulation/cooling/CoolingAirExchange.js';
 import { SOLAR_PANEL_PEAK_POWER_W } from '../entities/SolarPanel.js';
 import { fluidThermalDiagnosis } from '../simulation/fluid/FluidThermalDiagnostics.js';
+import { COMPUTE_LOAD_PROFILE_LABELS } from '../datacenter/compute/ComputeLoadProfiles.js';
 
 const fluidTypes=['pipe','pump','tank','radiator','exchanger','waterChiller'];
 const airDuctTypes=['duct'];
@@ -78,7 +79,10 @@ export class Inspector {
       const reservation=e.specialization==='cpu'?reserved.vcpu+' vCPU · '+reserved.ramGB+' GB RAM':e.specialization==='gpu'?reserved.gpuDevices.length+' / '+e.capacity.gpuCount+' GPUs reservadas':reserved.storageTB+' / '+e.capacity.storageTB+' TB';
       const clients=[...new Set((reserved.contracts||[]).map(id=>dc?.state.contracts.find(contract=>contract.id===id)?.clientName).filter(Boolean))];
       const free=e.specialization==='cpu'?Math.max(0,e.capacity.vcpu-reserved.vcpu)+' vCPU · '+Math.max(0,e.capacity.ramGB-reserved.ramGB)+' GB RAM':e.specialization==='gpu'?Math.max(0,e.capacity.gpuCount-reserved.gpuDevices.length)+' GPU(s)':Math.max(0,e.capacity.storageTB-reserved.storageTB)+' TB';
+      const loadProfiles=e.computeLoadProfiles||[],profileLabels=[...new Set(loadProfiles.map(item=>COMPUTE_LOAD_PROFILE_LABELS[item.profile]||item.profile))],upcoming=loadProfiles.map(item=>item.nextPeak).filter(Boolean).sort((a,b)=>a.day-b.day||a.hour-b.hour)[0];
+      const nextPeak=upcoming?`${String(Math.floor(upcoming.hour)).padStart(2,'0')}h · dia ${upcoming.day}`:loadProfiles.length?'Sem pico definido':'Sem contrato ativo';
       rows.push(['Patrimônio',e.assetId],['Especialização',({cpu:'CPU',gpu:'GPU',storage:'Storage'})[e.specialization]||e.specialization],['Modelo',model],['Capacidade instalada',capacity],['Capacidade reservada',reservation],['Capacidade disponível',free],['Clientes provisionados',clients.join(', ')||'Nenhum'],['Utilização',(Number(e.utilization||0)*100).toFixed(1)+'%'],['Potência',formatPower(e.currentPowerW||0)+' / '+formatPower(e.maxPowerW||0)],['Potência em repouso',formatPower(e.idlePowerW||0)],['Temperatura na face fria',Number(e.intakeAirTemperature??e.inletTemperature??e.temperature).toFixed(1)+' °C'],['Temperatura na face quente',Number(e.exhaustAirTemperature??e.exhaustTemperature??e.temperature).toFixed(1)+' °C'],['Vazão na entrada',Number(e.intakeAirFlow||0).toFixed(2)+' m³/s'],['Vazão na saída',Number(e.exhaustAirFlow||0).toFixed(2)+' m³/s'],['Estado',e.powerBlocked?'SEM ENERGIA':e.enabled?e.utilization>0?'EM OPERAÇÃO':'EM ESPERA':'DESLIGADO'],['SLA térmico',Number(e.slaTemperature||30).toFixed(1)+' °C máx.'],['Sentido de insuflação',dirGlyph(e.airIntakeDirection)],['Sentido de retorno',dirGlyph(e.airExhaustDirection)],...([rackCoolingAdvice(world,e)].filter(Boolean).map(advice=>['Diagnóstico',advice])));
+      rows.push(['Perfil de carga',profileLabels.join(', ')||'Sem contrato ativo'],['Carga atual',(Number(e.utilization||0)*100).toFixed(0)+'%'],['Próximo pico',nextPeak]);
     }
     }
 

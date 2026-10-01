@@ -3,6 +3,7 @@ import { TileMap } from './TileMap.js';
 import { TILE_VOLUME, OUTDOOR_TEMP } from '../utils/Constants.js';
 import { utilityCanShareTile } from '../entities/UtilityCompatibility.js';
 import { entityFootprintCells } from '../entities/EntityFootprint.js';
+import { EnvironmentTopology } from '../simulation/environment/EnvironmentTopology.js';
 
 const COOLING_ENTITIES=new Set(['coolingUnit','supplyVent']);
 const FLUID_ENTITIES=new Set(['pipe','pump','tank','radiator','exchanger','waterChiller']);
@@ -28,6 +29,7 @@ export class World {
     this.airWallConfinement=new Uint8Array(this.size);
     this.airDiagnostics={maxVelocity:0,averageVelocity:0,maxPressure:0,minPressure:0,maxDivergence:0};
     this.airTopologyVersion=0;
+    this.environmentTopologyVersion=0;
     this.rackTopologyVersion=0;
     this.heatMachineTopologyVersion=0;
     this.navigationTopologyVersion=0;
@@ -40,6 +42,7 @@ export class World {
     this.entityOrderIndex=new WeakMap();this.entityOrderSequence=0;
     this.utilityLayer=new Map();
     this.environment={temperature:OUTDOOR_TEMP,energyReceived:0};
+    this.environmentTopology=new EnvironmentTopology(this);
     this.fill('air',OUTDOOR_TEMP);
   }
 
@@ -64,7 +67,7 @@ export class World {
     this.thermalConductivity[index]=material.conductivity;
     this.airMaterial[index]=material.id==='air'?1:0;
   }
-  rebuildMaterialProperties(){for(let i=0;i<this.size;i++)this.setMaterialProperties(i,this.material[i]);this.materialTopologyVersion++;this.thermalStatisticsVersion=(this.thermalStatisticsVersion||0)+1;}
+  rebuildMaterialProperties(){for(let i=0;i<this.size;i++)this.setMaterialProperties(i,this.material[i]);this.materialTopologyVersion++;this.environmentTopologyVersion++;this.thermalStatisticsVersion=(this.thermalStatisticsVersion||0)+1;}
 
   temperatureAt(x,y){const i=this.index(x,y);return this.energy[i]/this.capacityAtIndex(i);}
   temperatureAtIndex(i){return this.energy[i]/this.capacityAtIndex(i);}
@@ -80,7 +83,8 @@ export class World {
     this.setMaterialProperties(i,this.material[i]);
     this.energy[i]=this.capacityAtIndex(i)*t;
     if(oldMaterial?.id!==nextMaterial?.id){this.materialTopologyVersion++;this.thermalStatisticsVersion=(this.thermalStatisticsVersion||0)+1;}
-    if(oldMaterial?.solid!==nextMaterial?.solid)this.airTopologyVersion++;
+    const oldIsAir=oldMaterial?.id==='air',nextIsAir=nextMaterial?.id==='air';
+    if(oldMaterial?.solid!==nextMaterial?.solid||oldIsAir!==nextIsAir){this.airTopologyVersion++;this.environmentTopologyVersion++;}
     if((oldMaterial?.id==='air')!==(nextMaterial?.id==='air'))this.navigationTopologyVersion++;
     return true;
   }
@@ -89,7 +93,7 @@ export class World {
     const mi=this.registry.index(id),material=this.registry.fromIndex(mi);this.material.fill(mi);
     this.thermalCapacity.fill(Math.max(.001,material.density*TILE_VOLUME*material.heatCapacity));this.thermalConductivity.fill(material.conductivity);this.airMaterial.fill(material.id==='air'?1:0);
     for(let i=0;i<this.size;i++)this.energy[i]=this.capacityAtIndex(i)*temp;
-    this.airTopologyVersion++;this.materialTopologyVersion++;this.thermalStatisticsVersion=(this.thermalStatisticsVersion||0)+1;
+    this.airTopologyVersion++;this.environmentTopologyVersion++;this.materialTopologyVersion++;this.thermalStatisticsVersion=(this.thermalStatisticsVersion||0)+1;
   }
 
   isAir(x,y){return this.inBounds(x,y)&&this.materialAt(x,y).id==='air';}

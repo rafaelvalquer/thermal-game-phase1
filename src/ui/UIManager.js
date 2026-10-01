@@ -8,6 +8,7 @@ import { DataCenterDashboard } from './DataCenterDashboard.js';
 import { formatPower } from '../utils/MathUtils.js';
 import { isPowered, powerEquipment } from '../simulation/PowerState.js';
 import { technicianAt } from '../entities/Technician.js';
+import { operationalRacks } from '../datacenter/RackQueries.js';
 import { UIScheduler } from './UIScheduler.js';
 import { ContractCenterModal } from './datacenter/ContractCenterModal.js';
 import { LandExpansionPanel } from './datacenter/LandExpansionPanel.js';
@@ -34,6 +35,7 @@ const DUCT_HINT=g=>{
 export class UIManager {
   constructor(game,campaign){
     this.game=game;this.campaign=campaign;
+    this.criticalAudioActive=false;
     this.toolbar=new Toolbar(document.querySelector('#tools'),game.build);
     this.inspector=new Inspector(document.querySelector('#inspector'));
     this.inspector.onPowerToggle=entity=>this.togglePower(entity);
@@ -93,6 +95,9 @@ export class UIManager {
       if(help)help.textContent='Airflow · '+({vectors:'vetores locais',streamlines:'trajetórias RK2 contínuas',particles:'partículas seguindo o campo'}[b.dataset.airflowMode]||'campo de velocidade');
     });
     document.querySelector('#pauseBtn').onclick=()=>this.game.sim.togglePause();
+    const audioButton=document.querySelector('#audioToggle');
+    if(audioButton){const sync=()=>{const enabled=this.game.audio.enabled;audioButton.textContent=enabled?'🔊':'🔇';audioButton.setAttribute('aria-pressed',String(enabled));audioButton.setAttribute('aria-label',enabled?'Silenciar áudio':'Ativar áudio');audioButton.title=enabled?'Áudio ligado':'Áudio silenciado';};sync();audioButton.addEventListener('click',()=>{this.game.audio.toggle();sync();});}
+    document.querySelector('#alerts')?.addEventListener('click',event=>{const button=event.target.closest('[data-focus-thermal]');if(!button)return;const entity=this.game.world.getEntityById(Number(button.dataset.focusThermal))||this.game.world.entities.find(item=>String(item.id)===button.dataset.focusThermal);if(entity)this.game.focusThermalEntity(entity);});
     document.querySelectorAll('[data-speed]').forEach(b=>b.onclick=()=>this.game.setSpeed(Number(b.dataset.speed)));
     document.querySelector('#resetBtn').onclick=()=>window.__thermalStartLevel?.(this.game.level,this.game.datacenter?{fresh:true}:undefined);
     document.querySelector('#exitBtn').onclick=()=>window.__thermalShowCampaign?.();
@@ -132,6 +137,13 @@ export class UIManager {
       for(const contract of datacenter.state.contracts)if(contract.dailyViolation||contract.lastSlaViolationDay===datacenter.clock.day)alerts.push('sla:'+contract.id);
     }else if(m.powerDraw>this.game.level.powerLimit)alerts.push('power');
     return alerts.join('|');
+  }
+
+  updateCriticalAudio(){
+    const audio=this.game.audio;if(!audio)return;
+    const metrics=this.game.sim.metrics,active=(metrics.maxAirTemp??metrics.maxTemp??0)>=80||(metrics.maxMachineTemp||0)>=80;
+    if(active&&!this.criticalAudioActive&&audio.enabled&&audio.unlocked)audio.playCritical();
+    this.criticalAudioActive=active;
   }
 
   selectContractRacks(contractId,racks=[],focus=false){
@@ -184,6 +196,9 @@ export class UIManager {
 
   update(dt=0){
     const g=this.game,s=g.sim,critical=this.criticalAlertSignature();
+    this.updateCriticalAudio();
+    const thermalRisk=(s.metrics.maxAirTemp??s.metrics.maxTemp??0)>=80||(s.metrics.maxMachineTemp||0)>=80;
+    document.querySelector('#thermalRiskVignette')?.classList.toggle('active',thermalRisk);
     if(critical!==this.lastCriticalAlertSignature){this.forceUiRefresh?.add('alerts');this.lastCriticalAlertSignature=critical;}
     const due=new Set([...this.uiScheduler.update(dt),...this.forceUiRefresh]);this.forceUiRefresh.clear();
     this.activeDue=due;
@@ -219,10 +234,11 @@ export class UIManager {
   dailyContractRate(monthlyValue){return (this.game.datacenter?'R$ ':'$ ')+((Number(monthlyValue)||0)/30).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
   updateStaffPanel(){
     const root=document.querySelector('#staffPanel'),staff=this.game.staff;if(!root||!staff)return;
-    const racks=this.game.world.entitiesByType('serverRack').length;if(!racks){if(this.staffPanelHtml){root.innerHTML='';this.staffPanelHtml='';}return;}
+    const installed=operationalRacks(this.game.world),racks=installed.length;if(!racks){if(this.staffPanelHtml){root.innerHTML='';this.staffPanelHtml='';}return;}
+    const colocation=this.game.world.entitiesByType('serverRack').length,cloud=this.game.world.entitiesByType('computeRack').length;
     const workers=staff.workers,cap=staff.maxWorkers,payroll=staff.payroll;
     const cards=workers.map((worker,index)=>{const rack=this.game.world.getEntityById(worker.targetRackId),rackName=escapeHtml(rack?.name||'rack');let detail='Em patrulha';if(worker.action==='working')detail='Atendendo '+rackName+' · troca térmica +20% · '+Math.max(0,worker.boostRemaining||0).toFixed(1)+' s · '+Math.round((worker.workProgress||0)*100)+'%';else if(worker.action==='moving')detail='A caminho de '+rackName;else if(worker.action==='cooldown')detail='Intervalo · próximo atendimento em '+Math.max(0,worker.cooldownRemaining||0).toFixed(1)+' s';return '<div class="staff-row"><button type="button" class="staff-select" data-select-tech="'+worker.id+'" aria-label="Inspecionar técnico '+(index+1)+'"><i class="staff-led '+(worker.targetRackId?'active':'')+'"></i><b>Técnico '+String(index+1).padStart(2,'0')+'</b><small>'+detail+'</small>'+(worker.action==='working'?'<span class="staff-work-progress" role="progressbar" aria-label="Progresso do atendimento" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+Math.round((worker.workProgress||0)*100)+'"><i style="width:'+Math.round((worker.workProgress||0)*100)+'%"></i></span>':'')+'</button><button data-fire-tech="'+worker.id+'" aria-label="Desligar técnico '+(index+1)+'">×</button></div>';}).join('');
-    const html='<section class="staff-card"><div class="staff-head"><span>EQUIPE TÉCNICA</span><b>'+workers.length+' / '+cap+'</b></div><p>Patrulha automática · identifica racks acima de 35 °C ou do SLA e melhora temporariamente a troca térmica.</p>'+cards+'<div class="staff-footer"><span>Salários <b>'+this.money(payroll)+'/dia</b></span><button data-hire-tech '+(workers.length>=cap||this.game.build.budget<2000?'disabled':'')+'>Contratar · '+this.money(2000)+'</button></div></section>';
+    const html='<section class="staff-card"><div class="staff-head"><span>EQUIPE TÉCNICA</span><b>'+workers.length+' / '+cap+'</b></div><p>1 técnico para cada 6 racks instalados · patrulha racks Cloud e Colocation acima de 35 °C ou do SLA.</p><div class="staff-rack-count">Racks atendidos <b>'+racks+'</b><small>Colocation '+colocation+' · Cloud '+cloud+'</small></div>'+cards+'<div class="staff-footer"><span>Salários <b>'+this.money(payroll)+'/dia</b></span><button data-hire-tech '+(workers.length>=cap||this.game.build.budget<2000?'disabled':'')+'>Contratar · '+this.money(2000)+'</button></div></section>';
     if(html!==this.staffPanelHtml){const active=document.activeElement,focused=root.contains(active)?active.dataset.fireTech||active.dataset.hireTech||active.dataset.selectTech:null,selector=active?.dataset.fireTech!=null?`[data-fire-tech="${focused}"]`:active?.dataset.hireTech!=null?'[data-hire-tech]':`[data-select-tech="${focused}"]`;root.innerHTML=html;this.staffPanelHtml=html;if(focused!=null)root.querySelector(selector)?.focus();}
   }
   openDailyReport(manual=false){
@@ -287,7 +303,7 @@ export class UIManager {
     const maxAirTemp=m.maxAirTemp??m.maxTemp??0,maxMachineTemp=m.maxMachineTemp??0;
     if(maxAirTemp>=80)alerts.push(['critical','AR CRÍTICO','Ar ambiente em faixa crítica: '+maxAirTemp.toFixed(1)+' °C']);
     else if(maxAirTemp>50)alerts.push(['warn','AR QUENTE','Temperatura do ar elevada: '+maxAirTemp.toFixed(1)+' °C']);
-    if(maxMachineTemp>=80)alerts.push(['critical','MÁQUINA SUPERAQUECIDA','Equipamento em faixa crítica: '+maxMachineTemp.toFixed(1)+' °C']);
+    if(maxMachineTemp>=80){const machine=[...(s.world.heatMachines||[])].filter(item=>item.type!=='furnace'&&(item.temperature??0)>=80).sort((a,b)=>(b.temperature||0)-(a.temperature||0))[0],action=machine?'<button type="button" class="thermal-focus" data-focus-thermal="'+escapeHtml(machine.id)+'">Focar</button>':'';alerts.push(['critical','MÁQUINA SUPERAQUECIDA','Equipamento em faixa crítica: '+maxMachineTemp.toFixed(1)+' °C'+action]);}
     else if(maxMachineTemp>50)alerts.push(['warn','MÁQUINA QUENTE','Temperatura do equipamento elevada: '+maxMachineTemp.toFixed(1)+' °C']);
     const slaIssue=this.game.datacenter?.state.contracts.find(contract=>contract.dailyViolation||contract.lastSlaViolationDay===this.game.datacenter.clock.day);
     if(slaIssue)alerts.push(['critical','SLA VIOLADO',slaIssue.clientName+' · disponibilidade ou temperatura fora do contrato.']);

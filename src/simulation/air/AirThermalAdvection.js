@@ -65,24 +65,11 @@ export class AirThermalAdvection {
       this.exchangeOutdoor(face.x,face.y,velocity*face.sign,dt);
     }
 
-    this.refreshExteriorAir();
-
     w.energy.set(w.nextEnergy);
   }
 
   sampleAirMetrics(){
     return null;
-  }
-
-  refreshExteriorAir(){
-    const g=this.grid,w=g.world,ambient=w.environment.temperature;
-    // Tiles outside declared room footprints model the unlimited outdoor
-    // atmosphere, so transported heat cannot accumulate beside the building.
-    const topology=this.faceTopology;
-    for(let c=0;c<topology.exteriorAirCellCount;c++){
-      const i=topology.exteriorAirCells[c],target=w.capacityAtIndex(i)*ambient,q=w.nextEnergy[i]-target;
-      if(Math.abs(q)>=1e-10){w.nextEnergy[i]=target;w.environment.energyReceived+=q;this.metrics.externalEnergy=(this.metrics.externalEnergy||0)+q;}
-    }
   }
 
   exchangeOutdoor(x,y,outwardVelocity,dt){

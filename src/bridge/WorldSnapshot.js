@@ -66,6 +66,11 @@ export class WorldSnapshot {
         if(ductAt.has(key))duct.ductConnections.push({direction:side.name,type:'duct'});
         else for(const type of airTerminals.get(key)||[])duct.ductConnections.push({direction:side.name,type});
       }
+      const directions=new Set(duct.ductConnections.map(connection=>connection.direction));
+      const count=directions.size;
+      duct.ductShape=count>=4?'cross':count===3?'tee':count===2
+        ?(directions.has('east')&&directions.has('west')||directions.has('north')&&directions.has('south')?'straight':'curve')
+        :count===1?'end':'isolated';
     }
     const temperatures=new Float32Array(world?.size||0),materialIds=new Array(world?.size||0);
     for(let i=0;i<temperatures.length;i++){
