@@ -6,6 +6,7 @@ import './contract-center.css';
 import './sim-controls.css';
 import './three.css';
 import './campaign.css';
+import './onboarding.css';
 import { Game } from './game/Game.js';
 import { CampaignManager } from './campaign/CampaignManager.js';
 import { CampaignScreen } from './ui/CampaignScreen.js';
@@ -31,11 +32,12 @@ const gameShell=(level)=>{
     '<aside id="toolsPanel" class="left-panel panel">',
       '<div class="panel-head"><span>CONSTRUÇÃO</span><small>R gira · RMB cancela</small><button class="mobile-panel-toggle" data-panel-toggle="rightPanel" aria-controls="rightPanel" aria-expanded="false">Telemetria</button></div>',
       '<div id="tools" class="tools"></div>',
-      '<div class="help-card"><b>MISSÃO</b><p>'+level.description+'</p><div class="key-row"><kbd>WASD</kbd><span>câmera</span><kbd>F3</kbd><span>dados físicos</span></div></div>',
+      '<div class="help-card"><b>MISSÃO</b><p>'+level.description+'</p><div class="key-row"><kbd>WASD</kbd><span>câmera</span><kbd>F3</kbd><span>dados físicos</span></div>'+(level.tutorial?'<button type="button" id="tutorialRestart" class="tutorial-restart" hidden>↺ Rever tutorial</button>':'')+'</div>',
     '</aside>',
     '<main class="viewport-wrap">',
       '<canvas id="game"></canvas>',
       '<div id="thermalRiskVignette" class="thermal-risk-vignette" aria-hidden="true"></div>',
+      (isDatacenter?'':'<div id="planningBar" class="planning-bar" role="region" aria-label="Fase de planejamento" hidden><div><b>FASE DE PLANEJAMENTO</b><span>A simulação está parada. Construa à vontade: as máquinas ligam quando você iniciar.</span></div><button type="button" id="startOperationBtn">▶ Iniciar operação <kbd>Enter</kbd></button></div>'),
       benchmarkHud,
       '<div class="sprite-loading" role="status">CARREGANDO EQUIPAMENTOS<span><i></i></span></div>',
       '<div class="view-switcher" role="toolbar" aria-label="Modos de visualização"><button class="active" data-view-mode="2d" aria-pressed="true">▦ Construção 2D</button><button data-view-mode="walk" aria-pressed="false">◎ Passeio 3D</button><span class="view-divider" aria-hidden="true"></span><button class="active" data-mode="normal">◫ Normal</button><button data-mode="thermal">△ Térmico</button><button data-mode="airflow">〰 Airflow</button><button data-mode="cooling" class="hidden">❄ Climatização</button><button data-mode="pressure">◌ Pressão</button><button data-mode="fluid">≈ Fluido</button></div>',

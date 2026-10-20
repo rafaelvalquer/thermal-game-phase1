@@ -1,6 +1,8 @@
 import { Toolbar } from './Toolbar.js';
 import { Inspector } from './Inspector.js';
-import { MetricsPanel } from './MetricsPanel.js';
+import { MetricsPanel, telemetryLevel } from './MetricsPanel.js';
+import { TutorialOverlay } from './TutorialOverlay.js';
+import { COOLING_UNIT_MODELS } from '../entities/CoolingUnitModels.js';
 import { ObjectivePanel } from './ObjectivePanel.js';
 import { Minimap } from './Minimap.js';
 import { MissionDebriefing } from './MissionDebriefing.js';
@@ -25,7 +27,7 @@ const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;'
 const DUCT_HINT=g=>{
   if(g.build.selected==='serverRack'){const d=g.build.direction(),glyph=d.x>0?'→':d.x<0?'←':d.y>0?'↓':'↑';return 'Entrada fria '+glyph+' · saída quente no lado oposto · R gira';}
   if(g.build.selected?.startsWith('computeRack')){const model=g.build.computeRackModel(),direction=g.build.direction(),glyph=direction.x>0?'→':direction.x<0?'←':direction.y>0?'↓':'↑';return model.label+' · '+(model.maxPowerW/1000)+' kW · '+glyph+' entrada fria · M modelo · R gira';}
-  if(g.build.selected==='coolingUnit')return 'Modelo '+g.build.coolingUnitModel+' · M altera o modelo';
+  if(g.build.selected==='coolingUnit'){const model=COOLING_UNIT_MODELS[g.build.coolingUnitModel];return 'Modelo '+(model?.label||g.build.coolingUnitModel)+(model?' · '+model.ratedCoolingCapacity/1000+' kW de frio':'')+' · M altera o modelo';}
   if(g.build.selected==='industrialCoolingUnit')return 'Industrial · 50 kW · 2 tiles · R gira a descarga';
   if(g.build.selected==='duct')return 'Arraste para ligar dutos e criar ramificações · I alterna isolamento';
   if(g.build.selected&&['fan','exhaust','pump','supplyVent','coolingUnit','industrialCoolingUnit'].includes(g.build.selected))return 'Direção: '+['→','↓','←','↑'][g.build.rotation]+' · R gira';
@@ -61,6 +63,8 @@ export class UIManager {
       else document.querySelector('[data-mode="fluid"]')?.classList.add('hidden');
       document.querySelector('[data-mode="cooling"]')?.classList.remove('hidden');
     }else document.querySelector('[data-mode="cooling"]')?.classList.add('hidden');
+    document.querySelector('.minimap-card')?.toggleAttribute('hidden',telemetryLevel(game.level)<3);
+    this.tutorial=game.level.tutorial?new TutorialOverlay(game,game.level.tutorial):null;
     this.bind();game.build.onChange=()=>{this.toolbar.render();if(game.build.selected)game.renderer.selectedEntity=null;};
     document.querySelector('#staffPanel')?.addEventListener('click',event=>{
       const hire=event.target.closest('[data-hire-tech]');if(hire){const result=game.staff.hire();game.toast(result.ok?'Técnico contratado. Salário diário: '+this.money(250)+'.':result.reason);this.staffPanelHtml='';this.updateStaffPanel();return;}
@@ -95,6 +99,8 @@ export class UIManager {
       if(help)help.textContent='Airflow · '+({vectors:'vetores locais',streamlines:'trajetórias RK2 contínuas',particles:'partículas seguindo o campo'}[b.dataset.airflowMode]||'campo de velocidade');
     });
     document.querySelector('#pauseBtn').onclick=()=>this.game.sim.togglePause();
+    document.querySelector('#startOperationBtn')?.addEventListener('click',()=>this.game.startOperation());
+    document.querySelector('#tutorialRestart')?.addEventListener('click',()=>{this.tutorial?.restart();this.syncTutorialRestart();});
     const audioButton=document.querySelector('#audioToggle');
     if(audioButton){const sync=()=>{const enabled=this.game.audio.enabled;audioButton.textContent=enabled?'🔊':'🔇';audioButton.setAttribute('aria-pressed',String(enabled));audioButton.setAttribute('aria-label',enabled?'Silenciar áudio':'Ativar áudio');audioButton.title=enabled?'Áudio ligado':'Áudio silenciado';};sync();audioButton.addEventListener('click',()=>{this.game.audio.toggle();sync();});}
     document.querySelector('#alerts')?.addEventListener('click',event=>{const button=event.target.closest('[data-focus-thermal]');if(!button)return;const entity=this.game.world.getEntityById(Number(button.dataset.focusThermal))||this.game.world.entities.find(item=>String(item.id)===button.dataset.focusThermal);if(entity)this.game.focusThermalEntity(entity);});
@@ -109,6 +115,17 @@ export class UIManager {
       const panel=document.querySelector('#'+button.dataset.panelToggle),expanded=button.getAttribute('aria-expanded')==='true';
       button.setAttribute('aria-expanded',String(!expanded));panel.classList.toggle('mobile-open',!expanded);
     });
+  }
+
+  onOperationStarted(){for(const key of ['objectives','metrics','alerts','clock'])this.forceUiRefresh.add(key);}
+
+  syncTutorialRestart(){const button=document.querySelector('#tutorialRestart'),hidden=!this.tutorial||this.tutorial.active;if(button&&button.hidden!==hidden)button.hidden=hidden;}
+
+  updatePlanning(){
+    const planning=this.game.sim.planning,bar=document.querySelector('#planningBar');
+    if(bar&&bar.hidden===planning)bar.hidden=!planning;
+    const pause=document.querySelector('#pauseBtn');if(pause)pause.disabled=planning;
+    document.querySelector('.shell')?.classList.toggle('is-planning',planning);
   }
 
   inspectAt(x,y){
@@ -226,7 +243,9 @@ export class UIManager {
     document.querySelector('#speedLabel').textContent=s.speed+'×';
     document.querySelector('#rotateHint').textContent=DUCT_HINT(g);
     if(due.has('alerts'))this.updateAlerts();if(due.has('graphs')){g.performance?.begin?.('uiGraphMs');try{this.drawGraph();}finally{g.performance?.end?.('uiGraphMs');}}
-    if(s.mission.state!=='running')this.debriefing.show();
+    this.updatePlanning();
+    if(this.tutorial){this.tutorial.update();this.syncTutorialRestart();}
+    if(s.mission.state==='won'||s.mission.state==='failed')this.debriefing.show();
     this.activeDue=null;
   }
 

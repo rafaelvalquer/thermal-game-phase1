@@ -20,7 +20,8 @@ npm run build
 
 ## Missão Hot Room
 
-- Três máquinas ligam após 10 segundos e geram 8 kW, 12 kW e 15 kW de calor.
+- A missão começa na **fase de planejamento**: a simulação fica parada enquanto você constrói. As três máquinas ligam ao clicar em **Iniciar operação** (ou `Enter`) e geram 8 kW, 12 kW e 15 kW de calor.
+- Um **tutorial guiado** de 6 passos ensina a solução básica (condensadora Compacta fora da sala, duto, saída de ar, ventiladores e modo Térmico). Ele pode ser pulado e revisto pelo botão "Rever tutorial" no painel da missão.
 - Mantenha todas abaixo de 40°C por 5 minutos simulados.
 - Limite elétrico: 10 kW.
 - Falha se uma máquina permanecer acima de 80°C por 30 segundos.
@@ -33,6 +34,7 @@ npm run build
 - clique direito ou `Esc`: cancelar ferramenta / voltar à inspeção
 - `R`: girar ventilador/exaustor
 - `Space`: pausa
+- `Enter`: iniciar a operação (fase de planejamento)
 - `1`, `2`, `4`: velocidade da simulação
 - `F3`: debug físico no tile sob o mouse
 
@@ -73,6 +75,14 @@ O projeto agora possui campanha data-driven com progressão persistida em localS
 6. Critical Facility — infraestrutura bloqueada e eventos operacionais
 
 As fases ficam em src/campaign/levels/ e os layouts em src/campaign/maps/. Objetivos, falhas e eventos são configurados por dados; o motor físico continua responsável pelas temperaturas.
+
+Campos de onboarding por fase:
+
+- `planningPhase`: `false` desliga a fase de planejamento (ligada por padrão na campanha; desligada nos sandboxes).
+- `uiLevel`: telemetria exibida — `1` temperatura, consumo e missão; `2` acrescenta capacidade de refrigeração; `3` (padrão) mostra também o balanço de energia e o minimap.
+- `tutorial`: passos `{title,text,check,highlight,area,openTool,warning}`; as verificações disponíveis ficam em `TUTORIAL_CHECKS` (src/ui/TutorialOverlay.js).
+
+Ao posicionar ventiladores, exaustores e saídas de ar, a prévia mostra o alcance estimado do jato (ou a área de captação do exaustor) e as máquinas atingidas. É uma estimativa geométrica; o resultado real vem do solver de airflow.
 
 
 ## Circuito hidráulico

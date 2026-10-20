@@ -22,6 +22,7 @@ import { ViewportCulling } from './ViewportCulling.js';
 import { StaticMapCache } from './StaticMapCache.js';
 import { VisualQualityManager } from './VisualQualityManager.js';
 import { OUTDOOR_TEMP } from '../utils/Constants.js';
+import { AIR_REACH, previewAirReach } from './AirReachPreview.js';
 
 export class Renderer {
   constructor(canvas,camera,{tilePixels=14,monitor=null}={}){
@@ -123,6 +124,7 @@ export class Renderer {
       const machine=world.getEntityById(this.selectedEntity.machineId)||this.adjacentHeatMachine(world,this.selectedEntity.x,this.selectedEntity.y);
       if(machine)this.outlineEntity(ctx,machine,'#fb923c',time,1.2);
     }
+    if(this.tutorialArea)this.drawTutorialArea(ctx,this.tutorialArea,uiTime);
     this.drawHover(ctx,world,uiTime);
     if(this.debug)this.drawDebug(ctx,world);
     ctx.restore();
@@ -226,6 +228,8 @@ export class Renderer {
     else this.entities.drawPreview(ctx,world,tool,p.x,p.y,this.buildSystem.direction(),this.tile,this.mode,time,valid,tool==='coolingUnit'?this.buildSystem.coolingUnitModel:tool.startsWith('computeRack')?this.buildSystem.computeRackModel(tool):null);
 
     if(tool==='supplyVent')this.drawVentCoverage(ctx,world,{x:p.x,y:p.y,direction:this.buildSystem.direction()},{preview:true});
+    const reach=previewAirReach(world,tool,{x:p.x,y:p.y,direction:this.buildSystem.direction()});
+    if(reach)this.drawAirReach(ctx,reach,tool,time);
 
     if(tool==='exchanger'){
       const machine=this.adjacentHeatMachine(world,p.x,p.y);
@@ -237,6 +241,43 @@ export class Renderer {
       ctx.fillRect(cell.x*this.tile,cell.y*this.tile,this.tile,this.tile);
       ctx.strokeRect(cell.x*this.tile+1,cell.y*this.tile+1,this.tile-2,this.tile-2);
     }
+    ctx.restore();
+  }
+
+  // Pulsing target region used by the guided tutorial.
+  drawTutorialArea(ctx,area,time){
+    const t=this.tile,x=area.x*t,y=area.y*t,w=area.width*t,h=area.height*t,pulse=.5+.5*Math.sin(time*4);
+    ctx.save();
+    ctx.fillStyle='rgba(227,182,87,'+(.08+.1*pulse).toFixed(3)+')';ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle='#e3b657';ctx.lineWidth=Math.max(1.5,2.4/this.camera.zoom);ctx.setLineDash([6/this.camera.zoom,4/this.camera.zoom]);ctx.lineDashOffset=-time*14/this.camera.zoom;ctx.strokeRect(x,y,w,h);ctx.setLineDash([]);
+    if(area.label){
+      ctx.font='900 '+Math.max(8,10/this.camera.zoom)+'px ui-monospace,monospace';ctx.textAlign='left';ctx.textBaseline='bottom';
+      const width=ctx.measureText(area.label).width+10,height=Math.max(12,15/this.camera.zoom),ly=y-3-height*pulse*.15;
+      ctx.fillStyle='#e3b657';ctx.fillRect(x,ly-height,width,height);ctx.fillStyle='#17262d';ctx.fillText(area.label,x+5,ly-2);
+    }
+    ctx.restore();
+  }
+
+  drawAirReach(ctx,reach,tool,time){
+    const t=this.tile,exhaust=tool==='exhaust',vent=tool==='supplyVent',rgb=exhaust?'251,146,60':vent?'147,197,253':'103,232,249',d=reach.direction;
+    ctx.save();
+    for(const cell of reach.cells){ctx.fillStyle='rgba('+rgb+','+(.06+.22*cell.strength).toFixed(3)+')';ctx.fillRect(cell.x*t,cell.y*t,t,t);}
+    // Chevrons travel along the axis: away from a fan, towards an exhaust.
+    const head=this.hover,phase=(time*2.2)%1;ctx.strokeStyle='rgba('+rgb+',.85)';ctx.lineWidth=Math.max(1,1.4/this.camera.zoom);
+    for(let step=1;step<=reach.length;step++){
+      const along=exhaust?reach.length-step+1-phase:step-1+phase,cx=(head.x+.5+d.x*along)*t,cy=(head.y+.5+d.y*along)*t,s=t*.22,flow=exhaust?-1:1;
+      ctx.globalAlpha=Math.max(.15,1-along/(reach.length+1));
+      ctx.beginPath();ctx.moveTo(cx-(d.x*flow)*s-d.y*s,cy-(d.y*flow)*s-d.x*s);ctx.lineTo(cx+(d.x*flow)*s,cy+(d.y*flow)*s);ctx.lineTo(cx-(d.x*flow)*s+d.y*s,cy-(d.y*flow)*s+d.x*s);ctx.stroke();
+    }
+    ctx.globalAlpha=1;
+    for(const machine of reach.hits)this.outlineEntity(ctx,machine,exhaust?'#fb923c':'#67e8f9',time,1.2);
+    if(reach.blockedAt){const bx=reach.blockedAt.x*t,by=reach.blockedAt.y*t;ctx.strokeStyle='#f87171';ctx.lineWidth=Math.max(1.2,1.8/this.camera.zoom);ctx.beginPath();ctx.moveTo(bx+3,by+3);ctx.lineTo(bx+t-3,by+t-3);ctx.moveTo(bx+t-3,by+3);ctx.lineTo(bx+3,by+t-3);ctx.stroke();}
+    // Label sits beside the jet (below a horizontal one, right of a vertical one) so it never covers the cells.
+    const side=Math.floor(reach.length*(AIR_REACH[tool]?.spread??.3))+1.6,mid=(reach.length+1)/2;
+    const end={x:(head.x+.5+d.x*mid+Math.abs(d.y)*side)*t,y:(head.y+.5+d.y*mid+Math.abs(d.x)*side)*t},label=(exhaust?'CAPTAÇÃO ~':vent?'JATO FRIO ~':'ALCANCE ~')+(reach.length*.5).toLocaleString('pt-BR')+' m'+(reach.hits.length?' · '+reach.hits.length+(reach.hits.length===1?' máquina':' máquinas'):'');
+    ctx.font='800 '+Math.max(7,9/this.camera.zoom)+'px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+    const width=ctx.measureText(label).width+8,height=Math.max(11,13/this.camera.zoom);ctx.fillStyle='rgba(16,25,30,.82)';ctx.fillRect(end.x-width/2,end.y-height/2,width,height);
+    ctx.fillStyle=exhaust?'#fed7aa':'#cffafe';ctx.fillText(label,end.x,end.y);
     ctx.restore();
   }
 

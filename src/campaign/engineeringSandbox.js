@@ -1,7 +1,7 @@
 import { level01 } from './levels/level01.js';
 
 export const engineeringSandbox={
-  ...level01,id:'engineering-sandbox',number:0,name:'Engineering Sandbox',difficulty:1,campaign:false,
+  ...level01,id:'engineering-sandbox',number:0,name:'Engineering Sandbox',difficulty:1,campaign:false,uiLevel:3,tutorial:null,
   tagline:'Modo Engenharia · climatização e circuitos hidráulicos',
   description:'Bancada livre para climatização e circuitos hidráulicos completos.',
   briefing:'Experimente unidades de climatização, dutos, saídas de ar, ventilação e refrigeração por água.',

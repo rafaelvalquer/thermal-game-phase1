@@ -7,8 +7,10 @@ export class ObjectiveSystem {
     this.world=world;this.level=level;this.metrics=metrics;this.status=[];
   }
 
-  evaluate(){
-    this.status=(this.level.objectives||[]).map((def,index)=>this.evaluateOne(def,index));
+  // While the mission has not started its heat sources, objectives are reported
+  // as waiting instead of a premature ✓; ok is kept so win logic is unchanged.
+  evaluate({waiting=false}={}){
+    this.status=(this.level.objectives||[]).map((def,index)=>{const status=this.evaluateOne(def,index);return {...status,state:waiting?'waiting':status.ok?'ok':'pending'};});
     return this.status;
   }
 

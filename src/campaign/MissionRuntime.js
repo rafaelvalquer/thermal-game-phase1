@@ -2,12 +2,29 @@ import { ObjectiveSystem } from './ObjectiveSystem.js';
 import { FailureSystem } from './FailureSystem.js';
 import { MissionEventSystem } from './MissionEventSystem.js';
 
+// Campaign missions open in a paused planning phase; sandboxes and benchmarks run immediately.
+export const usesPlanningPhase=level=>level.planningPhase??(level.campaign!==false&&!level.datacenterSandbox&&!level.performanceBenchmark);
+
+export const PLANNING_MESSAGE='Planejamento · construa com a simulação parada e clique em Iniciar operação';
+
 export class MissionRuntime {
-  constructor(world,level,metrics){
-    this.world=world;this.level=level;this.metrics=metrics;this.state='running';this.holdSeconds=0;this.safeSeconds=0;this.failReason='';
-    this.message=level.startMessage||'Analise a instalação e prepare o sistema.';
+  constructor(world,level,metrics,{planning=false}={}){
+    this.world=world;this.level=level;this.metrics=metrics;this.state=planning?'planning':'running';this.holdSeconds=0;this.safeSeconds=0;this.failReason='';this.elapsed=0;
+    this.objectiveStartAt=level.objectiveStartAt??10;
+    this.message=planning?PLANNING_MESSAGE:level.startMessage||'Analise a instalação e prepare o sistema.';
     this.objectives=new ObjectiveSystem(world,level,metrics);this.failures=new FailureSystem(world,level);this.events=new MissionEventSystem(world,level);
-    this.objectiveStatus=this.objectives.evaluate();this.lastEventMessage='';
+    this.objectiveStatus=this.objectives.evaluate({waiting:this.waiting});this.lastEventMessage='';
+  }
+  get waiting(){return this.state==='planning'||(this.state==='running'&&this.elapsed<this.objectiveStartAt);}
+  // Ends the planning phase. The preparation countdown is skipped: machines that
+  // would wait for it start with the operation, so planning replaces the timer.
+  startOperation(){
+    if(this.state!=='planning')return false;
+    const preparation=this.objectiveStartAt;
+    for(const entity of this.world.entities)if(entity.isHeatMachine&&entity.startAt>0&&entity.startAt<=preparation)entity.startAt=0;
+    this.state='running';this.objectiveStartAt=0;this.message=this.level.startMessage||'Operação iniciada · mantenha os objetivos estáveis';
+    this.objectiveStatus=this.objectives.evaluate({waiting:false});
+    return true;
   }
   preUpdate(elapsed){
     const before=this.events.lastAnnouncement;this.events.update(elapsed);
@@ -15,8 +32,9 @@ export class MissionRuntime {
   }
   update(dt,elapsed){
     if(this.state!=='running')return;
-    this.objectiveStatus=this.objectives.evaluate();
-    const startAt=this.level.objectiveStartAt??10;
+    this.elapsed=elapsed;
+    this.objectiveStatus=this.objectives.evaluate({waiting:this.waiting});
+    const startAt=this.objectiveStartAt;
     if(elapsed<startAt){this.message='Preparação: fontes principais ativam em '+Math.max(0,startAt-elapsed).toFixed(1)+' s';return;}
     const failure=this.failures.update(dt);
     if(failure.failed){this.state='failed';this.failReason=failure.reason;this.message='Falha operacional: '+failure.reason;return;}

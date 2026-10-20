@@ -20,6 +20,7 @@ import { BrowserPerformanceBenchmark } from '../dev/BrowserPerformanceBenchmark.
 import { DirtyStateTracker } from '../bridge/DirtyStateTracker.js';
 import { WorldSnapshot } from '../bridge/WorldSnapshot.js';
 import { GameAudio } from '../audio/GameAudio.js';
+import { usesPlanningPhase } from '../campaign/MissionRuntime.js';
 
 export class Game {
   constructor(canvas,level,campaign,{saveSystem=null}={}){
@@ -29,7 +30,7 @@ export class Game {
     const activeSaveSystem=saveSystem||benchmarkSaveSystem;
     this.datacenter=this.level.datacenterSandbox?new DataCenterManager(this.world,this.level,activeSaveSystem?{saveSystem:activeSaveSystem}:{}):null;
     if(this.datacenter)this.level.powerLimit=this.datacenter.powerGrid.capacityKW*1000;
-    this.performance=new PerformanceMonitor();this.sim=new Simulation(this.world,this.level,{monitor:this.performance});
+    this.performance=new PerformanceMonitor();this.sim=new Simulation(this.world,this.level,{monitor:this.performance,planning:usesPlanningPhase(this.level)});
     this.browserBenchmark=this.level.performanceBenchmark?new BrowserPerformanceBenchmark(this.level.performanceBenchmark,this.performance):null;
     this.build=new BuildSystem(this.world,this.sim,{budget:this.datacenter?.cash??this.level.budget,inventory:this.level.inventory});
     this.staff=new TechnicianSystem(this.world,this.build);this.staff.monitor=this.performance;this.world.technicianSystem=this.staff;this.sim.technicians=this.staff;
@@ -89,6 +90,7 @@ export class Game {
         return;
       }
       if(e.code==='Space'){e.preventDefault();this.sim.togglePause();}
+      if((e.code==='Enter'||e.code==='NumpadEnter')&&this.sim.planning&&!e.target?.closest?.('input,textarea,select,button')){e.preventDefault();this.startOperation();}
       if(e.code==='KeyR')this.build.rotate();
       if(e.code==='KeyI'&&DUCT_TOOLS.has(this.build.selected))this.toast('Isolamento: '+(this.build.toggleDuctInsulation()?'ativado':'padrão'));
       if(e.code==='KeyM'&&this.build.selected==='coolingUnit'){const model=this.build.cycleCoolingUnitModel();this.toast('Modelo '+model.label+' · '+(model.ratedCoolingCapacity/1000)+' kW · $'+model.cost);}
@@ -108,6 +110,13 @@ export class Game {
   }
 
   setSpeed(v){this.sim.setSpeed(v);this.ui?.setSpeedButtons(v);}
+
+  startOperation(){
+    if(!this.sim.startOperation())return false;
+    this.audio.unlock();this.audio.playBuild();this.ui?.onOperationStarted();
+    this.toast('Operação iniciada · as máquinas estão ligadas');
+    return true;
+  }
 
   update(dt){
     if(this.viewMode==='2d'){
@@ -147,6 +156,16 @@ export class Game {
     if(this.viewMode!=='2d')this.setViewMode('2d');
     const rect=this.canvas.getBoundingClientRect(),tile=this.renderer.tile,targetZoom=clamp(Math.min(rect.width,rect.height)/(tile*7),.85,1.65),worldX=(entity.x+.5)*tile,worldY=(entity.y+.5)*tile;
     this.cameraFocus={fromX:this.camera.x,fromY:this.camera.y,fromZoom:this.camera.zoom,targetZoom,targetX:worldX-rect.width/(2*targetZoom),targetY:worldY-rect.height/(2*targetZoom),elapsed:0,duration:.65};
+    return true;
+  }
+
+  // Pans the camera (keeping the zoom) until a tile region is fully on screen.
+  focusArea(area){
+    if(this.viewMode!=='2d')return false;
+    const rect=this.canvas.getBoundingClientRect(),tile=this.renderer.tile,zoom=this.camera.zoom,viewW=rect.width/zoom,viewH=rect.height/zoom;
+    const x=area.x*tile,y=area.y*tile,w=area.width*tile,h=area.height*tile;
+    if(x>=this.camera.x&&y>=this.camera.y&&x+w<=this.camera.x+viewW&&y+h<=this.camera.y+viewH)return false;
+    this.cameraFocus={fromX:this.camera.x,fromY:this.camera.y,fromZoom:zoom,targetZoom:zoom,targetX:x+w/2-viewW/2,targetY:y+h/2-viewH/2,elapsed:0,duration:.6};
     return true;
   }
 

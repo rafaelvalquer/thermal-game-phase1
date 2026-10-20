@@ -6,6 +6,7 @@ export const level02={
   description:'Duas salas industriais dependem de um corredor central para levar ar quente até a exaustão.',
   briefing:'A geometria agora importa. Use uma condensadora, ramifique os dutos até várias saídas e compare como a distância reduz a eficiência.',
   thermalSystems:{simpleCooling:true,waterCooling:true,coolingUnitModel:'commercial'},
+  uiLevel:2,
   map:level02Map,environment:{outdoorTemperature:25},budget:18000,powerLimit:10000,missionDuration:240,
   inventory:{pipe:32,pump:1,tank:1,radiator:2,exchanger:2,waterChiller:1,wall:20,insulation:30,copper:0,fan:6,exhaust:2,sensor:6,coolingUnit:1,duct:160,supplyVent:3,demolish:Infinity},
   zones:[

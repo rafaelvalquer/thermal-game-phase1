@@ -9,7 +9,7 @@ import { PhysicsScheduler } from './PhysicsScheduler.js';
 import { ThermalStatisticsSampler } from './thermal/ThermalStatisticsSampler.js';
 
 export class Simulation {
-  constructor(world,level,{monitor=null}={}){
+  constructor(world,level,{monitor=null,planning=false}={}){
     this.monitor=monitor;
     this.world=world;this.level=level;this.elapsed=0;this.paused=false;this.speed=1;
     this.physicsScheduler=new PhysicsScheduler();
@@ -30,7 +30,7 @@ export class Simulation {
     this.energySystem=new EnergySystem(world,this.metrics);
     this.energySystem.monitor=monitor;
     this.batteryDispatch=new BatteryDispatchSystem(world,this.metrics);this.batteryDispatch.monitor=monitor;world.batteryDispatch=this.batteryDispatch;
-    this.mission=new MissionRuntime(world,level,this.metrics);
+    this.mission=new MissionRuntime(world,level,this.metrics,{planning});
     this.technicians=world.technicianSystem||null;
     this.history=[];this.historyTimer=0;this.visualTime=0;
   }
@@ -38,6 +38,8 @@ export class Simulation {
   initialize(){this.energySystem.initialize();}
   setSpeed(v){this.speed=v;}
   togglePause(){this.paused=!this.paused;}
+  get planning(){return this.mission.state==='planning';}
+  startOperation(){if(!this.mission.startOperation())return false;this.paused=false;return true;}
 
   update(dt){
     if(this.paused||this.mission.state!=='running')return;
