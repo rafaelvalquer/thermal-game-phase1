@@ -1,0 +1,55 @@
+/* Progression: star rating, analytic debrief and build history. */
+
+/* Debrief card */
+.end-card.debrief-card{width:min(560px,94vw);max-height:92vh;overflow:auto;padding:24px 26px;text-align:left;border-top:4px solid #7ecb83;animation:debrief-in .45s cubic-bezier(.2,.8,.2,1) both}
+.end-card.debrief-card.failed{border-top-color:#e0794f}
+.debrief-card>span{display:block}
+.debrief-card h2{margin:6px 0 8px}
+.debrief-stars{display:flex;gap:10px;margin:4px 0 2px}
+.debrief-star{font-size:40px;line-height:1;color:#3d5157;text-shadow:2px 2px #10191e}
+.debrief-star.on{color:#e3b657;animation:star-pop .55s calc(.35s + var(--s)*.28s) cubic-bezier(.3,1.6,.5,1) both}
+.debrief-record{margin:4px 0 0!important;color:#e3b657!important;font:800 11px ui-monospace,monospace!important;letter-spacing:.08em}
+.debrief-failure{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:10px 0;padding:9px 11px;border-left:3px solid #e0794f;background:#452d2c}
+.debrief-failure b{font:800 9px ui-monospace,monospace;letter-spacing:.12em;color:#f3a58a}
+.debrief-failure span{flex:1;min-width:180px;font-size:12px;color:#f3d0c4}
+.end-card .debrief-failure button{margin:0;padding:6px 10px;font-size:11px}
+.debrief-chart{margin:12px 0 0;padding:8px;border:1px solid #4a6067;background:#1d2c32}
+.debrief-chart-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.debrief-chart-head span{font:800 9px ui-monospace,monospace;letter-spacing:.1em;color:#a3b1b0}
+.debrief-chart-head small{font-size:8px;color:#a3b1b0}
+.debrief-chart-head i{display:inline-block;width:8px;height:2px;margin:0 3px 0 6px;vertical-align:middle}
+.debrief-chart canvas{display:block;width:100%;height:110px}
+.debrief-card .debrief-grid{margin:12px 0}
+.debrief-criteria{list-style:none;margin:0 0 10px;padding:0}
+.debrief-criteria li{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid #40535a;font-size:12px;color:#c7d2cb}
+.debrief-criteria li i{font-style:normal;width:14px;color:#b76a5b}
+.debrief-criteria li.ok i{color:#7ecb83}
+.debrief-criteria small{display:block;margin-top:2px;font-size:10px;color:#a3b1b0}
+.debrief-tips{display:grid;gap:6px;margin-bottom:6px}
+.debrief-tips>div{padding:8px 10px;border-left:3px solid #63c6d1;background:#1c2c32}
+.debrief-tips b{font-size:12px;color:#eee8cf}
+.debrief-tips p{margin:3px 0 0!important;font-size:11px!important;color:#c7d2cb!important;text-align:left}
+.debrief-card .end-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}
+.debrief-card .end-actions button{margin-top:6px;font-size:11px}
+.debrief-return{position:absolute;left:50%;bottom:18px;z-index:21;transform:translateX(-50%);border:1px solid #f0d58a;border-radius:2px;background:#e3b657;color:#17262d;padding:10px 16px;font-size:12px;font-weight:800;cursor:pointer;box-shadow:inset 0 -3px #a67c3c,3px 3px #10191e}
+
+/* Stars on campaign cards, header and briefing */
+.card-stars{display:flex;gap:3px;margin:-2px 0 6px}
+.card-stars i{font-style:normal;font-size:15px;color:#3d5157}
+.card-stars i.on{color:#e3b657;animation:star-pop .45s calc(.6s + var(--i,0)*.07s + var(--s)*.12s) cubic-bezier(.3,1.6,.5,1) both}
+.campaign-star-total{display:block;margin-top:2px;font:800 11px ui-monospace,monospace;color:#e3b657}
+.briefing-stars{margin-top:12px}
+.briefing-stars ul{list-style:none;padding:0!important}
+.briefing-stars li{display:flex;gap:8px;align-items:baseline}
+.briefing-stars li i{font-style:normal;color:#6e8588}
+.briefing-stars li.ok i{color:#e3b657}
+
+/* Undo / redo */
+.tool-history{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin:0 0 6px}
+.tool-history button{border:1px solid #53696e;border-radius:2px;background:#34464e;color:#d7dfd7;padding:6px 4px;font-size:10px;cursor:pointer;box-shadow:inset 0 1px #738886,1px 2px #10191e}
+.tool-history button:hover:not(:disabled){border-color:#e3b657}
+.tool-history button:disabled{opacity:.4;cursor:not-allowed}
+.tool-history kbd{font:700 8px ui-monospace,monospace;color:#a3b1b0;margin-left:3px}
+
+@keyframes debrief-in{from{opacity:0;transform:translateY(16px) scale(.98)}}
+@keyframes star-pop{0%{opacity:0;transform:scale(.2) rotate(-30deg)}100%{opacity:1;transform:none}}

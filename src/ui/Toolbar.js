@@ -39,8 +39,8 @@ export function clearToolbarSearch(input){
 
 export class Toolbar {
   constructor(root,buildSystem){
-    this.root=root;this.build=buildSystem;this.query='';this.openCategories=new Set();this.lastSelected=buildSystem.selected;
-    this.root.innerHTML='<div class="toolbox"><label class="tool-search"><span aria-hidden="true">⌕</span><input type="search" data-tool-search placeholder="Buscar ferramenta…" aria-label="Buscar ferramenta por nome, descrição ou categoria"><kbd>ESC</kbd></label><div class="tool-search-status" data-tool-search-status aria-live="polite"></div><button type="button" class="tool tool-inspect" data-inspect></button><div class="tool-groups" data-tool-groups></div></div>';
+    this.root=root;this.build=buildSystem;this.onUndo=()=>buildSystem.undo?.();this.onRedo=()=>buildSystem.redo?.();this.query='';this.openCategories=new Set();this.lastSelected=buildSystem.selected;
+    this.root.innerHTML='<div class="toolbox"><label class="tool-search"><span aria-hidden="true">⌕</span><input type="search" data-tool-search placeholder="Buscar ferramenta…" aria-label="Buscar ferramenta por nome, descrição ou categoria"><kbd>ESC</kbd></label><div class="tool-search-status" data-tool-search-status aria-live="polite"></div><div class="tool-history" data-tool-history'+(buildSystem.history?.enabled?'':' hidden')+'><button type="button" data-undo title="Desfazer a última construção (Ctrl+Z)">↶ Desfazer<kbd>Ctrl Z</kbd></button><button type="button" data-redo title="Refazer (Ctrl+Y)">↷ Refazer<kbd>Ctrl Y</kbd></button></div><button type="button" class="tool tool-inspect" data-inspect></button><div class="tool-groups" data-tool-groups></div></div>';
     this.search=this.root.querySelector('[data-tool-search]');this.groupsRoot=this.root.querySelector('[data-tool-groups]');
     this.search.addEventListener('input',()=>{this.query=this.search.value;this.renderGroups();});
     this.search.addEventListener('keydown',event=>{if(event.key==='Escape'&&clearToolbarSearch(this.search)){event.preventDefault();event.stopPropagation();this.query='';this.renderGroups();}});
@@ -59,6 +59,8 @@ export class Toolbar {
     inspect.innerHTML='<span class="tool-icon">⌖</span><span class="tool-main"><b>Inspecionar</b><small>Selecionar tile ou equipamento</small></span><span class="tool-meta">Esc / RMB</span>';
     inspect.title='Inspecionar o estado físico de tiles e equipamentos.';
     inspect.setAttribute('aria-pressed',String(selected===null));
+    const undo=this.root.querySelector('[data-undo]'),redo=this.root.querySelector('[data-redo]');
+    if(undo)undo.disabled=!this.build.canUndo?.();if(redo)redo.disabled=!this.build.canRedo?.();
     this.renderGroups();
   }
 
@@ -106,5 +108,7 @@ export class Toolbar {
     const toolButton=event.target.closest?.('[data-tool]');
     if(toolButton&&!toolButton.disabled)this.build.select(toolButton.dataset.tool);
     if(event.target.closest?.('[data-inspect]'))this.build.select(null);
+    if(event.target.closest?.('[data-undo]'))this.onUndo();
+    if(event.target.closest?.('[data-redo]'))this.onRedo();
   }
 }

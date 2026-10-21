@@ -32,7 +32,7 @@ export class Simulation {
     this.batteryDispatch=new BatteryDispatchSystem(world,this.metrics);this.batteryDispatch.monitor=monitor;world.batteryDispatch=this.batteryDispatch;
     this.mission=new MissionRuntime(world,level,this.metrics,{planning});
     this.technicians=world.technicianSystem||null;
-    this.history=[];this.historyTimer=0;this.visualTime=0;
+    this.history=[];this.missionHistory=[];this.historyTimer=0;this.visualTime=0;
   }
 
   initialize(){this.energySystem.initialize();}
@@ -118,6 +118,9 @@ export class Simulation {
     this.history.push({t:this.elapsed,max:this.metrics.maxTemp,avg:this.metrics.avgTemp,power:this.metrics.powerDraw,solarGenerationW:this.metrics.solarGenerationW||0,
       batteryStoredKWh,batteryCapacityKWh,batteryDischargeW,batteryChargeW});
     if(this.history.length>360)this.history.shift();
+    // Whole-mission log for the debrief chart; thinned in half when full so it always spans the run.
+    this.missionHistory.push(this.history.at(-1));
+    if(this.missionHistory.length>1200)this.missionHistory=this.missionHistory.filter((_,i)=>i%2===0);
   }
 
   totalInternalEnergy(){return this.energySystem.totalInternalEnergy();}

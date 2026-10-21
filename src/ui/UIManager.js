@@ -39,6 +39,7 @@ export class UIManager {
     this.game=game;this.campaign=campaign;
     this.criticalAudioActive=false;
     this.toolbar=new Toolbar(document.querySelector('#tools'),game.build);
+    this.toolbar.onUndo=()=>game.undo();this.toolbar.onRedo=()=>game.redo();
     this.inspector=new Inspector(document.querySelector('#inspector'));
     this.inspector.onPowerToggle=entity=>this.togglePower(entity);
     this.metrics=new MetricsPanel(document.querySelector('#metrics'));

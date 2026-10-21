@@ -38,9 +38,12 @@ export class CampaignManager {
       lowestPower:min(prev.lowestPower,result.maxPower),
       maxTemperature:min(prev.maxTemperature,result.maxTemperature),
       completionTime:min(prev.completionTime,result.completionTime),
+      stars:Math.max(prev.stars||0,result.stars||0),
       lastResult:result,
     };
     this.save();return this.state.bestResults[level.id];
   }
+  stars(level){return this.state.bestResults[level.id]?.stars||(this.isCompleted(level)?1:0);}
+  totalStars(){return this.levels.reduce((sum,level)=>sum+this.stars(level),0);}
   resetProgress(){this.state=this.defaultState();this.save();}
 }

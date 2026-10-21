@@ -1,3 +1,5 @@
+import { starCriteria } from '../campaign/StarRating.js';
+
 export class MissionBriefing {
   constructor(root,campaign,onStart){this.root=root;this.campaign=campaign;this.onStart=onStart;}
 
@@ -6,6 +8,8 @@ export class MissionBriefing {
     const inventory=Object.entries(level.inventory||{}).filter(([k,v])=>k!=='demolish'&&v>0&&Number.isFinite(v)).map(([k,v])=>'<span><b>'+v+'×</b> '+this.label(k,level)+'</span>').join('');
     const objectives=(level.objectives||[]).map(o=>'<li>'+this.objectiveLabel(o,level)+'</li>').join('');
     const tips=(level.tips||[]).map(t=>'<li>'+t+'</li>').join('');
+    const best=this.campaign.stars?.(level)||0;
+    const goals=starCriteria(level).map((item,i)=>'<li class="'+(i<best?'ok':'')+'"><i>'+(i<best?'★':'☆')+'</i>'+item.label+'</li>').join('');
     overlay.innerHTML=
       '<div class="briefing-card">'+
         '<div class="briefing-number">FASE '+String(level.number).padStart(2,'0')+'</div>'+
@@ -15,6 +19,7 @@ export class MissionBriefing {
           '<section><h3>OBJETIVOS</h3><ul>'+objectives+'</ul></section>'+
           '<section><h3>RESTRIÇÕES</h3><div class="briefing-stat"><span>Orçamento</span><strong>$'+level.budget.toLocaleString('pt-BR')+'</strong></div><div class="briefing-stat"><span>Cooling</span><strong>'+(level.powerLimit/1000).toFixed(1)+' kW</strong></div><div class="briefing-stat"><span>Exterior</span><strong>'+level.environment.outdoorTemperature+'°C</strong></div><div class="briefing-stat"><span>Estabilização</span><strong>'+level.missionDuration+' s</strong></div></section>'+
         '</div>'+
+        '<section class="briefing-stars"><h3>METAS DE ESTRELAS'+(best?' · RECORDE '+best+'/3':'')+'</h3><ul>'+goals+'</ul></section>'+
         '<section class="briefing-inventory"><h3>RECURSOS DISPONÍVEIS</h3><div>'+inventory+'</div></section>'+
         '<section class="briefing-tips"><h3>NOTAS DE ENGENHARIA</h3><ul>'+tips+'</ul></section>'+
         '<div class="briefing-actions"><button class="secondary" data-back>← Campanha</button><button class="primary" data-start>INICIAR MISSÃO →</button></div>'+

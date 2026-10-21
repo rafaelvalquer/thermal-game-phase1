@@ -35,6 +35,7 @@ npm run build
 - `R`: girar ventilador/exaustor
 - `Space`: pausa
 - `Enter`: iniciar a operação (fase de planejamento)
+- `Ctrl+Z` / `Ctrl+Y`: desfazer / refazer construção
 - `1`, `2`, `4`: velocidade da simulação
 - `F3`: debug físico no tile sob o mouse
 
@@ -81,6 +82,14 @@ Campos de onboarding por fase:
 - `planningPhase`: `false` desliga a fase de planejamento (ligada por padrão na campanha; desligada nos sandboxes).
 - `uiLevel`: telemetria exibida — `1` temperatura, consumo e missão; `2` acrescenta capacidade de refrigeração; `3` (padrão) mostra também o balanço de energia e o minimap.
 - `tutorial`: passos `{title,text,check,highlight,area,openTool,warning}`; as verificações disponíveis ficam em `TUTORIAL_CHECKS` (src/ui/TutorialOverlay.js).
+
+- `stars`: metas de estrela `{cost, margin, maxPower}`. ★ concluir a missão; ★ custo instalado até `cost`; ★ ficar sempre `margin` °C abaixo dos limites de temperatura com pico de consumo até `maxPower` W. Sem o campo, usa 40% do orçamento, 2 °C e 80% da meta de consumo.
+
+O melhor resultado de estrelas fica salvo no progresso da campanha e aparece nos cards, no total do cabeçalho e no briefing. O relatório de fim de missão mostra as estrelas, o gráfico de temperatura da missão inteira, onde a falha aconteceu (com "Ver no mapa") e dicas geradas pelo diagnóstico (src/campaign/MissionDiagnosis.js).
+
+Construções podem ser desfeitas com `Ctrl+Z` e refeitas com `Ctrl+Y` (ou `Ctrl+Shift+Z`), também pelos botões da barra de construção. Desfazer devolve o valor integral; cada clique, trecho arrastado ou remoção em área conta como uma ação. O histórico não existe no Data Center Sandbox.
+
+`tests/balance/campaignWinnable.test.js` vence cada fase com uma solução de referência (tests/balance/referenceSolutions.js) usando as mesmas regras de construção do jogador.
 
 Ao posicionar ventiladores, exaustores e saídas de ar, a prévia mostra o alcance estimado do jato (ou a área de captação do exaustor) e as máquinas atingidas. É uma estimativa geométrica; o resultado real vem do solver de airflow.
 

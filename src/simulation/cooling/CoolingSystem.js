@@ -46,6 +46,20 @@ export class CoolingSystem {
     this.refreshDistribution(ignorePowerBlock);
     this.updateMetrics();
   }
+  // Strictest zone target among the vents a unit feeds (see CoolingPerformanceSolver.solve).
+  // The Data Center has no zones and keeps the capacity-only overload rule.
+  serviceLimit(paths){
+    if(this.world.datacenter)return -Infinity;
+    let limit=Infinity;
+    for(const path of paths){const target=this.ventZone(path.vent)?.target;if(Number.isFinite(target))limit=Math.min(limit,target);}
+    return Number.isFinite(limit)?limit:COOLING.defaultServiceLimit;
+  }
+  // Zone holding the vent, or the first zone its jet reaches.
+  ventZone(vent){
+    const zones=this.world.zones||[],at=(x,y)=>zones.find(z=>x>=z.x&&y>=z.y&&x<z.x+z.width&&y<z.y+z.height),d=vent.direction||{x:0,y:0};
+    for(let step=0;step<=8;step++){const zone=at(vent.x+d.x*step,vent.y+d.y*step);if(zone)return zone;}
+    return null;
+  }
   set monitor(value){this._monitor=value;if(this.exchange?.coverage)this.exchange.coverage.monitor=value;}
   get monitor(){return this._monitor||null;}
   networkUnitKey(network,unit){return String(network.id)+'|'+String(unit.id);}
@@ -112,7 +126,7 @@ export class CoolingSystem {
       let total=0,weightedTemperature=0;for(const path of branches){const temp=this.exchange.returnTemperature(path.vent);total+=path.flowRate;weightedTemperature+=temp*path.flowRate;}
       const returnT=total?weightedTemperature/total:this.world.environment.temperature,runtimeNetwork=this.unitNetworkRuntime.get(unit.id);
       runtimeNetwork.status=network?.status||(isPowered(unit,ignorePowerBlock)?'DISCONNECTED':'OFF');runtimeNetwork.paths=branches;
-      const result=this.performance.solve(unit,runtimeNetwork,returnT,ignorePowerBlock);
+      const result=this.performance.solve(unit,runtimeNetwork,returnT,ignorePowerBlock,this.serviceLimit(branches));
       Object.assign(unit,{actualRoomCooling:0,currentAirFlow:result.flow,availableCapacity:result.capacity,currentCooling:0,coolingLoad:result.cooling,returnTemperature:returnT,supplyTemperature:result.supplyTemperature,electricalPower:0,compressorPower:0,condenserFanPower:0,heatRejected:0,rejectedHeat:0,loadRatio:result.loadRatio,power:0,status:result.status,fanSpeed:result.flow?Math.min(1,result.flow/unit.maxAirFlow):0,fanActive:result.flow>0});
       unit.currentAirFlow=result.flow;unit.networkId=relatedIds||null;unit.networkStatus=network?.status||'DISCONNECTED';
       if(network)network.availableCooling+=result.capacity;

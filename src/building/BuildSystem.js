@@ -34,6 +34,8 @@ export class BuildSystem {
     this.ductInsulated=false;this.coolingUnitModel=this.world.thermalSystems?.coolingUnitModel||'commercial';
     this.computeRackModels={cpu:'basic',gpu:'basic',storage:'basic'};
     this.onChange=()=>{};
+    // Undo history is disabled in the Data Center, whose contracts and saves track racks separately.
+    this.history={undo:[],redo:[],limit:100,enabled:!this.world.datacenterConfig};this.pendingChanges=null;this.replaying=false;
   }
   select(tool){this.selected=tool;this.onChange();}
   rotate(){if(this.selected==='serverRack'||this.selected?.startsWith('computeRack'))this.rackRotation=(this.rackRotation+1)%4;else this.rotation=(this.rotation+1)%4;this.onChange();}
@@ -62,6 +64,7 @@ export class BuildSystem {
     if(!this.canAfford(tool))return {ok:false,reason:'Sem orçamento, estoque ou ferramenta bloqueada'};
     if(tool==='serverRack'&&!this.world.datacenter?.nextRackPlacement())return {ok:false,reason:'Aceite um contrato para instalar os racks solicitados.'};
     const before=this.simulation.totalInternalEnergy(),base=this.catalog[tool],coolingConfig=this.coolingConfig(tool),computeModel=this.computeRackModel(tool),c=computeModel?{...base,...computeModel}:coolingConfig?{...base,...coolingConfig}:base;let entity=null;
+    const previousMaterial=this.world.materialAt(x,y).id;
     if(c.kind==='material')this.world.setMaterial(x,y,c.material);
     else if(DUCT_TOOLS.has(tool)){
       entity=new AirDuct(x,y,{size:tool,embedded:!this.world.isAir(x,y),insulated:tool==='duct'?true:this.ductInsulated});
@@ -99,6 +102,8 @@ export class BuildSystem {
     }
     if(entity)this.placedEntities.set(entity.id,{tool,cost:c.cost});
     else if(c.kind==='material')this.placedMaterials.set(this.world.index(x,y),{tool,cost:c.cost});
+    if(entity)this.record({op:'add',kind:'entity',entity,utility:DUCT_TOOLS.has(tool),record:{tool,cost:c.cost}});
+    else if(c.kind==='material')this.record({op:'add',kind:'material',x,y,before:previousMaterial,after:c.material,record:{tool,cost:c.cost}});
     this.lastPlacement={x,y,at:globalThis.performance?.now?.()??Date.now()};
     this.budget-=c.cost;if(Number.isFinite(this.inventory[tool]))this.inventory[tool]--;
     if(refreshCooling&&(DUCT_TOOLS.has(tool)||['supplyVent','coolingUnit','industrialCoolingUnit'].includes(tool)))this.simulation.cooling?.rebuild();
@@ -119,21 +124,25 @@ export class BuildSystem {
       if(['supplyVent','coolingUnit'].includes(e.type))this.simulation.cooling?.rebuild();
       const placed=this.placedEntities.get(e.id);
       if(placed){this.placedEntities.delete(e.id);this.recover(placed);}
+      this.record({op:'remove',kind:'entity',entity:e,utility:false,record:placed||null});
     }else if(this.world.utilityAt(x,y)){
       const utility=this.world.utilityAt(x,y),placed=this.placedEntities.get(utility.id);
       this.world.removeUtility(utility);
       if(DUCT_TOOLS.has(utility.type))this.simulation.cooling?.rebuild();
       if(placed){this.placedEntities.delete(utility.id);this.recover(placed);}
+      this.record({op:'remove',kind:'entity',entity:utility,utility:true,record:placed||null});
     }else if(!this.world.isAir(x,y)){
-      const index=this.world.index(x,y),placed=this.placedMaterials.get(index);
+      const index=this.world.index(x,y),placed=this.placedMaterials.get(index),previous=this.world.materialAt(x,y).id;
       this.world.setMaterial(x,y,'air');
       if(placed){this.placedMaterials.delete(index);this.recover(placed);}
+      this.record({op:'remove',kind:'material',x,y,before:previous,after:'air',record:placed||null});
     }
     else return {ok:false,reason:'Nada removível'};
     this.simulation.registerConstruction(before);this.onChange();return {ok:true};
   }
 
-  demolishArea(start,end=start){
+  demolishArea(start,end=start){return this.transaction(()=>this.applyDemolishArea(start,end));}
+  applyDemolishArea(start,end){
     const minX=Math.max(0,Math.min(start.x,end.x)),maxX=Math.min(this.world.width-1,Math.max(start.x,end.x));
     const minY=Math.max(0,Math.min(start.y,end.y)),maxY=Math.min(this.world.height-1,Math.max(start.y,end.y));
     if(minX>maxX||minY>maxY)return {ok:false,removed:0,blocked:0,refund:0};
@@ -149,6 +158,7 @@ export class BuildSystem {
       this.world.removeEntity(entity);entities++;removed++;
       const placed=this.placedEntities.get(entity.id);
       if(placed){this.placedEntities.delete(entity.id);this.recover(placed);}
+      this.record({op:'remove',kind:'entity',entity,utility:false,record:placed||null});
       if(['supplyVent','coolingUnit'].includes(entity.type))coolingChanged=true;
     }
     for(const utility of [...this.world.allUtilities()]){
@@ -156,13 +166,15 @@ export class BuildSystem {
       this.world.removeUtility(utility);utilities++;removed++;
       const placed=this.placedEntities.get(utility.id);
       if(placed){this.placedEntities.delete(utility.id);this.recover(placed);}
+      this.record({op:'remove',kind:'entity',entity:utility,utility:true,record:placed||null});
       if(DUCT_TOOLS.has(utility.type))coolingChanged=true;
     }
     for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++){
       if(this.world.isAir(x,y))continue;
-      const index=this.world.index(x,y),placed=this.placedMaterials.get(index);
+      const index=this.world.index(x,y),placed=this.placedMaterials.get(index),previous=this.world.materialAt(x,y).id;
       this.world.setMaterial(x,y,'air');materials++;removed++;
       if(placed){this.placedMaterials.delete(index);this.recover(placed);}
+      this.record({op:'remove',kind:'material',x,y,before:previous,after:'air',record:placed||null});
     }
     if(!removed)return {ok:false,removed:0,blocked,refund:0,entities,utilities,materials};
     if(coolingChanged)this.simulation.cooling?.rebuild();
@@ -170,7 +182,8 @@ export class BuildSystem {
     return {ok:true,removed,blocked,refund:this.budget-budgetBefore,entities,utilities,materials};
   }
 
-  placePipePath(path){
+  placePipePath(path){return this.transaction(()=>this.applyPipePath(path));}
+  applyPipePath(path){
     let placed=0,failed=0;const seen=new Set();
     for(const {x,y} of path){
       const key=`${x},${y}`;if(seen.has(key))continue;seen.add(key);
@@ -182,7 +195,8 @@ export class BuildSystem {
     return {placed,failed};
   }
 
-  placeStructurePath(path){
+  placeStructurePath(path){return this.transaction(()=>this.applyStructurePath(path));}
+  applyStructurePath(path){
     let placed=0,failed=0;const seen=new Set();
     for(const {x,y} of path){
       const key=`${x},${y}`;if(seen.has(key))continue;seen.add(key);
@@ -192,7 +206,8 @@ export class BuildSystem {
     return {placed,failed};
   }
 
-  placeDuctPath(path){
+  placeDuctPath(path){return this.transaction(()=>this.applyDuctPath(path));}
+  applyDuctPath(path){
     const tool=this.selected,cost=this.catalog[tool]?.cost??0;
     const plan=this.utilityPlacement.planPath(tool,path,{inventory:this.inventory[tool]??0,budget:this.budget,cost});
     let placed=0,failed=0;
@@ -204,6 +219,77 @@ export class BuildSystem {
     if(placed)this.simulation.cooling?.rebuild();
     return {placed,failed};
   }
+
+  // --- Undo / redo -------------------------------------------------------
+  // Each player action (a click, a dragged path or an area demolition) becomes one
+  // history entry with the primitive changes it made. Undo reverts them with a full
+  // refund; redo applies them again and charges the cost again.
+  transaction(fn){
+    if(this.pendingChanges||!this.history.enabled||this.replaying)return fn();
+    this.pendingChanges=[];
+    try{return fn();}
+    finally{const changes=this.pendingChanges;this.pendingChanges=null;if(changes.length)this.pushHistory(changes);}
+  }
+  record(change){
+    if(!this.history.enabled||this.replaying)return;
+    if(this.pendingChanges)this.pendingChanges.push(change);else this.pushHistory([change]);
+  }
+  pushHistory(changes){
+    const {undo,redo,limit}=this.history;undo.push(changes);if(undo.length>limit)undo.shift();redo.length=0;
+  }
+  canUndo(){return this.history.enabled&&this.history.undo.length>0;}
+  canRedo(){return this.history.enabled&&this.history.redo.length>0;}
+  undo(){return this.replayHistory('undo');}
+  redo(){return this.replayHistory('redo');}
+
+  historyLabel(changes){
+    const counts=new Map();
+    for(const change of changes){const tool=change.record?.tool||(change.kind==='material'?change.before:change.entity?.type)||'item';counts.set(tool,(counts.get(tool)||0)+1);}
+    const action=changes.every(change=>change.op==='add')?'':changes.every(change=>change.op==='remove')?'remoção de ':'';
+    return action+[...counts].map(([tool,count])=>(count>1?count+'× ':'')+(this.catalog[tool]?.label||BUILD_CATALOG[tool]?.label||tool)).join(', ');
+  }
+
+  replayHistory(direction){
+    if(!this.history.enabled)return {ok:false,reason:'Desfazer não está disponível neste modo.'};
+    const from=direction==='undo'?this.history.undo:this.history.redo,to=direction==='undo'?this.history.redo:this.history.undo,changes=from.at(-1);
+    if(!changes)return {ok:false,reason:direction==='undo'?'Nada para desfazer.':'Nada para refazer.'};
+    // Undo applies each change backwards; redo replays it forwards.
+    const steps=direction==='undo'?[...changes].reverse().map(change=>({change,adding:change.op==='remove'})):changes.map(change=>({change,adding:change.op==='add'}));
+    let charge=0;
+    for(const {change,adding} of steps){
+      const cost=change.record?.cost||0;charge+=adding?cost:-cost;
+      if(adding&&change.kind==='entity'&&!change.utility&&entityFootprintCells(change.entity).some(cell=>this.world.entityAt(cell.x,cell.y)))return {ok:false,reason:'A posição original está ocupada.'};
+      if(adding&&change.kind==='entity'&&change.utility&&this.world.utilityAt(change.entity.x,change.entity.y,change.entity.type))return {ok:false,reason:'A posição original está ocupada.'};
+    }
+    if(charge>this.budget)return {ok:false,reason:'Orçamento insuficiente para refazer esta construção.'};
+    const before=this.simulation.totalInternalEnergy();this.replaying=true;
+    try{for(const {change,adding} of steps)this.applyHistoryChange(change,adding);}
+    finally{this.replaying=false;}
+    from.pop();to.push(changes);
+    this.simulation.cooling?.rebuild();this.simulation.registerConstruction(before);this.onChange();
+    return {ok:true,label:this.historyLabel(changes),count:changes.length};
+  }
+
+  applyHistoryChange(change,adding){
+    const record=change.record;
+    if(change.kind==='material'){
+      const index=this.world.index(change.x,change.y);
+      // Adding re-applies the material that existed after the change; removing restores the one before it.
+      this.world.setMaterial(change.x,change.y,(change.op==='add')===adding?change.after:change.before);
+      if(record){if(adding){this.placedMaterials.set(index,record);this.charge(record);}else{this.placedMaterials.delete(index);this.recover(record);}}
+      return;
+    }
+    const entity=change.entity;
+    if(adding){
+      if(change.utility)this.world.addUtility(entity);else this.world.addEntity(entity);
+      if(record){this.placedEntities.set(entity.id,record);this.charge(record);}
+    }else{
+      if(change.utility)this.world.removeUtility(entity);else this.world.removeEntity(entity);
+      if(record){this.placedEntities.delete(entity.id);this.recover(record);}
+    }
+  }
+
+  charge({tool,cost}){this.budget-=cost;if(Number.isFinite(this.inventory[tool]))this.inventory[tool]=Math.max(0,this.inventory[tool]-1);}
 
   recover({tool,cost}){
     this.budget+=tool?.startsWith('computeRack')?Math.floor(cost*.5):cost;

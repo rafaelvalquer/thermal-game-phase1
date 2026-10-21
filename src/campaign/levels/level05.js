@@ -6,6 +6,7 @@ export const level05={
   description:'Forno, motores e processo produtivo exigem isolamento, airflow e refrigeração bem distribuída.',
   briefing:'Nem tudo precisa estar frio. Isole o forno e use unidades independentes para proteger motores, processo, corredores e operadores sem recircular o calor da condensadora.',
   thermalSystems:{simpleCooling:true,waterCooling:true,coolingUnitModel:'commercial'},
+  stars:{cost:15000,margin:3,maxPower:12000},
   map:level05Map,environment:{outdoorTemperature:27},budget:60000,powerLimit:18000,missionDuration:420,
   inventory:{pipe:120,pump:3,tank:2,radiator:4,exchanger:6,waterChiller:1,wall:50,insulation:70,copper:30,fan:10,exhaust:5,sensor:14,coolingUnit:3,duct:300,supplyVent:6,demolish:Infinity},
   zones:[

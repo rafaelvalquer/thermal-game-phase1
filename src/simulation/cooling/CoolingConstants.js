@@ -7,4 +7,6 @@ export const COOLING={
   minimumOutdoorCapacityFactor:.65,
   outdoorCapacityPoints:[[25,1],[30,.95],[35,.85],[40,.7]],
   maxExchangeFraction:.35,
+  // Zone limit assumed for vents that serve no level zone.
+  defaultServiceLimit:30,
 };

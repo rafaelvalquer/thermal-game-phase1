@@ -11,6 +11,7 @@ export const level04={
   description:'Racks direcionais transformam o data center em um problema de hotspots, recirculação e capacidade de refrigeração.',
   briefing:'Os racks aspiram ar pelo lado indicado e descarregam calor no lado oposto. Organize corredores frios e quentes com duas ou três unidades independentes e reserve capacidade para o pico de carga.',
   thermalSystems:{simpleCooling:true,waterCooling:true,coolingUnitModel:'commercial'},
+  stars:{cost:12000,margin:2,maxPower:9000},
   map:level04Map,environment:{outdoorTemperature:24},budget:60000,powerLimit:16000,missionDuration:360,
   inventory:{pipe:80,pump:2,tank:2,radiator:3,exchanger:4,waterChiller:1,wall:35,insulation:45,copper:20,fan:10,exhaust:4,sensor:12,coolingUnit:3,duct:300,supplyVent:6,demolish:Infinity},
   zones:[

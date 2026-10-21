@@ -7,6 +7,7 @@ import './sim-controls.css';
 import './three.css';
 import './campaign.css';
 import './onboarding.css';
+import './progression.css';
 import { Game } from './game/Game.js';
 import { CampaignManager } from './campaign/CampaignManager.js';
 import { CampaignScreen } from './ui/CampaignScreen.js';

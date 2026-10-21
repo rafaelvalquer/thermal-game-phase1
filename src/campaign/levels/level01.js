@@ -8,6 +8,8 @@ export const level01={
   // The compact unit fits the 10 kW limit; the commercial one (M) cools more but exceeds it on its own.
   thermalSystems:{simpleCooling:true,waterCooling:true,coolingUnitModel:'compact'},
   uiLevel:1,
+  // Star goals: the tutorial build earns 1 star; 3 stars need the lean airflow-only build.
+  stars:{cost:2000,margin:2,maxPower:4000},
   map:level01Map,environment:{outdoorTemperature:25},budget:50000,powerLimit:10000,missionDuration:300,
   inventory:{pipe:24,pump:1,tank:1,radiator:1,exchanger:1,waterChiller:1,wall:50,insulation:20,copper:10,fan:4,exhaust:2,sensor:5,coolingUnit:1,duct:120,supplyVent:1,demolish:Infinity},
   zones:[{id:'machine-room',name:'Sala de Máquinas',x:9,y:11,width:46,height:35,target:40,visualStyle:'industrial'}],
@@ -35,6 +37,6 @@ export const level01={
       {id:'exhausts',title:'Jogue o ar quente para fora',text:'Ventiladores só movem o calor. Instale 2 Exaustores colados à abertura da parede leste, apontando para fora (→): eles despejam o ar quente no exterior.',openTool:'exhaust',highlight:['[data-tool="exhaust"]'],area:{x:52,y:16,width:3,height:5,label:'EXAUSTORES'},check:'entityCount',entity:'exhaust',count:2},
       {id:'start',title:'Inicie e observe o calor',text:'Clique em Iniciar operação (ou Enter) e ative o modo Térmico para ver as máquinas aquecendo e o ar frio chegando.',highlight:[{selector:'#startOperationBtn',phase:'planning'},{selector:'[data-mode="thermal"]',phase:'running'}],check:'operationThermal'},
     ],
-    complete:{title:'Sala sob controle',text:'Mantenha as três máquinas abaixo de 40 °C por 5 minutos. O alerta de sobrecarga é esperado: a Compacta trabalha no máximo e os ventiladores e exaustores completam o trabalho. Se uma máquina esquentar demais, aproxime o ventilador dela ou instale o quarto.'},
+    complete:{title:'Sala sob controle',text:'Mantenha as três máquinas abaixo de 40 °C por 5 minutos. Se uma máquina esquentar demais, aproxime o ventilador dela ou instale o quarto.'},
   },
 };

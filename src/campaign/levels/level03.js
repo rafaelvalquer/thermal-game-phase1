@@ -5,7 +5,8 @@ export const level03={
   tagline:'Distribuição entre salas',
   description:'Escritórios, laboratório e sala elétrica possuem limites térmicos diferentes e compartilham a mesma saída externa.',
   briefing:'Duas condensadoras podem manter redes independentes. Distribua capacidade entre laboratório e salas, e teste como saídas de redes diferentes podem atender o mesmo ambiente.',
-  thermalSystems:{simpleCooling:true,waterCooling:true,coolingUnitModel:'commercial'},
+  thermalSystems:{simpleCooling:true,waterCooling:true,coolingUnitModel:'compact'},
+  stars:{cost:12000,margin:3,maxPower:8000},
   map:level03Map,environment:{outdoorTemperature:26},budget:30000,powerLimit:18000,missionDuration:300,
   inventory:{pipe:50,pump:2,tank:1,radiator:2,exchanger:3,waterChiller:1,wall:28,insulation:35,copper:12,fan:7,exhaust:2,sensor:9,coolingUnit:2,duct:220,supplyVent:6,demolish:Infinity},
   zones:[

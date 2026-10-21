@@ -90,6 +90,7 @@ export class Game {
         return;
       }
       if(e.code==='Space'){e.preventDefault();this.sim.togglePause();}
+      if((e.ctrlKey||e.metaKey)&&!e.target?.closest?.('input,textarea')&&(e.code==='KeyZ'||e.code==='KeyY')){e.preventDefault();if(e.code==='KeyY'||e.shiftKey)this.redo();else this.undo();return;}
       if((e.code==='Enter'||e.code==='NumpadEnter')&&this.sim.planning&&!e.target?.closest?.('input,textarea,select,button')){e.preventDefault();this.startOperation();}
       if(e.code==='KeyR')this.build.rotate();
       if(e.code==='KeyI'&&DUCT_TOOLS.has(this.build.selected))this.toast('Isolamento: '+(this.build.toggleDuctInsulation()?'ativado':'padrão'));
@@ -110,6 +111,9 @@ export class Game {
   }
 
   setSpeed(v){this.sim.setSpeed(v);this.ui?.setSpeedButtons(v);}
+
+  undo(){const result=this.build.undo();this.toast(result.ok?'Desfeito: '+result.label:result.reason);return result;}
+  redo(){const result=this.build.redo();this.toast(result.ok?'Refeito: '+result.label:result.reason);return result;}
 
   startOperation(){
     if(!this.sim.startOperation())return false;
